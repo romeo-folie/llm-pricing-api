@@ -1,0 +1,151 @@
+---
+title: LLM Token Pricing Platform — System Architecture v3
+---
+flowchart TD
+
+    %% ── 01 DATA SOURCES ──────────────────────────────────────────────────────
+    subgraph SOURCES["01 · Data Sources"]
+        direction LR
+        OR["◈ OpenRouter\n/v1/models · 6h"]
+        LL["◈ LiteLLM GitHub\nJSON · daily"]
+        PD["◈ Provider Docs\nOpenAI · Anthropic\nGoogle · Mistral · Amazon\ndaily scrape"]
+    end
+
+    %% ── 02 INGESTION PIPELINE ────────────────────────────────────────────────
+    subgraph INGEST["02 · Ingestion Pipeline"]
+        direction LR
+        SC["⚙ Scraper Workers\nGo goroutines · asynq"]
+        DE["⚙ Diff Engine\nincoming vs stored"]
+        RC["⚙ Reconciler\n>5% delta → flag\n2x match → publish"]
+        RQ["⚙ Review Queue\nmanual · 4h SLA"]
+    end
+
+    %% ── 03 STORAGE ───────────────────────────────────────────────────────────
+    subgraph STORAGE["03 · Storage"]
+        direction LR
+        PG["🗄 PostgreSQL\n+ TimescaleDB"]
+        RD["🗄 Redis\ncache · rate limits · queue"]
+    end
+
+    %% ── 04 API LAYER ─────────────────────────────────────────────────────────
+    subgraph APILAYER["04 · API Layer"]
+        direction LR
+        FB["◎ Go / Fiber\nREST /v1/ · 9 endpoints"]
+        UK["◎ Unkey\nkey mgmt · tier enforcement\nrate limiting"]
+        LS["◎ Lemon Squeezy\nbilling · MoR · webhooks"]
+    end
+
+    %% ── 05 AGENT INTERFACE ───────────────────────────────────────────────────
+    subgraph AGENT["05 · Agent Interface"]
+        direction LR
+        MCP["✦ MCP Server\n@llmpricing/mcp · npm"]
+        SSE["✦ SSE Stream\n/v1/stream/changes"]
+        NLQ["✦ /v1/ask\nnatural language query"]
+        CTX["✦ /v1/context\n2k token snapshot"]
+        DSC["✦ Discovery\nopenapi.json\nai-plugin.json · llms.txt"]
+    end
+
+    %% ── 06 CONSUMERS ─────────────────────────────────────────────────────────
+    subgraph CONSUMERS["06 · Consumers"]
+        direction LR
+        NX["▣ Next.js Frontend\nVercel · public site"]
+        WH["▣ Webhooks\nPro tier · at-least-once"]
+        DA["▣ Developer API\nexternal REST consumers"]
+        AI["▣ AI Agents\nClaude Code · Cursor · custom"]
+    end
+
+    %% ── 07 ADMIN DASHBOARD ───────────────────────────────────────────────────
+    subgraph ADMIN["07 · Admin Dashboard"]
+        direction LR
+        APP["⬡ Admin App\nNext.js · Vercel · private"]
+        ADM_PG["⬡ → PostgreSQL\npipeline stats\nprice history\nreview queue"]
+        ADM_LS["⬡ → Lemon Squeezy\nsubscribers · MRR · churn"]
+        ADM_UK["⬡ → Unkey\nkey usage · tier counts"]
+        ADM_GF["⬡ → Grafana\nmetrics · traces · logs"]
+    end
+
+    %% ── 08 OBSERVABILITY ─────────────────────────────────────────────────────
+    subgraph OTEL["08 · Observability"]
+        direction LR
+        SDK["◉ OTel SDK\nGo API · workers · Next.js"]
+        COL["◉ OTel Collector\nRailway service\nbatch · sample · route"]
+        PROM["◉ Prometheus\nmetrics scrape · 15d"]
+        LOKI["◉ Loki\nlog aggregation"]
+        TEMPO["◉ Tempo\ndistributed tracing"]
+        GF["◉ Grafana\ndashboards · alerts"]
+    end
+
+    %% ── EDGES: Sources → Ingest ──────────────────────────────────────────────
+    OR -->|"JSON fetch"| SC
+    LL -->|"JSON fetch"| SC
+    PD -->|"scrape"| SC
+
+    %% ── EDGES: Ingest pipeline ───────────────────────────────────────────────
+    SC -->|"raw data"| DE
+    DE -->|"delta"| RC
+    RC -->|">5% flag"| RQ
+    RC -->|"confirmed record"| PG
+
+    %% ── EDGES: Queue / cron ──────────────────────────────────────────────────
+    SC <-->|"job queue / cron dispatch"| RD
+
+    %% ── EDGES: Storage → API ─────────────────────────────────────────────────
+    PG -->|"price data"| FB
+    RD -->|"cache · rate limit"| FB
+    UK -->|"key validation"| FB
+    LS -->|"subscription events"| FB
+
+    %% ── EDGES: API → Agent Interface ─────────────────────────────────────────
+    FB --> MCP
+    FB --> SSE
+    FB --> NLQ
+    FB --> CTX
+    FB --> DSC
+
+    %% ── EDGES: API → Consumers ───────────────────────────────────────────────
+    FB -->|"REST"| NX
+    FB -->|"events"| WH
+    FB -->|"REST"| DA
+    MCP -->|"tools"| AI
+    SSE -->|"push"| AI
+    CTX -->|"snapshot"| AI
+
+    %% ── EDGES: Admin data sources ────────────────────────────────────────────
+    PG -->|"direct read\nread-only conn"| ADM_PG
+    LS -->|"API"| ADM_LS
+    UK -->|"API"| ADM_UK
+    GF -->|"embed panels"| ADM_GF
+    ADM_PG --> APP
+    ADM_LS --> APP
+    ADM_UK --> APP
+    ADM_GF --> APP
+
+    %% ── EDGES: OTel signal flow ──────────────────────────────────────────────
+    FB -->|"instrument"| SDK
+    SC -->|"instrument"| SDK
+    SDK -->|"OTLP/gRPC"| COL
+    COL -->|"metrics"| PROM
+    COL -->|"logs"| LOKI
+    COL -->|"traces"| TEMPO
+    PROM --> GF
+    LOKI --> GF
+    TEMPO --> GF
+
+    %% ── STYLES ───────────────────────────────────────────────────────────────
+    classDef sources   fill:#FEF3C7,stroke:#F59E0B,color:#78350F
+    classDef ingest    fill:#EDE9FE,stroke:#7C3AED,color:#4C1D95
+    classDef storage   fill:#ECFEFF,stroke:#0891B2,color:#164E63
+    classDef api       fill:#EEF2FF,stroke:#6366F1,color:#312E81
+    classDef agent     fill:#FDF2F8,stroke:#EC4899,color:#831843
+    classDef consumers fill:#ECFDF5,stroke:#10B981,color:#064E3B
+    classDef admin     fill:#FFF7ED,stroke:#F97316,color:#7C2D12
+    classDef otel      fill:#FFF1F2,stroke:#E11D48,color:#881337
+
+    class OR,LL,PD sources
+    class SC,DE,RC,RQ ingest
+    class PG,RD storage
+    class FB,UK,LS api
+    class MCP,SSE,NLQ,CTX,DSC agent
+    class NX,WH,DA,AI consumers
+    class APP,ADM_PG,ADM_LS,ADM_UK,ADM_GF admin
+    class SDK,COL,PROM,LOKI,TEMPO,GF otel
