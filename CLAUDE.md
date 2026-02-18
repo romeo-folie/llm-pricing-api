@@ -14,22 +14,99 @@ Before implementing any requested feature or task, always eliminate ambiguity fi
 
 ## Development Workflow — CCPM
 
-This project uses **CCPM** (Claude Code Project Manager) for task management via GitHub Issues. The `/pm` slash commands are installed in `.claude/commands/pm/`.
+This project uses **CCPM** (Claude Code Project Manager) for task management via GitHub Issues. The `/pm` slash commands are installed in `.claude/commands/pm/`. Run `/pm:help` at any time for a full command listing.
 
-**When starting a new development phase**, always use the `/pm` workflow to decompose it into tracked tasks before writing code:
+### Phase Lifecycle
 
-1. `/pm:prd-new <phase-name>` — create or import the PRD for the phase
-2. `/pm:prd-parse <phase-name>` — convert it into a technical epic
-3. `/pm:epic-decompose <phase-name>` — break the epic into concrete tasks
-4. `/pm:epic-sync <phase-name>` — push tasks to GitHub Issues
-5. `/pm:issue-start <issue-number>` — begin work on a task
-6. `/pm:issue-close <issue-number>` — mark a task complete
+#### 1 — Plan the phase
 
-Useful during development:
-- `/pm:status` — project dashboard
-- `/pm:next` — get the next priority task
-- `/pm:blocked` — see blocked tasks
-- `/pm:standup` — daily standup summary
+```text
+/pm:prd-new <name>          Create a new PRD via brainstorming session
+/pm:prd-parse <name>        Convert PRD → technical epic (epic.md + architecture)
+/pm:epic-decompose <name>   Break epic → numbered task files with deps & parallelism
+/pm:epic-sync <name>        Push epic + tasks to GitHub Issues (creates worktree too)
+```
+
+> Shortcut: `/pm:epic-oneshot <name>` runs `epic-decompose` + `epic-sync` in one step.
+
+#### 2 — Start the epic
+
+Choose one mode:
+
+```text
+/pm:epic-start <name>           Launch parallel agents in a shared git branch
+/pm:epic-start-worktree <name>  Launch parallel agents in a shared git worktree
+```
+
+Both modes identify ready issues, run per-issue analysis, and launch agents. Use `epic-start-worktree` when you need full filesystem isolation between sessions.
+
+#### 3 — Work on individual issues
+
+```text
+/pm:issue-analyze <N>   Identify parallel work streams before starting
+/pm:issue-start <N>     Claim issue, read spec, launch stream agents
+/pm:issue-sync <N>      Push local progress as a GitHub comment
+/pm:issue-close <N>     Mark complete, close on GitHub, update epic progress
+```
+
+#### 4 — Complete the epic
+
+```text
+/pm:epic-refresh <name>   Recalculate epic progress from task states
+/pm:epic-close <name>     Mark epic complete (validates all tasks are closed first)
+/pm:epic-merge <name>     Merge worktree/branch → main, archive, close epic issue
+```
+
+---
+
+### Monitoring Commands
+
+```text
+/pm:status                  Project-wide dashboard
+/pm:next                    Next priority task to work on
+/pm:in-progress             All currently active tasks
+/pm:blocked                 Blocked tasks and their blockers
+/pm:standup                 Daily standup summary
+/pm:epic-status <name>      Progress of a specific epic
+/pm:epic-show <name>        Full epic details and task list
+/pm:issue-status <N>        Issue state (open/closed) and sync status
+/pm:issue-show <N>          Full issue detail with sub-issues and activity
+```
+
+---
+
+### Editing Commands
+
+```text
+/pm:prd-edit <name>         Edit an existing PRD
+/pm:epic-edit <name>        Edit epic overview, architecture, or approach
+/pm:issue-edit <N>          Edit issue title, description, or labels
+/pm:issue-reopen <N>        Reopen a closed issue with a reason
+```
+
+---
+
+### Listing & Search
+
+```text
+/pm:prd-list                List all PRDs
+/pm:prd-status              Status of all PRDs
+/pm:epic-list               List all epics
+/pm:search <query>          Search PRDs, epics, and tasks by keyword
+```
+
+---
+
+### Utility Commands
+
+```text
+/pm:sync [name]             Bidirectional sync between local files and GitHub
+/pm:import                  Import existing GitHub issues into the PM system
+/pm:validate                Validate PM system integrity (file structure + GitHub)
+/pm:clean [--dry-run]       Archive completed epics and remove stale files
+/pm:init                    Initialize the PM system in a new repository
+/pm:help                    Show full command reference
+```
 
 ### Worktree Safety Protocol
 
@@ -50,7 +127,7 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
 
    Example (use this as the structural template; populate all fields with real values):
 
-   ```markdown
+   ````markdown
    # Phase: data-pipeline
    > Implement the scraper, diff engine, and reconciliation engine.
 
@@ -61,7 +138,7 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
    ## Current Status
 
    | # | Task | Status | GitHub |
-   |---|------|--------|--------|
+   | --- | --- | --- | --- |
    | #12 | OpenRouter scraper goroutine | open | [#12](https://github.com/org/repo/issues/12) |
    | #13 | LiteLLM scraper job | open | [#13](https://github.com/org/repo/issues/13) |
    | #14 | Diff engine | blocked (needs #12, #13) | [#14](https://github.com/org/repo/issues/14) |
@@ -91,7 +168,7 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
    ## Key Files
 
    | Path | Role |
-   |------|------|
+   | --- | --- |
    | `internal/scraper/` | Scraper implementations (primary work area) |
    | `internal/reconciler/` | Reconciliation engine — mediates all writes |
    | `internal/worker/tasks.go` | asynq task registration |
@@ -102,13 +179,13 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
 
    ## CCPM Quick Commands
 
-   ```bash
-   /pm:next                     # What to work on next
-   /pm:issue-start <N>          # Begin a task
-   /pm:issue-close <N>          # Mark a task complete
-   /pm:status                   # Full project dashboard
+   ```text
+   /pm:next                      # What to work on next
+   /pm:issue-start <N>           # Begin a task
+   /pm:issue-close <N>           # Mark a task complete
+   /pm:status                    # Full project dashboard
    /pm:epic-status data-pipeline # This epic's progress
-   /pm:blocked                  # See blocked tasks
+   /pm:blocked                   # See blocked tasks
    ```
 
    ---
@@ -122,7 +199,7 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
    5. Run `/code-reviewer` — fix all findings before closing.
    6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
 
-   ```
+   ````
 
 2. **Pause and prompt the user to switch directories.** Do not proceed with planning, decomposition, or any file writes until the user confirms they have switched their shell to the worktree:
 
@@ -243,7 +320,7 @@ The system has six layers, built in this order:
 ## API Endpoints
 
 | Endpoint | Tier | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `GET /v1/models` | Free | List models with filters: `?provider=`, `?modality=`, `?min_context=` |
 | `GET /v1/models/:id` | Free | Single model detail |
 | `GET /v1/models/:id/history` | Dev+ | Price history with `?from=`, `?to=` |
@@ -293,7 +370,7 @@ npx @llmpricing/mcp
 ## Stack Reference
 
 | Component | Technology |
-|---|---|
+| --- | --- |
 | API server | Go + Fiber |
 | Database | PostgreSQL + TimescaleDB |
 | Job queue / cache | Redis + asynq |
@@ -307,7 +384,7 @@ npx @llmpricing/mcp
 ## Data Sources
 
 | Source | Frequency | Role |
-|---|---|---|
+| --- | --- | --- |
 | OpenRouter `/v1/models` | Every 6 hours | Primary feed |
 | LiteLLM model cost map (GitHub JSON) | Daily | Cross-reference |
 | Provider docs (OpenAI, Anthropic, Google, Mistral, Amazon) | Daily scrape | Ground truth |
