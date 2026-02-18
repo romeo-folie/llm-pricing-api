@@ -31,6 +31,107 @@ Useful during development:
 - `/pm:blocked` — see blocked tasks
 - `/pm:standup` — daily standup summary
 
+### Worktree Safety Protocol
+
+When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-worktree`), immediately perform **both** of the following steps before doing any planning or writing any code:
+
+1. **Write `summary.md` into the worktree root.** This file is the sole context bootstrap for any agent that opens a new session inside the worktree — write it as if the reader has zero prior context. It must be fully populated with live data (not placeholders) and must include every section below.
+
+   **Required sections:**
+
+   - **Header** — phase name, one-sentence description, branch, worktree path, and creation date.
+   - **Current Status table** — one row per issue with: issue number, title, current status (`open` / `in-progress` / `done` / `blocked`), and GitHub URL. Populate statuses from the epic task files and GitHub at write time — do not use placeholders.
+   - **Next Action** — a single explicit instruction telling the agent exactly what to do first (e.g. "Run `/pm:issue-start 13` to begin the next open task").
+   - **Goals** — the phase's key deliverables as a bullet list.
+   - **Architecture Notes** — 3–6 bullet points covering decisions and patterns that are *specific to this phase's work*: which packages/directories to work in, which interfaces to implement, which existing modules to integrate with, and any constraints (e.g. "scrapers must never write to `price_history` directly").
+   - **Key Files** — a small table of the files/directories most relevant to this phase, with a one-line description of each.
+   - **CCPM Quick Commands** — the exact slash commands needed to navigate and complete work in this phase.
+   - **Resuming Work** — a numbered checklist an agent follows to pick up where work left off.
+
+   Example (use this as the structural template; populate all fields with real values):
+
+   ```markdown
+   # Phase: data-pipeline
+   > Implement the scraper, diff engine, and reconciliation engine.
+
+   **Branch:** `epic/data-pipeline` | **Worktree:** `../epic-data-pipeline` | **Created:** 2026-02-18
+
+   ---
+
+   ## Current Status
+
+   | # | Task | Status | GitHub |
+   |---|------|--------|--------|
+   | #12 | OpenRouter scraper goroutine | open | [#12](https://github.com/org/repo/issues/12) |
+   | #13 | LiteLLM scraper job | open | [#13](https://github.com/org/repo/issues/13) |
+   | #14 | Diff engine | blocked (needs #12, #13) | [#14](https://github.com/org/repo/issues/14) |
+   | #15 | Reconciliation engine | blocked (needs #14) | [#15](https://github.com/org/repo/issues/15) |
+
+   **Next action:** Run `/pm:issue-start 12` to begin the OpenRouter scraper.
+
+   ---
+
+   ## Goals
+   - Scrape OpenRouter every 6h and LiteLLM daily
+   - Diff incoming values against stored values
+   - Require 2-source agreement before publishing
+   - Write every confirmed change as an immutable timestamped record
+
+   ---
+
+   ## Architecture Notes
+   - All scrapers live in `internal/scraper/`; implement the `Scraper` interface (`Fetch() ([]Model, error)`)
+   - Use the `asynq` task pattern — register new tasks in `internal/worker/tasks.go`
+   - Scrapers must never write to `price_history` directly; all writes go through the reconciliation engine
+   - The diff engine compares `[]Model` slices by `model_id`; price deltas >5% must be flagged
+   - TimescaleDB hypertable for `price_history` is already created; append-only, no `UPDATE`/`DELETE`
+
+   ---
+
+   ## Key Files
+
+   | Path | Role |
+   |------|------|
+   | `internal/scraper/` | Scraper implementations (primary work area) |
+   | `internal/reconciler/` | Reconciliation engine — mediates all writes |
+   | `internal/worker/tasks.go` | asynq task registration |
+   | `internal/db/migrations/` | Schema migrations |
+   | `go.mod` | Module dependencies |
+
+   ---
+
+   ## CCPM Quick Commands
+
+   ```bash
+   /pm:next                     # What to work on next
+   /pm:issue-start <N>          # Begin a task
+   /pm:issue-close <N>          # Mark a task complete
+   /pm:status                   # Full project dashboard
+   /pm:epic-status data-pipeline # This epic's progress
+   /pm:blocked                  # See blocked tasks
+   ```
+
+   ---
+
+   ## Resuming Work
+
+   1. Check the **Current Status** table above for the next `open` task.
+   2. Run `/pm:issue-start <N>` to claim it and read its full spec.
+   3. Write tests first, then implement.
+   4. Run `go test ./...` — all tests must pass before committing.
+   5. Run `/code-reviewer` — fix all findings before closing.
+   6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
+
+   ```
+
+2. **Pause and prompt the user to switch directories.** Do not proceed with planning, decomposition, or any file writes until the user confirms they have switched their shell to the worktree:
+
+   > "Worktree created at `../epic-<name>`. **Please switch to that directory now** (`cd ../epic-<name>`) and confirm before I continue. Sub-agents will write files relative to your shell's CWD, so they must be launched from inside the worktree."
+
+   Wait for explicit confirmation before continuing.
+
+3. **Keep `summary.md` current.** After each issue is closed, update the status table row for that issue (`done`) and set the new **Next action** line to the next open task. The file must always reflect ground truth — a stale summary defeats its purpose.
+
 ### Issue Traceability
 
 All commits and pull requests **must** reference the GitHub Issue they implement. Keep implementation in sync with CCPM issues at all times.
