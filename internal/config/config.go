@@ -6,12 +6,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL   string
-	RedisURL      string
-	AppEnv        string
-	AppPort       string
-	AdminUser     string
-	AdminPassword string
+	DatabaseURL     string
+	RedisURL        string
+	AppEnv          string
+	AppPort         string
+	AdminUser       string
+	AdminPassword   string
+	OTELEndpoint    string
+	OTELServiceName string
 }
 
 // Load reads configuration from environment variables.
@@ -33,12 +35,14 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:   dbURL,
-		RedisURL:      getEnv("REDIS_URL", "localhost:6379"),
-		AppEnv:        appEnv,
-		AppPort:       getEnv("APP_PORT", "8080"),
-		AdminUser:     getEnv("ADMIN_USER", "admin"),
-		AdminPassword: adminPassword,
+		DatabaseURL:     dbURL,
+		RedisURL:        getEnv("REDIS_URL", "localhost:6379"),
+		AppEnv:          appEnv,
+		AppPort:         getEnv("APP_PORT", "8080"),
+		AdminUser:       getEnv("ADMIN_USER", "admin"),
+		AdminPassword:   adminPassword,
+		OTELEndpoint:    os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		OTELServiceName: getEnv("OTEL_SERVICE_NAME", "llm-pricing-api"),
 	}, nil
 }
 

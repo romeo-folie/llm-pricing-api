@@ -3,21 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/extra/redisotel/v9"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
+	internalotel "llm-pricing-api/internal/otel"
+	"llm-pricing-api/internal/logger"
 	"llm-pricing-api/internal/review"
 )
 
@@ -26,27 +29,55 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("config error", "err", err)
+		// Use plain stderr before the logger is set up.
+		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
 		os.Exit(1)
 	}
+
+	log := logger.New(logger.Config{
+		ServiceName: cfg.OTELServiceName,
+		Environment: cfg.AppEnv,
+		Level:       zerolog.DebugLevel,
+	})
 
 	ctx := context.Background()
 
-	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5)
+	// Initialise OpenTelemetry SDK.  When OTELEndpoint is empty the SDK
+	// defaults to a no-op provider — safe to call unconditionally.
+	otelShutdown, err := internalotel.Init(ctx, internalotel.Config{
+		ServiceName:  cfg.OTELServiceName,
+		ServiceVersion: "0.1.0",
+		Environment:  cfg.AppEnv,
+		OTLPEndpoint: cfg.OTELEndpoint,
+	})
 	if err != nil {
-		slog.Error("could not connect to database", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("failed to initialise OTel SDK")
 	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutErr := otelShutdown(shutCtx); shutErr != nil {
+			log.Error().Err(shutErr).Msg("OTel SDK shutdown error")
+		}
+	}()
 
+	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5, log)
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not connect to database")
+	}
 	defer db.Close()
 
 	// Connect to Redis
 	redisClient, err := cache.Connect(ctx, cfg.RedisURL)
 	if err != nil {
-		slog.Error("could not connect to redis", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("could not connect to redis")
 	}
 	defer redisClient.Close()
+
+	// Wire OTel instrumentation onto the Redis client.
+	if err := redisotel.InstrumentTracing(redisClient); err != nil {
+		log.Fatal().Err(err).Msg("could not instrument redis with OTel tracing")
+	}
 
 	reviewStore := review.NewPgxStore(db)
 	reviewHandler := review.NewHandler(reviewStore)
@@ -54,7 +85,10 @@ func main() {
 	app := fiber.New(fiber.Config{
 		AppName: "llm-pricing-api",
 	})
-	app.Use(logger.New())
+
+	// Middleware order: OTel tracing first, then request logger, then recover.
+	app.Use(otelfiber.Middleware())
+	app.Use(requestLogger(log))
 	app.Use(recover.New())
 
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -96,18 +130,42 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	addr := fmt.Sprintf(":%s", cfg.AppPort)
-	slog.Info("starting api", "addr", addr, "env", cfg.AppEnv)
+	log.Info().Str("addr", addr).Str("env", cfg.AppEnv).Msg("starting api")
 
 	go func() {
 		if err := app.Listen(addr); err != nil {
-			slog.Error("server error", "err", err)
+			log.Error().Err(err).Msg("server error")
 			os.Exit(1)
 		}
 	}()
 
 	<-quit
-	slog.Info("shutting down...")
+	log.Info().Msg("shutting down...")
 	if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
-		slog.Error("shutdown error", "err", err)
+		log.Error().Err(err).Msg("shutdown error")
+	}
+}
+
+// requestLogger returns a Fiber middleware that logs each completed request
+// with zerolog, injecting OTel trace_id and span_id when a span is active.
+func requestLogger(base zerolog.Logger) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		duration := time.Since(start)
+
+		l := logger.FromContext(c.Context(), base)
+		event := l.Info()
+		if err != nil {
+			event = l.Error().Err(err)
+		}
+		event.
+			Str("method", c.Method()).
+			Str("path", c.Path()).
+			Int("status", c.Response().StatusCode()).
+			Dur("latency_ms", duration).
+			Msg("request")
+
+		return err
 	}
 }
