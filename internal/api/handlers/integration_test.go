@@ -214,26 +214,6 @@ func apiGet(t *testing.T, app *fiber.App, path, authHeader string) (int, []byte)
 	return resp.StatusCode, body
 }
 
-// apiGetFull performs a GET request and returns status, body, and the
-// response object (so callers can inspect headers).
-func apiGetFull(t *testing.T, app *fiber.App, path, authHeader string) (int, []byte, *httptest.ResponseRecorder) {
-	t.Helper()
-	req := httptest.NewRequest("GET", path, nil)
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
-	resp, err := app.Test(req, 10_000)
-	if err != nil {
-		t.Fatalf("app.Test GET %s: %v", path, err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	// We can't return the real http.Response directly from Fiber's Test; the
-	// caller that needs headers must use app.Test directly with a custom req.
-	_ = resp
-	return resp.StatusCode, body, nil
-}
-
 // apiPost performs a POST request with JSON body and Authorization header.
 func apiPost(t *testing.T, app *fiber.App, path, authHeader string, payload any) (int, []byte) {
 	t.Helper()
