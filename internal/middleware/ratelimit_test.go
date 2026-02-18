@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/middleware"
 )
 
@@ -27,7 +28,10 @@ func rateLimitCacheKey(rawKey string) string {
 //  2. Applies the RateLimit middleware.
 //  3. Returns 200 on success.
 func newRateLimitApp(tier, keyHash string, redisClient *redis.Client) *fiber.App {
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		ErrorHandler:          api.ErrorHandler,
+	})
 	app.Get("/v1/test",
 		func(c *fiber.Ctx) error {
 			c.Locals(middleware.LocalKeyTier, tier)

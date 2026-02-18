@@ -2,7 +2,6 @@
 package middleware
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"sort"
@@ -110,7 +109,7 @@ func Cache(client *redis.Client) fiber.Handler {
 		}
 
 		key := cacheKey(c)
-		ctx := context.Background()
+		ctx := c.Context()
 
 		// Attempt cache hit.
 		cached, err := client.Get(ctx, key).Bytes()

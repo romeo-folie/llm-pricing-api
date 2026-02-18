@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redismock/v9"
 	"github.com/gofiber/fiber/v2"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/middleware"
 )
 
@@ -55,7 +56,10 @@ func doRequest(app *fiber.App, authHeader string) (int, map[string]interface{}) 
 }
 
 func newTestApp(mw fiber.Handler) *fiber.App {
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		ErrorHandler:          api.ErrorHandler,
+	})
 	app.Get("/v1/test", mw, func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"tier": c.Locals(middleware.LocalKeyTier),
@@ -254,7 +258,10 @@ func TestAuth_CacheHit_InvalidKey(t *testing.T) {
 func TestAuth_ContentType_IsProblemJSON(t *testing.T) {
 	db, _ := redismock.NewClientMock()
 	v := &mockVerifier{}
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		ErrorHandler:          api.ErrorHandler,
+	})
 	app.Get("/v1/test", middleware.Auth(v, db, "api_123"), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
@@ -275,7 +282,10 @@ func TestAuth_ContentType_IsProblemJSON(t *testing.T) {
 // --- RequireTier tests ---
 
 func newTierApp(tier string, minTier string) *fiber.App {
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		ErrorHandler:          api.ErrorHandler,
+	})
 	app.Get("/v1/test",
 		func(c *fiber.Ctx) error {
 			c.Locals(middleware.LocalKeyTier, tier)
@@ -358,8 +368,10 @@ func TestRequireTier_403_HasTierRequiredField(t *testing.T) {
 	if resp.StatusCode != fiber.StatusForbidden {
 		t.Errorf("want 403, got %d", resp.StatusCode)
 	}
-	if m["tier_required"] != "pro" {
-		t.Errorf("want tier_required='pro', got %v", m["tier_required"])
+	// tier_required is nested inside the RFC 7807 extensions object.
+	ext, _ := m["extensions"].(map[string]interface{})
+	if ext == nil || ext["tier_required"] != "pro" {
+		t.Errorf("want extensions.tier_required='pro', got extensions=%v", ext)
 	}
 }
 

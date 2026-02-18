@@ -13,6 +13,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	unkeygo "github.com/unkeyed/unkey-go"
 	"github.com/unkeyed/unkey-go/models/components"
+
+	"llm-pricing-api/internal/api"
 )
 
 const (
@@ -32,16 +34,11 @@ const (
 	LocalKeyHash = "key_hash"
 )
 
-// problemDetail is a minimal RFC 7807 Problem Details representation.
-// Once internal/api/problem.go is available this can be replaced.
-type problemDetail struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail,omitempty"`
-
-	// TierRequired is set by RequireTier when the caller's tier is insufficient.
-	TierRequired string `json:"tier_required,omitempty"`
+// tierOrder defines the precedence of API key tiers (ascending).
+var tierOrder = map[string]int{
+	TierFree:      0,
+	TierDeveloper: 1,
+	TierPro:       2,
 }
 
 // UnkeyVerifier abstracts the Unkey key-verification call so the middleware
@@ -62,8 +59,8 @@ func NewUnkeyClient(rootKey, apiID string) UnkeyVerifier {
 	return &unkeyClient{sdk: sdk, apiID: apiID}
 }
 
-// VerifyKey calls the Unkey API, returns whether the key is valid and the
-// tier string from its metadata map.
+// VerifyKey calls the Unkey API. The apiID parameter is provided for
+// interface compatibility but is ignored — the stored u.apiID is used instead.
 func (u *unkeyClient) VerifyKey(ctx context.Context, key, _ string) (bool, string, error) {
 	apiID := unkeygo.String(u.apiID)
 	res, err := u.sdk.Keys.VerifyKey(ctx, components.V1KeysVerifyKeyRequest{
@@ -123,26 +120,17 @@ func Auth(verifier UnkeyVerifier, redisClient *redis.Client, apiID string) fiber
 func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		return problemJSON(c, fiber.StatusUnauthorized,
-			"https://llmpricing.dev/errors/unauthorized",
-			"Unauthorized",
-			"Authorization header is required")
+		return api.NewUnauthorized("Authorization header is required")
 	}
 
 	const prefix = "Bearer "
 	if !strings.HasPrefix(authHeader, prefix) {
-		return problemJSON(c, fiber.StatusUnauthorized,
-			"https://llmpricing.dev/errors/unauthorized",
-			"Unauthorized",
-			"Authorization header must use Bearer scheme")
+		return api.NewUnauthorized("Authorization header must use Bearer scheme")
 	}
 
 	rawKey := strings.TrimPrefix(authHeader, prefix)
 	if rawKey == "" {
-		return problemJSON(c, fiber.StatusUnauthorized,
-			"https://llmpricing.dev/errors/unauthorized",
-			"Unauthorized",
-			"Bearer token must not be empty")
+		return api.NewUnauthorized("Bearer token must not be empty")
 	}
 
 	hash := keyHash(rawKey)
@@ -153,10 +141,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	if data, err := cfg.redis.Get(c.Context(), cacheKey).Bytes(); err == nil {
 		if jsonErr := json.Unmarshal(data, &result); jsonErr == nil {
 			if !result.Valid {
-				return problemJSON(c, fiber.StatusUnauthorized,
-					"https://llmpricing.dev/errors/unauthorized",
-					"Unauthorized",
-					"Invalid API key")
+				return api.NewUnauthorized("Invalid API key")
 			}
 			c.Locals(LocalKeyTier, result.Tier)
 			c.Locals(LocalKeyHash, hash)
@@ -168,10 +153,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	valid, tier, err := cfg.verifier.VerifyKey(c.Context(), rawKey, cfg.apiID)
 	if err != nil {
 		// Do not expose internal error details to the caller.
-		return problemJSON(c, fiber.StatusUnauthorized,
-			"https://llmpricing.dev/errors/unauthorized",
-			"Unauthorized",
-			"API key verification failed")
+		return api.NewUnauthorized("API key verification failed")
 	}
 
 	// Persist result (valid or not) in Redis so repeated bad keys are fast.
@@ -182,10 +164,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	}
 
 	if !valid {
-		return problemJSON(c, fiber.StatusUnauthorized,
-			"https://llmpricing.dev/errors/unauthorized",
-			"Unauthorized",
-			"Invalid API key")
+		return api.NewUnauthorized("Invalid API key")
 	}
 
 	c.Locals(LocalKeyTier, tier)
@@ -196,19 +175,14 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 // RequireTier returns a middleware that enforces a minimum tier.
 // Tiers are ordered: free < developer < pro.
 // If the request's tier is below minTier the handler returns 403 with a
-// tier_required field in the RFC 7807 body.
+// tier_required field in the RFC 7807 extensions.
 func RequireTier(minTier string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		actual, _ := c.Locals(LocalKeyTier).(string)
 		if !tierAtLeast(actual, minTier) {
-			pd := problemDetail{
-				Type:         "https://llmpricing.dev/errors/forbidden",
-				Title:        "Forbidden",
-				Status:       fiber.StatusForbidden,
-				Detail:       fmt.Sprintf("this endpoint requires the %s tier or above", minTier),
-				TierRequired: minTier,
-			}
-			return writeProblemDetail(c, fiber.StatusForbidden, pd)
+			pd := api.NewForbidden(fmt.Sprintf("this endpoint requires the %s tier or above", minTier))
+			pd.Extensions = map[string]any{"tier_required": minTier}
+			return pd
 		}
 		return c.Next()
 	}
@@ -216,35 +190,5 @@ func RequireTier(minTier string) fiber.Handler {
 
 // tierAtLeast returns true when actual >= required in the tier order.
 func tierAtLeast(actual, required string) bool {
-	order := map[string]int{
-		TierFree:      0,
-		TierDeveloper: 1,
-		TierPro:       2,
-	}
-	return order[actual] >= order[required]
-}
-
-// problemJSON writes a minimal RFC 7807 response and returns nil so Fiber
-// does not double-write the response.
-// We marshal manually so we can set Content-Type: application/problem+json
-// without Fiber's .JSON() overriding it to application/json.
-func problemJSON(c *fiber.Ctx, status int, problemType, title, detail string) error {
-	pd := problemDetail{
-		Type:   problemType,
-		Title:  title,
-		Status: status,
-		Detail: detail,
-	}
-	return writeProblemDetail(c, status, pd)
-}
-
-// writeProblemDetail marshals pd as JSON with Content-Type: application/problem+json.
-func writeProblemDetail(c *fiber.Ctx, status int, pd problemDetail) error {
-	data, err := json.Marshal(pd)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("internal error")
-	}
-	c.Status(status)
-	c.Set(fiber.HeaderContentType, "application/problem+json")
-	return c.Send(data)
+	return tierOrder[actual] >= tierOrder[required]
 }

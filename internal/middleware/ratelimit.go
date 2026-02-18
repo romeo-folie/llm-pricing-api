@@ -1,12 +1,13 @@
 package middleware
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
+
+	"llm-pricing-api/internal/api"
 )
 
 const (
@@ -52,6 +53,7 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		now := time.Now().UTC()
 		dateStr := now.Format("2006-01-02")
 		counterKey := fmt.Sprintf("ratelimit:%s:%s", hash, dateStr)
+		midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 
 		// Atomically increment and return the new count.
 		count, err := redisClient.Incr(c.Context(), counterKey).Result()
@@ -65,7 +67,6 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		// window on every request. If ExpireAt fails we still served the count.
 		if count == 1 {
 			// Expire at the start of the next UTC day so the key lives a full day.
-			midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 			// Use rateLimitTTL as a safety net (25h) in case ExpireAt fails.
 			_ = redisClient.ExpireAt(c.Context(), counterKey, midnight).Err()
 			// Belt-and-suspenders: also set a 25h TTL via Expire.
@@ -74,23 +75,16 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 
 		if int(count) > limit {
 			// Compute seconds until midnight UTC for Retry-After.
-			midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 			retryAfter := int(time.Until(midnight).Seconds())
 			if retryAfter < 0 {
 				retryAfter = 0
 			}
 
 			c.Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-			pd := problemDetail{
-				Type:   "https://llmpricing.dev/errors/rate-limited",
-				Title:  "Too Many Requests",
-				Status: fiber.StatusTooManyRequests,
-				Detail: fmt.Sprintf("daily limit of %d requests exceeded; resets at midnight UTC", limit),
-			}
-			data, _ := json.Marshal(pd)
-			c.Status(fiber.StatusTooManyRequests)
-			c.Set(fiber.HeaderContentType, "application/problem+json")
-			return c.Send(data)
+			pd := api.NewTooManyRequests(
+				fmt.Sprintf("daily limit of %d requests exceeded; resets at midnight UTC", limit),
+			)
+			return pd
 		}
 
 		return c.Next()
