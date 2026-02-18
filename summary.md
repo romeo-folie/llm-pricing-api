@@ -9,17 +9,17 @@
 
 | # | Task | Status | GitHub |
 |---|------|--------|--------|
-| #12 | OTel SDK init + zerolog structured logging | open | [#12](https://github.com/romeo-folie/llm-pricing-api/issues/12) |
-| #14 | Unkey auth middleware + rate limiting | open (blocked by #12) | [#14](https://github.com/romeo-folie/llm-pricing-api/issues/14) |
-| #16 | Shared API layer (RFC 7807, caching, trust metadata) | open (blocked by #12) | [#16](https://github.com/romeo-folie/llm-pricing-api/issues/16) |
-| #18 | Free-tier endpoints | open (blocked by #14, #16) | [#18](https://github.com/romeo-folie/llm-pricing-api/issues/18) |
-| #20 | Developer+ endpoints | open (blocked by #14, #16) | [#20](https://github.com/romeo-folie/llm-pricing-api/issues/20) |
-| #13 | Pro endpoints + webhook asynq delivery | open (blocked by #14, #16) | [#13](https://github.com/romeo-folie/llm-pricing-api/issues/13) |
-| #15 | SSE stub + discovery endpoints | open (blocked by #14, #16) | [#15](https://github.com/romeo-folie/llm-pricing-api/issues/15) |
-| #17 | Integration test suite | open (blocked by #18, #20, #13, #15) | [#17](https://github.com/romeo-folie/llm-pricing-api/issues/17) |
+| #12 | OTel SDK init + zerolog structured logging | done | [#12](https://github.com/romeo-folie/llm-pricing-api/issues/12) |
+| #14 | Unkey auth middleware + rate limiting | done | [#14](https://github.com/romeo-folie/llm-pricing-api/issues/14) |
+| #16 | Shared API layer (RFC 7807, caching, trust metadata) | done | [#16](https://github.com/romeo-folie/llm-pricing-api/issues/16) |
+| #18 | Free-tier endpoints | done | [#18](https://github.com/romeo-folie/llm-pricing-api/issues/18) |
+| #20 | Developer+ endpoints | done | [#20](https://github.com/romeo-folie/llm-pricing-api/issues/20) |
+| #13 | Pro endpoints + webhook asynq delivery | done | [#13](https://github.com/romeo-folie/llm-pricing-api/issues/13) |
+| #15 | SSE stub + discovery endpoints | done | [#15](https://github.com/romeo-folie/llm-pricing-api/issues/15) |
+| #17 | Integration test suite | open | [#17](https://github.com/romeo-folie/llm-pricing-api/issues/17) |
 | #19 | Railway deployment + load test | open (blocked by #17) | [#19](https://github.com/romeo-folie/llm-pricing-api/issues/19) |
 
-**Next action:** Run `/pm:issue-start 12` to begin the OTel SDK + zerolog foundation task.
+**Next action:** Run `/pm:issue-start 17` — integration test suite is now unblocked.
 
 ---
 
