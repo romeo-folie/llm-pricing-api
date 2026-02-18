@@ -129,6 +129,7 @@ func main() {
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
 
 	addr := fmt.Sprintf(":%s", cfg.AppPort)
 	log.Info().Str("addr", addr).Str("env", cfg.AppEnv).Msg("starting api")
