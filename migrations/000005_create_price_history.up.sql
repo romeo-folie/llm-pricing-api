@@ -17,4 +17,4 @@ CREATE INDEX idx_price_history_source         ON price_history (source_id);
 
 -- Prevent duplicate writes from scrapers re-submitting the same confirmed event.
 CREATE UNIQUE INDEX idx_price_history_dedup
-    ON price_history (model_id, source_id, confirmed_at);
+    ON price_history (model_id, source_id, confirmed_at, recorded_at);

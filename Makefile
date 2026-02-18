@@ -1,3 +1,6 @@
+-include .env
+export
+
 .PHONY: setup up down logs migrate-up migrate-down build run worker test tidy install-tools
 
 setup:
