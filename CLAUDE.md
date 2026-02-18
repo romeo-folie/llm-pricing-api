@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Clarifying Questions Before Execution
+
+Before implementing any requested feature or task, always eliminate ambiguity first. Use the `AskUserQuestion` tool for quick targeted questions, or invoke the `/interview` skill for broader requirements gathering. Do not begin writing code until all ambiguities are resolved. Specifically, ask about:
+
+- Scope boundaries (what is explicitly out of scope)
+- Edge cases and error handling expectations
+- Preferred libraries or patterns if multiple options exist
+- Integration points with existing code
+- Any constraints (performance, security, backwards compatibility)
+
 ## Development Workflow — CCPM
 
 This project uses **CCPM** (Claude Code Project Manager) for task management via GitHub Issues. The `/pm` slash commands are installed in `.claude/commands/pm/`.
@@ -29,6 +39,56 @@ All commits and pull requests **must** reference the GitHub Issue they implement
 - **Pull requests**: reference the issue in the PR body with `Closes #<issue-number>` or `Resolves #<issue-number>`
 - **One issue per branch**: create a feature branch per task, named `<issue-number>-short-description` (e.g. `12-diff-engine`)
 - After completing work, use `/pm:issue-close <issue-number>` to mark the task done — do not close issues without a corresponding commit or PR
+
+## Documentation
+
+Documentation is a **top-priority, first-class deliverable** — not an afterthought. Agents operate with significant autonomy in this repository, so the codebase must be self-explanatory to any reader without prior context.
+
+### Module READMEs
+
+Every module (i.e. every package under `internal/`, `cmd/`, `mcp/`, `frontend/`, and any other top-level directory containing code) **must** have a `README.md` that includes:
+
+- **Purpose** — what problem this module solves and where it fits in the architecture.
+- **Structure** — a directory/file tree annotated with a one-line description of each file's role.
+- **Key components** — a short prose explanation of the main types, functions, or subsystems and how they interact.
+- **Dependencies** — which other modules or external services this module depends on.
+- **Usage** — example invocations, configuration, or integration notes relevant to the module.
+
+### Keeping Docs in Sync
+
+After every feature or task that touches a module:
+
+1. Review the module's `README.md` against the current code.
+2. Update any sections that are stale, incomplete, or missing.
+3. Add entries for any new files, types, or significant functions introduced.
+4. The README update must be included in the same commit as the code change — never deferred.
+
+A feature is **not complete** until the README for every touched module accurately reflects the post-change state of the code.
+
+## Code Review Gate
+
+After implementing any feature or task, you **must** run the `/code-reviewer` skill before reporting the task as complete:
+
+1. Invoke `/code-reviewer` on the changed code using **Sonnet** as the model.
+2. Fix every issue and test recommendation it identifies.
+3. Re-run `/code-reviewer` on the fixes using **Opus** as the model.
+4. Fix any additional findings from the Opus pass.
+5. Repeat with Opus until the review comes back clean with no actionable findings.
+6. Only then may you mark the task complete or close the issue.
+
+If a flagged issue is intentionally skipped (e.g. out of scope, deferred, won't-fix), you **must** state the reason in the task completion summary. Do not silently skip findings. Every skipped item needs a one-line justification alongside it.
+
+A task is **not done** until the code-reviewer confirms it is clean or all remaining findings have documented skip reasons.
+
+## Pre-Commit Checklist
+
+Before creating any commit, the following must all pass:
+
+1. **All tests green**: `go test ./...` exits with zero failures.
+2. **Build succeeds**: `go build ./...` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors.
+3. **Code review clean**: `/code-reviewer` returns no actionable findings (see Code Review Gate above).
+
+Do not commit if any of the above fail.
 
 ## Test-Driven Development
 
@@ -103,6 +163,10 @@ The system has six layers, built in this order:
 - **Trust metadata on every response**: `confirmed_at`, `source`, `confidence` (high/medium/low), `age_hours`, `change_velocity`. Agents use these to decide whether to trust a value.
 - **Tier gating via Unkey middleware**: Fiber middleware validates the API key, extracts the tier, and attaches it to the request context. Cache Unkey validation in Redis with 30s TTL.
 - **Webhook delivery**: via asynq jobs, at-least-once with 3 retries and exponential backoff.
+
+## File Reading
+
+When reading `.docx` files, use the Read tool directly (it supports binary/image reading) rather than falling back to a Python extraction script. Only use a Python-based extraction approach if the Read tool fails to return usable content.
 
 ## Build & Run Commands
 

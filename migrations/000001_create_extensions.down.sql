@@ -1,0 +1,2 @@
+-- TimescaleDB extension is intentionally not dropped to avoid data loss.
+-- To remove: DROP EXTENSION timescaledb CASCADE;
