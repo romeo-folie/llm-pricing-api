@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	_ "embed"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -11,46 +11,38 @@ import (
 	"llm-pricing-api/internal/api"
 )
 
-// defaultOpenAPISpecPath is the path to the OpenAPI 3.1 JSON document
-// relative to the module root. Go's //go:embed directive cannot reference
-// paths above the package directory (e.g. "../../../api/openapi.json"), so
-// the spec is read from disk at request time instead of embedded at build time.
-const defaultOpenAPISpecPath = "api/openapi.json"
+// openAPISpec holds the OpenAPI 3.1 JSON document embedded at build time.
+// Embedding at compile time eliminates runtime file I/O and working-directory
+// dependencies, ensuring the spec is always available regardless of where the
+// binary is launched from (e.g. Docker, Railway).
+//
+//go:embed static/openapi.json
+var openAPISpec []byte
 
 // DiscoveryHandler serves the three public discovery endpoints:
-//   - GET /openapi.json        — OpenAPI 3.1 specification
+//   - GET /openapi.json              — OpenAPI 3.1 specification
 //   - GET /.well-known/ai-plugin.json — AI plugin manifest
-//   - GET /llms.txt            — plain-text model price listing for agent context
+//   - GET /llms.txt                  — plain-text model price listing for agent context
 type DiscoveryHandler struct {
-	store       Store
-	specPath    string // path to api/openapi.json; overrideable in tests
+	store Store
 }
 
 // NewDiscoveryHandler creates a DiscoveryHandler backed by the supplied pgx pool.
-// The OpenAPI spec is read from the default path relative to the module root.
 func NewDiscoveryHandler(db *pgxpool.Pool) *DiscoveryHandler {
-	return &DiscoveryHandler{
-		store:    NewPgxStore(db),
-		specPath: defaultOpenAPISpecPath,
-	}
+	return &DiscoveryHandler{store: NewPgxStore(db)}
 }
 
-// NewDiscoveryHandlerForTest creates a DiscoveryHandler with the supplied
-// Store and a custom specPath. Exported so that external test packages can
-// inject a mock store and point to the spec file without needing a live DB.
-func NewDiscoveryHandlerForTest(store Store, specPath string) *DiscoveryHandler {
-	return &DiscoveryHandler{store: store, specPath: specPath}
+// NewDiscoveryHandlerForTest creates a DiscoveryHandler with the supplied Store.
+// Exported so external test packages can inject a mock store without a live DB.
+func NewDiscoveryHandlerForTest(store Store) *DiscoveryHandler {
+	return &DiscoveryHandler{store: store}
 }
 
 // GetOpenAPI serves GET /openapi.json.
-// Returns the OpenAPI 3.1 JSON document read from disk with no authentication.
+// Returns the compile-time embedded OpenAPI 3.1 JSON document.
 func (h *DiscoveryHandler) GetOpenAPI(c *fiber.Ctx) error {
-	spec, err := os.ReadFile(h.specPath)
-	if err != nil || len(spec) == 0 {
-		return api.NewInternalError("OpenAPI specification is unavailable")
-	}
 	c.Set("Content-Type", "application/json")
-	return c.Send(spec)
+	return c.Send(openAPISpec)
 }
 
 // GetAIPlugin serves GET /.well-known/ai-plugin.json.

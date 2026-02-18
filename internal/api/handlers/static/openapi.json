@@ -82,8 +82,7 @@
             "description": "Model modality (e.g. 'text', 'multimodal')."
           },
           "context_window": {
-            "type": "integer",
-            "nullable": true,
+            "type": ["integer", "null"],
             "description": "Context window size in tokens."
           },
           "price_input": {
