@@ -106,18 +106,17 @@ func main() {
 	}
 	defer scheduler.Shutdown()
 
-	// Graceful shutdown on SIGINT/SIGTERM
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-quit
-		slog.Info("worker shutting down...")
-		srv.Shutdown()
-	}()
-
 	slog.Info("worker started", "env", cfg.AppEnv, "concurrency", 10)
-	if err := srv.Run(mux); err != nil {
+	if err := srv.Start(mux); err != nil {
 		slog.Error("worker error", "err", err)
 		os.Exit(1)
 	}
+
+	// Block until SIGINT or SIGTERM, then shut down gracefully.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+	<-quit
+	slog.Info("worker shutting down...")
+	srv.Shutdown()
 }
