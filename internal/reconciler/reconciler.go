@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"slices"
 	"sync"
@@ -13,45 +12,12 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/models"
+	"llm-pricing-api/internal/webhooks"
 )
-
-const typeWebhookDeliver = "webhook:deliver"
-
-// webhookPayload is the event body sent to registered webhook URLs.
-type webhookPayload struct {
-	ModelID        int       `json:"model_id"`
-	Provider       string    `json:"provider"`
-	OldPriceInput  float64   `json:"old_price_input"`
-	OldPriceOutput float64   `json:"old_price_output"`
-	NewPriceInput  float64   `json:"new_price_input"`
-	NewPriceOutput float64   `json:"new_price_output"`
-	ConfirmedAt    time.Time `json:"confirmed_at"`
-	Source         string    `json:"source"`
-}
-
-// webhookTaskPayload is the asynq task payload for webhook delivery.
-type webhookTaskPayload struct {
-	WebhookID string         `json:"webhook_id"`
-	URL       string         `json:"url"`
-	Secret    string         `json:"secret"`
-	Event     webhookPayload `json:"event"`
-}
-
-// newWebhookDeliverTask builds an asynq.Task for TypeWebhookDeliver.
-func newWebhookDeliverTask(p webhookTaskPayload) (*asynq.Task, error) {
-	data, err := json.Marshal(p)
-	if err != nil {
-		return nil, fmt.Errorf("marshal webhook task payload: %w", err)
-	}
-	return asynq.NewTask(typeWebhookDeliver,
-		data,
-		asynq.MaxRetry(3),
-		asynq.Timeout(30*time.Second),
-	), nil
-}
 
 const (
 	// epsilon is the floating-point tolerance used when comparing prices.
@@ -84,11 +50,12 @@ type Reconciler struct {
 	pending     map[string]*pendingChange // key: slug+":"+field+":"+source
 	mu          sync.Mutex
 	asynqClient *asynq.Client // optional; nil = webhook delivery disabled
+	logger      zerolog.Logger
 }
 
 // New returns a Reconciler backed by the given PostgreSQL pool.
 func New(db *pgxpool.Pool) *Reconciler {
-	return NewWithStore(&pgxStore{db: db})
+	return NewWithStore(&pgxStore{db: db, logger: zerolog.Nop()})
 }
 
 // NewWithStore returns a Reconciler that uses the provided Store.
@@ -97,6 +64,7 @@ func NewWithStore(s Store) *Reconciler {
 	return &Reconciler{
 		store:   s,
 		pending: make(map[string]*pendingChange),
+		logger:  zerolog.Nop(),
 	}
 }
 
@@ -105,6 +73,16 @@ func NewWithStore(s Store) *Reconciler {
 // webhook delivery (the default).
 func (r *Reconciler) SetAsynqClient(c *asynq.Client) {
 	r.asynqClient = c
+}
+
+// SetLogger configures the zerolog.Logger used by the Reconciler and its
+// underlying store (if the store supports it). The default is zerolog.Nop().
+func (r *Reconciler) SetLogger(l zerolog.Logger) {
+	r.logger = l
+	// Propagate to the store if it supports logger injection.
+	if s, ok := r.store.(*pgxStore); ok {
+		s.logger = l
+	}
 }
 
 // sweepStalePending removes pending entries whose lastSeen time is older than
@@ -144,7 +122,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 	}
 
 	r.sweepStalePending()
-	slog.Info("reconciler: starting", "num_diffs", len(diffs))
+	r.logger.Info().Int("num_diffs", len(diffs)).Msg("reconciler: starting")
 
 	// --- resolve source IDs (cached for this cycle to avoid N+1 queries) ---
 	sourceIDs := make(map[string]int, len(diffs))
@@ -154,7 +132,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		}
 		id, err := r.store.LookupSourceID(ctx, d.Source)
 		if err != nil {
-			slog.Warn("reconciler: unknown source — skipping its diffs", "source", d.Source, "err", err)
+			r.logger.Warn().Str("source", d.Source).Err(err).Msg("reconciler: unknown source — skipping its diffs")
 			sourceIDs[d.Source] = -1 // sentinel: invalid
 			continue
 		}
@@ -181,7 +159,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 	for k, groupDiffs := range groups {
 		modelID, err := r.store.LookupModelID(ctx, k.slug)
 		if err != nil {
-			slog.Warn("reconciler: unknown model — skipping", "slug", k.slug, "err", err)
+			r.logger.Warn().Str("slug", k.slug).Err(err).Msg("reconciler: unknown model — skipping")
 			continue
 		}
 
@@ -195,7 +173,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 	r.mu.Lock()
 	pendingCount := len(r.pending)
 	r.mu.Unlock()
-	slog.Info("reconciler: done", "pending_entries", pendingCount)
+	r.logger.Info().Int("pending_entries", pendingCount).Msg("reconciler: done")
 	return nil
 }
 
@@ -285,14 +263,17 @@ func (r *Reconciler) processMultiSource(
 	}
 
 	if maxDelta > models.DiscrepancyThreshold {
-		slog.Warn("reconciler: flagging discrepancy",
-			"slug", slug, "field", field,
-			"value_a", valueA, "value_b", valueB,
-			"delta_pct", maxDelta)
+		r.logger.Warn().
+			Str("slug", slug).
+			Str("field", string(field)).
+			Float64("value_a", valueA).
+			Float64("value_b", valueB).
+			Float64("delta_pct", maxDelta).
+			Msg("reconciler: flagging discrepancy")
 		if err := r.store.FlagDiscrepancy(ctx, modelID, srcA, srcB, field, valueA, valueB, maxDelta); err != nil {
 			// Duplicate pending review (DB ON CONFLICT DO NOTHING) surfaces as nil, but
 			// any other store error is demoted to a warning so it doesn't abort the cycle.
-			slog.Warn("reconciler: FlagDiscrepancy failed", "err", err)
+			r.logger.Warn().Err(err).Msg("reconciler: FlagDiscrepancy failed")
 		}
 		// If a consensus of 2+ sources exists, publish despite the outlier.
 		// This implements the PRD rule: single noisy source ≠ block on majority agreement.
@@ -359,8 +340,11 @@ func (r *Reconciler) publish(
 ) {
 	currInput, currOutput, _, err := r.store.LookupCurrentPrice(ctx, modelID, sourceID)
 	if err != nil {
-		slog.Warn("reconciler: LookupCurrentPrice failed; unchanged field will be 0",
-			"model_id", modelID, "source_id", sourceID, "err", err)
+		r.logger.Warn().
+			Int("model_id", modelID).
+			Int("source_id", sourceID).
+			Err(err).
+			Msg("reconciler: LookupCurrentPrice failed; unchanged field will be 0")
 	}
 
 	var input, output float64
@@ -372,14 +356,20 @@ func (r *Reconciler) publish(
 		input = currInput
 		output = newValue
 	default:
-		slog.Error("reconciler: unknown PriceField; skipping publish to prevent data corruption",
-			"field", field, "model_id", modelID, "source_id", sourceID)
+		r.logger.Error().
+			Str("field", string(field)).
+			Int("model_id", modelID).
+			Int("source_id", sourceID).
+			Msg("reconciler: unknown PriceField; skipping publish to prevent data corruption")
 		return
 	}
 
 	if err := r.store.PublishPrice(ctx, modelID, sourceID, input, output, confidence); err != nil {
-		slog.Warn("reconciler: PublishPrice failed",
-			"model_id", modelID, "source_id", sourceID, "err", err)
+		r.logger.Warn().
+			Int("model_id", modelID).
+			Int("source_id", sourceID).
+			Err(err).
+			Msg("reconciler: PublishPrice failed")
 		return
 	}
 
@@ -396,29 +386,26 @@ func (r *Reconciler) enqueueWebhooks(
 	oldInput, oldOutput float64,
 	newInput, newOutput float64,
 ) {
-	webhooks, err := r.store.ListActiveWebhooks(ctx)
+	activeWebhooks, err := r.store.ListActiveWebhooks(ctx)
 	if err != nil {
-		slog.Warn("reconciler: ListActiveWebhooks failed; skipping webhook fan-out",
-			"model_id", modelID, "err", err)
+		r.logger.Warn().Int("model_id", modelID).Err(err).Msg("reconciler: ListActiveWebhooks failed; skipping webhook fan-out")
 		return
 	}
-	if len(webhooks) == 0 {
+	if len(activeWebhooks) == 0 {
 		return
 	}
 
 	sourceName, err := r.store.LookupSourceName(ctx, sourceID)
 	if err != nil {
-		slog.Warn("reconciler: LookupSourceName failed; using empty string in webhook payload",
-			"source_id", sourceID, "err", err)
+		r.logger.Warn().Int("source_id", sourceID).Err(err).Msg("reconciler: LookupSourceName failed; using empty string in webhook payload")
 	}
 
 	provider, err := r.store.LookupModelProvider(ctx, modelID)
 	if err != nil {
-		slog.Warn("reconciler: LookupModelProvider failed; using empty string in webhook payload",
-			"model_id", modelID, "err", err)
+		r.logger.Warn().Int("model_id", modelID).Err(err).Msg("reconciler: LookupModelProvider failed; using empty string in webhook payload")
 	}
 
-	event := webhookPayload{
+	event := webhooks.Payload{
 		ModelID:        modelID,
 		Provider:       provider,
 		OldPriceInput:  oldInput,
@@ -429,21 +416,32 @@ func (r *Reconciler) enqueueWebhooks(
 		Source:         sourceName,
 	}
 
-	for _, wh := range webhooks {
-		task, err := newWebhookDeliverTask(webhookTaskPayload{
+	for _, wh := range activeWebhooks {
+		task, err := newWebhookDeliverTask(webhooks.TaskPayload{
 			WebhookID: wh.ID,
 			URL:       wh.URL,
 			Secret:    wh.Secret,
 			Event:     event,
 		})
 		if err != nil {
-			slog.Warn("reconciler: failed to build webhook task",
-				"webhook_id", wh.ID, "err", err)
+			r.logger.Warn().Str("webhook_id", wh.ID).Err(err).Msg("reconciler: failed to build webhook task")
 			continue
 		}
 		if _, err := r.asynqClient.EnqueueContext(ctx, task); err != nil {
-			slog.Warn("reconciler: failed to enqueue webhook delivery",
-				"webhook_id", wh.ID, "err", err)
+			r.logger.Warn().Str("webhook_id", wh.ID).Err(err).Msg("reconciler: failed to enqueue webhook delivery")
 		}
 	}
+}
+
+// newWebhookDeliverTask builds an asynq.Task for webhooks.TypeWebhookDeliver.
+func newWebhookDeliverTask(p webhooks.TaskPayload) (*asynq.Task, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal webhook task payload: %w", err)
+	}
+	return asynq.NewTask(webhooks.TypeWebhookDeliver,
+		data,
+		asynq.MaxRetry(3),
+		asynq.Timeout(30*time.Second),
+	), nil
 }

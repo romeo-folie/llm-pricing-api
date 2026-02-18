@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/models"
 )
@@ -64,7 +64,8 @@ type Store interface {
 
 // pgxStore is the PostgreSQL-backed implementation of Store.
 type pgxStore struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger zerolog.Logger
 }
 
 func (s *pgxStore) LookupSourceID(ctx context.Context, name string) (int, error) {
@@ -145,8 +146,10 @@ func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, inpu
 		// confirmed_at, recorded_at) already exists. This indicates a double-publish
 		// within the same nanosecond — effectively impossible in normal operation but
 		// warrants a warning since price_history is intended to be append-only.
-		slog.Warn("store: price_history insert suppressed by duplicate constraint — possible double-publish",
-			"model_id", modelID, "source_id", sourceID)
+		s.logger.Warn().
+			Int("model_id", modelID).
+			Int("source_id", sourceID).
+			Msg("store: price_history insert suppressed by duplicate constraint — possible double-publish")
 	}
 
 	_, err = tx.Exec(ctx, `

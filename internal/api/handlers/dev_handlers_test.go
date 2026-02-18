@@ -84,8 +84,8 @@ func sampleContextRow(id int) handlers.ContextModelRow {
 func TestGetModelHistory_OK(t *testing.T) {
 	rows := []handlers.HistoryRow{sampleHistoryRow(0), sampleHistoryRow(1)}
 	store := &mockStore{
-		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
-			return sampleModel(id), nil
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
 		},
 		getModelHistory: func(_ context.Context, _ int, _ handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
 			return rows, nil
@@ -122,8 +122,8 @@ func TestGetModelHistory_OK(t *testing.T) {
 
 func TestGetModelHistory_NotFound_Returns404(t *testing.T) {
 	store := &mockStore{
-		getModel: func(_ context.Context, _ int) (handlers.ModelRow, error) {
-			return handlers.ModelRow{}, handlers.ErrNotFound
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return false, nil
 		},
 	}
 	app := newDevApp(store)
@@ -155,8 +155,8 @@ func TestGetModelHistory_ZeroID_Returns400(t *testing.T) {
 
 func TestGetModelHistory_InvalidFromDate_Returns400(t *testing.T) {
 	store := &mockStore{
-		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
-			return sampleModel(id), nil
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
 		},
 	}
 	app := newDevApp(store)
@@ -170,8 +170,8 @@ func TestGetModelHistory_InvalidFromDate_Returns400(t *testing.T) {
 
 func TestGetModelHistory_InvalidToDate_Returns400(t *testing.T) {
 	store := &mockStore{
-		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
-			return sampleModel(id), nil
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
 		},
 	}
 	app := newDevApp(store)
@@ -186,8 +186,8 @@ func TestGetModelHistory_InvalidToDate_Returns400(t *testing.T) {
 func TestGetModelHistory_DateFiltersPassedToStore(t *testing.T) {
 	var capturedFilter handlers.HistoryFilter
 	store := &mockStore{
-		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
-			return sampleModel(id), nil
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
 		},
 		getModelHistory: func(_ context.Context, _ int, f handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
 			capturedFilter = f
@@ -209,10 +209,21 @@ func TestGetModelHistory_DateFiltersPassedToStore(t *testing.T) {
 	}
 }
 
+func TestGetModelHistory_InvertedDateRange_Returns400(t *testing.T) {
+	app := newDevApp(&mockStore{})
+
+	// from is after to — should be rejected before the existence check.
+	status, body := get(t, app, "/v1/models/1/history?from=2026-02-01T00:00:00Z&to=2026-01-01T00:00:00Z")
+
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for inverted date range, got %d; body: %s", status, body)
+	}
+}
+
 func TestGetModelHistory_EmptyHistory_Returns200WithEmptyArray(t *testing.T) {
 	store := &mockStore{
-		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
-			return sampleModel(id), nil
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
 		},
 		getModelHistory: func(_ context.Context, _ int, _ handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
 			return nil, nil
@@ -645,8 +656,8 @@ func TestGetContext_FreeTier_Returns403(t *testing.T) {
 // DeveloperTier key should pass RequireTier on Developer+ endpoints.
 func TestDevEndpoints_DeveloperTier_Returns200(t *testing.T) {
 	store := &mockStore{
-		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
-			return sampleModel(id), nil
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
 		},
 		getModelHistory: func(_ context.Context, _ int, _ handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
 			return []handlers.HistoryRow{sampleHistoryRow(0)}, nil

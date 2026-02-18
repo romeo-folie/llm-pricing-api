@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"time"
 
@@ -38,18 +39,26 @@ func NewSSEHandler() (*SSEHandler, error) {
 //
 // Full reconnection logic (Last-Event-ID, real price-change events) is deferred
 // to Phase 4.
+//
+// The activeConns counter is incremented before SetBodyStreamWriter and
+// decremented inside the writer callback, so the metric correctly tracks the
+// lifetime of the stream goroutine rather than the handler function.
 func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	ctx := c.Context()
-	h.activeConns.Add(ctx, 1)
-	defer h.activeConns.Add(ctx, -1)
+	h.activeConns.Add(c.Context(), 1)
 
 	c.Status(fiber.StatusOK)
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Decrement inside the writer callback so the counter tracks the actual
+		// goroutine lifetime, not the handler function return.
+		// context.Background() is used because the fasthttp ctx may be recycled
+		// after the handler returns.
+		defer h.activeConns.Add(context.Background(), -1)
+
 		// Send initial keepalive comment so the client knows the stream is live.
 		if _, err := fmt.Fprint(w, ": ok\n\n"); err != nil {
 			return

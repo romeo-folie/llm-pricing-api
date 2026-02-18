@@ -26,7 +26,8 @@ type historyItemResponse struct {
 //   - to:   ISO 8601 timestamp — include records confirmed at or before this time.
 //
 // Records are returned in descending confirmed_at order.
-// Returns 400 for a non-integer :id or an unparseable date filter.
+// Returns 400 for a non-integer :id, an unparseable date filter, or an
+// inverted date range (from after to).
 // Returns 404 if no model with the given ID exists.
 func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 	idStr := c.Params("id")
@@ -53,14 +54,18 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 		filter.To = &t
 	}
 
-	// Verify the model exists before querying history; GetModelHistory on a
-	// missing model returns an empty slice rather than ErrNotFound.
-	model, err := h.store.GetModel(c.Context(), id)
+	// Validate that from is not after to when both are provided.
+	if filter.From != nil && filter.To != nil && filter.From.After(*filter.To) {
+		return api.NewBadRequest("from must be before to")
+	}
+
+	// Use a cheap existence check rather than the full GetModel join.
+	exists, err := h.store.ModelExists(c.Context(), id)
 	if err != nil {
-		if err == ErrNotFound {
-			return api.NewNotFound("model not found")
-		}
 		return api.NewInternalError("failed to look up model")
+	}
+	if !exists {
+		return api.NewNotFound("model not found")
 	}
 
 	history, err := h.store.GetModelHistory(c.Context(), id, filter)
@@ -92,12 +97,6 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 		}
 	}
 	meta := api.ComputeTrustMeta(trustRows)
-
-	// Fall back to the model's own pre-computed meta when there are no
-	// history rows (e.g. strict date filter returned nothing).
-	if len(history) == 0 {
-		meta = model.Meta
-	}
 
 	return api.OK(c, items, meta)
 }

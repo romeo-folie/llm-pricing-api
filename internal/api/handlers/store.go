@@ -45,9 +45,19 @@ type Store interface {
 	// compute TrustMeta. The rows are ordered by confirmed_at ascending.
 	GetPriceHistory(ctx context.Context, modelID int) ([]api.PriceHistoryRow, error)
 
+	// GetPriceHistoryBatch returns price history for multiple models in a single
+	// query. Returns a map from model_id to []api.PriceHistoryRow ordered by
+	// confirmed_at ascending for each model. Use this in list endpoints to avoid
+	// N+1 query patterns.
+	GetPriceHistoryBatch(ctx context.Context, modelIDs []int) (map[int][]api.PriceHistoryRow, error)
+
 	// GetModelHistory returns paginated price history for the
 	// /v1/models/:id/history endpoint (Developer+ tier, issue #20).
 	GetModelHistory(ctx context.Context, modelID int, filter HistoryFilter) ([]HistoryRow, error)
+
+	// ModelExists returns true if a model with the given id exists.
+	// It is cheaper than GetModel because it avoids the price JOIN.
+	ModelExists(ctx context.Context, id int) (bool, error)
 
 	// ListModelsForContext returns the top N models for the /v1/context
 	// endpoint (Developer+ tier, issue #20).
@@ -280,13 +290,19 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 		return nil, 0, fmt.Errorf("list models rows: %w", err)
 	}
 
-	// Attach trust metadata for each model.
-	for i := range models {
-		history, err := s.GetPriceHistory(ctx, models[i].ID)
-		if err != nil {
-			return nil, 0, fmt.Errorf("list models history for %d: %w", models[i].ID, err)
+	// Batch-load price history for all returned models in a single query.
+	if len(models) > 0 {
+		ids := make([]int, len(models))
+		for i, m := range models {
+			ids[i] = m.ID
 		}
-		models[i].Meta = api.ComputeTrustMeta(history)
+		historyBatch, err := s.GetPriceHistoryBatch(ctx, ids)
+		if err != nil {
+			return nil, 0, fmt.Errorf("list models history batch: %w", err)
+		}
+		for i := range models {
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+		}
 	}
 
 	return models, total, nil
@@ -438,13 +454,19 @@ func (s *pgxStore) CompareModels(ctx context.Context, ids []int) ([]ModelRow, er
 		}
 	}
 
-	// Attach trust metadata.
-	for i := range models {
-		history, err := s.GetPriceHistory(ctx, models[i].ID)
-		if err != nil {
-			return nil, fmt.Errorf("compare models history for %d: %w", models[i].ID, err)
+	// Batch-load price history for all returned models in a single query.
+	if len(models) > 0 {
+		ids := make([]int, len(models))
+		for i, m := range models {
+			ids[i] = m.ID
 		}
-		models[i].Meta = api.ComputeTrustMeta(history)
+		historyBatch, err := s.GetPriceHistoryBatch(ctx, ids)
+		if err != nil {
+			return nil, fmt.Errorf("compare models history batch: %w", err)
+		}
+		for i := range models {
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+		}
 	}
 
 	return models, nil
@@ -559,6 +581,83 @@ func (s *pgxStore) GetPriceHistory(ctx context.Context, modelID int) ([]api.Pric
 		history = append(history, r)
 	}
 	return history, rows.Err()
+}
+
+// GetPriceHistoryBatch returns price history for multiple models in a single
+// query. The returned map is keyed by model_id; rows within each slice are
+// ordered by confirmed_at ascending.
+func (s *pgxStore) GetPriceHistoryBatch(ctx context.Context, modelIDs []int) (map[int][]api.PriceHistoryRow, error) {
+	if len(modelIDs) == 0 {
+		return map[int][]api.PriceHistoryRow{}, nil
+	}
+
+	// Build the $1,$2,... placeholder list and args slice.
+	args := make([]any, len(modelIDs))
+	placeholders := make([]string, len(modelIDs))
+	for i, id := range modelIDs {
+		args[i] = id
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+
+	sql := fmt.Sprintf(`
+		SELECT
+			ph.model_id,
+			ph.input_cost_per_token::float8,
+			ph.output_cost_per_token::float8,
+			COALESCE(src.name, ''),
+			ph.confirmed_at,
+			ph.recorded_at
+		FROM price_history ph
+		LEFT JOIN sources src ON src.id = ph.source_id
+		WHERE ph.model_id = ANY(ARRAY[%s]::int[])
+		ORDER BY ph.model_id, ph.confirmed_at ASC
+	`, joinStrings(placeholders))
+
+	rows, err := s.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get price history batch: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int][]api.PriceHistoryRow, len(modelIDs))
+	for rows.Next() {
+		var modelID int
+		var r api.PriceHistoryRow
+		if err := rows.Scan(
+			&modelID,
+			&r.InputCostPerToken, &r.OutputCostPerToken,
+			&r.Source, &r.ConfirmedAt, &r.RecordedAt,
+		); err != nil {
+			return nil, fmt.Errorf("get price history batch scan: %w", err)
+		}
+		result[modelID] = append(result[modelID], r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get price history batch rows: %w", err)
+	}
+	return result, nil
+}
+
+// joinStrings concatenates a slice of strings with ", " between each element.
+func joinStrings(ss []string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
+}
+
+// ModelExists returns true if a model row with the given id exists.
+func (s *pgxStore) ModelExists(ctx context.Context, id int) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM models WHERE id = $1)`, id).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("model exists %d: %w", id, err)
+	}
+	return exists, nil
 }
 
 // GetModelHistory returns paginated price_history for the
@@ -723,13 +822,19 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 		return nil, fmt.Errorf("recommend models rows: %w", err)
 	}
 
-	// Attach trust metadata.
-	for i := range models {
-		history, err := s.GetPriceHistory(ctx, models[i].ID)
-		if err != nil {
-			return nil, fmt.Errorf("recommend models history for %d: %w", models[i].ID, err)
+	// Batch-load price history for all returned models in a single query.
+	if len(models) > 0 {
+		ids := make([]int, len(models))
+		for i, m := range models {
+			ids[i] = m.ID
 		}
-		models[i].Meta = api.ComputeTrustMeta(history)
+		historyBatch, err := s.GetPriceHistoryBatch(ctx, ids)
+		if err != nil {
+			return nil, fmt.Errorf("recommend models history batch: %w", err)
+		}
+		for i := range models {
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+		}
 	}
 
 	return models, nil

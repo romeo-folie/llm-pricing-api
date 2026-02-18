@@ -11,5 +11,9 @@ package worker
 const (
 	TaskOpenRouterScrape = "scrape:openrouter"
 	TaskLiteLLMScrape    = "scrape:litellm"
-	TypeWebhookDeliver   = "webhook:deliver"
 )
+
+// TypeWebhookDeliver is re-exported from the webhooks package for callers
+// that already import the worker package (e.g. cmd/worker/main.go).
+// The canonical definition lives in internal/webhooks to avoid import cycles.
+const TypeWebhookDeliver = "webhook:deliver"

@@ -4,6 +4,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/middleware"
@@ -36,8 +39,7 @@ type createWebhookResponse struct {
 // WebhookStore abstracts all DB operations required by WebhookHandler.
 type WebhookStore interface {
 	// CreateWebhook inserts a new webhook registration and returns the created record.
-	// secret is stored as plaintext in the DB so the reconciler can pass it
-	// to the delivery worker.
+	// secret is stored encrypted in the DB; the reconciler decrypts it before use.
 	CreateWebhook(ctx context.Context, apiKeyHash, webhookURL, secret string) (WebhookRecord, error)
 
 	// DeleteWebhook soft-deletes a webhook by ID, scoped to the given apiKeyHash
@@ -89,9 +91,74 @@ func (s *pgxWebhookStore) DeleteWebhook(ctx context.Context, id, apiKeyHash stri
 	return nil
 }
 
+// encryptSecret encrypts plaintext using AES-256-GCM with the provided 32-byte key.
+// Returns a hex-encoded string of nonce || ciphertext.
+func encryptSecret(plaintext []byte, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("create AES cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("create GCM: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return hex.EncodeToString(ciphertext), nil
+}
+
+// decryptSecret decrypts a hex-encoded nonce || ciphertext using AES-256-GCM.
+func decryptSecret(encHex string, key []byte) ([]byte, error) {
+	data, err := hex.DecodeString(encHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode hex ciphertext: %w", err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("create AES cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("create GCM: %w", err)
+	}
+	if len(data) < gcm.NonceSize() {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt: %w", err)
+	}
+	return plaintext, nil
+}
+
+// resolveWebhookKey returns a 32-byte AES key derived from hexKey.
+// If hexKey is empty, a random ephemeral key is generated and a warning is logged.
+// The caller must use the same key for encrypt and decrypt — ephemeral keys do
+// not survive process restarts.
+func resolveWebhookKey(hexKey string, log zerolog.Logger) ([]byte, error) {
+	if hexKey == "" {
+		log.Warn().Msg("WEBHOOK_SECRET_KEY is not set; using ephemeral key — webhook secrets will not survive restarts")
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("generate ephemeral webhook key: %w", err)
+		}
+		return key, nil
+	}
+	key, err := hex.DecodeString(hexKey)
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("WEBHOOK_SECRET_KEY must be a 64-char hex-encoded 32-byte key")
+	}
+	return key, nil
+}
+
 // WebhookHandler handles POST /v1/webhooks and DELETE /v1/webhooks/:id.
 type WebhookHandler struct {
-	store WebhookStore
+	store     WebhookStore
+	secretKey []byte // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
 }
 
 // WebhookHandlerExport is a test-visible alias that exposes the Store field so
@@ -114,8 +181,9 @@ func (e *WebhookHandlerExport) Delete(c *fiber.Ctx) error {
 }
 
 // Create handles POST /v1/webhooks.
-// It validates the URL, generates a random per-webhook secret, persists the
-// registration, and returns the secret exactly once in the 201 response.
+// It validates the URL, generates a random per-webhook secret, encrypts it
+// with AES-256-GCM before persisting, and returns the plaintext secret exactly
+// once in the 201 response.
 func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	var body struct {
 		URL string `json:"url"`
@@ -138,9 +206,20 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	if _, err := rand.Read(rawSecret); err != nil {
 		return api.NewInternalError("failed to generate webhook secret")
 	}
-	secret := hex.EncodeToString(rawSecret)
+	plainSecret := hex.EncodeToString(rawSecret)
 
-	rec, err := h.store.CreateWebhook(c.Context(), apiKeyHash, body.URL, secret)
+	// Encrypt the secret before storing. If no key is configured on the handler
+	// (e.g. test paths using WebhookHandlerExport), store plaintext as before.
+	secretToStore := plainSecret
+	if len(h.secretKey) == 32 {
+		encSecret, err := encryptSecret([]byte(plainSecret), h.secretKey)
+		if err != nil {
+			return api.NewInternalError("failed to encrypt webhook secret")
+		}
+		secretToStore = encSecret
+	}
+
+	rec, err := h.store.CreateWebhook(c.Context(), apiKeyHash, body.URL, secretToStore)
 	if err != nil {
 		return api.NewInternalError("failed to register webhook")
 	}
@@ -149,7 +228,7 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 		ID:        rec.ID,
 		URL:       rec.URL,
 		CreatedAt: rec.CreatedAt,
-		Secret:    secret,
+		Secret:    plainSecret,
 	}, api.TrustMeta{})
 }
 
@@ -172,4 +251,25 @@ func (h *WebhookHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// DecryptWebhookSecret decrypts an encrypted webhook secret using the provided
+// hex-encoded 32-byte key. It is exported so the reconciler can decrypt secrets
+// read from the database before passing them to delivery workers.
+func DecryptWebhookSecret(encSecret, hexKey string) (string, error) {
+	if hexKey == "" {
+		// No key configured — secret stored as plaintext (ephemeral-key startup path).
+		return encSecret, nil
+	}
+	key, err := hex.DecodeString(hexKey)
+	if err != nil || len(key) != 32 {
+		return "", fmt.Errorf("invalid WEBHOOK_SECRET_KEY: must be 64-char hex-encoded 32-byte key")
+	}
+	plain, err := decryptSecret(encSecret, key)
+	if err != nil {
+		// Fall back to treating the value as plaintext (handles rows written before
+		// encryption was enabled).
+		return encSecret, nil
+	}
+	return string(plain), nil
 }

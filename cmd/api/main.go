@@ -41,7 +41,7 @@ func main() {
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,
 		Environment: cfg.AppEnv,
-		Level:       zerolog.DebugLevel,
+		Level:       parseLogLevel(cfg.LogLevel),
 	})
 
 	ctx := context.Background()
@@ -142,7 +142,7 @@ func main() {
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
 	handlers.RegisterDev(v1, db, redisClient)
-	handlers.RegisterPro(v1, db, redisClient)
+	handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, log)
 	if err := handlers.RegisterSSE(v1); err != nil {
 		log.Fatal().Err(err).Msg("failed to register SSE handler")
 	}
@@ -181,6 +181,16 @@ func main() {
 			log.Error().Err(err).Msg("shutdown error")
 		}
 	}
+}
+
+// parseLogLevel converts a LOG_LEVEL string to a zerolog.Level.
+// Unknown or empty strings default to InfoLevel.
+func parseLogLevel(s string) zerolog.Level {
+	l, err := zerolog.ParseLevel(s)
+	if err != nil {
+		return zerolog.InfoLevel
+	}
+	return l
 }
 
 // requestLogger returns a Fiber middleware that logs each completed request

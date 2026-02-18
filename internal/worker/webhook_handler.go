@@ -12,27 +12,17 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+
+	"llm-pricing-api/internal/webhooks"
 )
 
-// WebhookPayload is the delivery payload sent to registered webhook URLs.
-type WebhookPayload struct {
-	ModelID        int       `json:"model_id"`
-	Provider       string    `json:"provider"`
-	OldPriceInput  float64   `json:"old_price_input"`
-	OldPriceOutput float64   `json:"old_price_output"`
-	NewPriceInput  float64   `json:"new_price_input"`
-	NewPriceOutput float64   `json:"new_price_output"`
-	ConfirmedAt    time.Time `json:"confirmed_at"`
-	Source         string    `json:"source"`
-}
+// WebhookPayload is an alias for webhooks.Payload for backward compatibility
+// with callers that reference the worker package.
+type WebhookPayload = webhooks.Payload
 
-// WebhookTaskPayload is the asynq task payload (what gets enqueued).
-type WebhookTaskPayload struct {
-	WebhookID string         `json:"webhook_id"`
-	URL       string         `json:"url"`
-	Secret    string         `json:"secret"` // plaintext secret (never stored as hash; passed through queue)
-	Event     WebhookPayload `json:"event"`
-}
+// WebhookTaskPayload is an alias for webhooks.TaskPayload for backward
+// compatibility with callers that reference the worker package.
+type WebhookTaskPayload = webhooks.TaskPayload
 
 // NewWebhookDeliverTask creates an asynq task for webhook delivery.
 func NewWebhookDeliverTask(payload WebhookTaskPayload) (*asynq.Task, error) {

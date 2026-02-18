@@ -20,15 +20,17 @@ import (
 // mockStore implements handlers.Store with in-memory stubs for testing.
 // Each method field can be overridden per test.
 type mockStore struct {
-	listModels         func(ctx context.Context, filter handlers.ListModelsFilter) ([]handlers.ModelRow, int, error)
-	getModel           func(ctx context.Context, id int) (handlers.ModelRow, error)
-	listProviders      func(ctx context.Context) ([]handlers.ProviderRow, error)
-	compareModels      func(ctx context.Context, ids []int) ([]handlers.ModelRow, error)
-	listChanges        func(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, error)
-	getPriceHistory    func(ctx context.Context, modelID int) ([]api.PriceHistoryRow, error)
-	getModelHistory    func(ctx context.Context, modelID int, filter handlers.HistoryFilter) ([]handlers.HistoryRow, error)
-	listModelsForCtx   func(ctx context.Context, limit int) ([]handlers.ContextModelRow, error)
-	recommendModels    func(ctx context.Context, filter handlers.RecommendFilter) ([]handlers.ModelRow, error)
+	listModels            func(ctx context.Context, filter handlers.ListModelsFilter) ([]handlers.ModelRow, int, error)
+	getModel              func(ctx context.Context, id int) (handlers.ModelRow, error)
+	listProviders         func(ctx context.Context) ([]handlers.ProviderRow, error)
+	compareModels         func(ctx context.Context, ids []int) ([]handlers.ModelRow, error)
+	listChanges           func(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, error)
+	getPriceHistory       func(ctx context.Context, modelID int) ([]api.PriceHistoryRow, error)
+	getPriceHistoryBatch  func(ctx context.Context, modelIDs []int) (map[int][]api.PriceHistoryRow, error)
+	modelExists           func(ctx context.Context, id int) (bool, error)
+	getModelHistory       func(ctx context.Context, modelID int, filter handlers.HistoryFilter) ([]handlers.HistoryRow, error)
+	listModelsForCtx      func(ctx context.Context, limit int) ([]handlers.ContextModelRow, error)
+	recommendModels       func(ctx context.Context, filter handlers.RecommendFilter) ([]handlers.ModelRow, error)
 }
 
 func (m *mockStore) ListModels(ctx context.Context, filter handlers.ListModelsFilter) ([]handlers.ModelRow, int, error) {
@@ -73,6 +75,26 @@ func (m *mockStore) GetPriceHistory(ctx context.Context, modelID int) ([]api.Pri
 	return nil, nil
 }
 
+func (m *mockStore) GetPriceHistoryBatch(ctx context.Context, modelIDs []int) (map[int][]api.PriceHistoryRow, error) {
+	if m.getPriceHistoryBatch != nil {
+		return m.getPriceHistoryBatch(ctx, modelIDs)
+	}
+	return map[int][]api.PriceHistoryRow{}, nil
+}
+
+func (m *mockStore) ModelExists(ctx context.Context, id int) (bool, error) {
+	if m.modelExists != nil {
+		return m.modelExists(ctx, id)
+	}
+	// Default: return true if getModel is set and would not return ErrNotFound,
+	// return false otherwise (mirroring the default getModel behavior).
+	if m.getModel != nil {
+		_, err := m.getModel(ctx, id)
+		return err == nil, nil
+	}
+	return false, nil
+}
+
 func (m *mockStore) GetModelHistory(ctx context.Context, modelID int, filter handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
 	if m.getModelHistory != nil {
 		return m.getModelHistory(ctx, modelID, filter)
@@ -110,19 +132,6 @@ func newApp(store handlers.Store) *fiber.App {
 	v1.Get("/compare", h.Compare)
 	v1.Get("/changes", h.ListChanges)
 	return app
-}
-
-// do performs a GET request against the app and returns the response.
-func do(t *testing.T, app *fiber.App, path string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest("GET", path, nil)
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatalf("app.Test: %v", err)
-	}
-	// Wrap in ResponseRecorder-like struct — read body into recorder.
-	_ = resp
-	return nil // unused; callers use resp directly
 }
 
 // get performs a GET request and returns the *http.Response.
@@ -248,6 +257,29 @@ func TestListModels_InvalidPage_Returns400(t *testing.T) {
 	status, _ := get(t, app, "/v1/models?page=0")
 	if status != fiber.StatusBadRequest {
 		t.Fatalf("expected 400 for page=0, got %d", status)
+	}
+}
+
+func TestListModels_PerPageExceedsMax_Returns400(t *testing.T) {
+	app := newApp(&mockStore{})
+
+	status, body := get(t, app, "/v1/models?per_page=201")
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for per_page=201, got %d; body: %s", status, body)
+	}
+}
+
+func TestListModels_PerPageAtMax_Returns200(t *testing.T) {
+	store := &mockStore{
+		listModels: func(_ context.Context, _ handlers.ListModelsFilter) ([]handlers.ModelRow, int, error) {
+			return nil, 0, nil
+		},
+	}
+	app := newApp(store)
+
+	status, _ := get(t, app, "/v1/models?per_page=200")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200 for per_page=200 (at max), got %d", status)
 	}
 }
 

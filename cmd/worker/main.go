@@ -19,6 +19,16 @@ import (
 	"llm-pricing-api/internal/worker"
 )
 
+// parseLogLevel converts a LOG_LEVEL string to a zerolog.Level.
+// Unknown or empty strings default to InfoLevel.
+func parseLogLevel(s string) zerolog.Level {
+	l, err := zerolog.ParseLevel(s)
+	if err != nil {
+		return zerolog.InfoLevel
+	}
+	return l
+}
+
 // asynqOptFromURL converts a Redis URL (redis://[user:pass@]host:port/db)
 // or a bare host:port string into a fully-populated asynq.RedisClientOpt.
 // It preserves the username, password, and database number so that asynq
@@ -51,7 +61,7 @@ func main() {
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,
 		Environment: cfg.AppEnv,
-		Level:       zerolog.DebugLevel,
+		Level:       parseLogLevel(cfg.LogLevel),
 	})
 
 	ctx := context.Background()
@@ -74,7 +84,9 @@ func main() {
 
 	store := worker.NewPgxStore(db)
 	rec := reconciler.New(db)
+	rec.SetLogger(log)
 	h := worker.NewHandlers(store, rec)
+	h.SetLogger(log)
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)

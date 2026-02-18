@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/middleware"
 )
@@ -95,13 +96,24 @@ func RegisterSSE(v1 fiber.Router) error {
 // All routes here are gated behind RequireTier("pro") so Free and Developer
 // tier keys receive RFC 7807 403 responses.
 //
+// webhookSecretKey is the hex-encoded 32-byte AES-256-GCM key used to encrypt
+// webhook secrets at rest. Pass cfg.WebhookSecretKey from config; if empty a
+// random ephemeral key is generated (secrets won't survive restarts — a warning
+// is logged).
+//
 // Routes registered:
 //
 //	POST   /v1/webhooks     — register a webhook URL
 //	DELETE /v1/webhooks/:id — remove a webhook by ID
-func RegisterPro(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
+func RegisterPro(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client, webhookSecretKey string, log zerolog.Logger) {
+	key, err := resolveWebhookKey(webhookSecretKey, log)
+	if err != nil {
+		// resolveWebhookKey only errors on malformed hex; treat as fatal misconfiguration.
+		log.Fatal().Err(err).Msg("invalid WEBHOOK_SECRET_KEY")
+	}
+
 	ws := NewWebhookStore(db)
-	wh := &WebhookHandler{store: ws}
+	wh := &WebhookHandler{store: ws, secretKey: key}
 
 	v1.Post("/webhooks", middleware.RequireTier(middleware.TierPro), wh.Create)
 	v1.Delete("/webhooks/:id", middleware.RequireTier(middleware.TierPro), wh.Delete)

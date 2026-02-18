@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 
 	"llm-pricing-api/internal/api"
 )
+
+// MaxPerPage is the upper bound for the per_page query parameter on list endpoints.
+const MaxPerPage = 200
 
 // modelResponse is the JSON shape for a single model item.
 type modelResponse struct {
@@ -66,6 +70,9 @@ func (h *Handlers) ListModels(c *fiber.Ctx) error {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
 			return api.NewBadRequest("per_page must be a positive integer")
+		}
+		if v > MaxPerPage {
+			return api.NewBadRequest(fmt.Sprintf("per_page must not exceed %d", MaxPerPage))
 		}
 		filter.PerPage = v
 	}
