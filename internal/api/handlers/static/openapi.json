@@ -1,0 +1,1019 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LLM Pricing API",
+    "version": "1.0.0",
+    "description": "Reconciled, multi-source pricing data API for LLM models. Aggregates pricing from OpenRouter, LiteLLM, and provider docs, reconciles discrepancies, stores immutable price history, and serves it through a versioned REST API.",
+    "contact": {
+      "url": "https://llmpricing.dev"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Unkey API key. Include as: Authorization: Bearer <key>"
+      }
+    },
+    "schemas": {
+      "TrustMeta": {
+        "type": "object",
+        "description": "Trust metadata attached to every pricing response.",
+        "properties": {
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the price was most recently confirmed by reconciliation."
+          },
+          "source": {
+            "type": "string",
+            "description": "Human-readable name of the data source (e.g. 'OpenRouter', 'LiteLLM')."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "Confidence level: high = 2+ sources agree, medium = single-source confirmed, low = unconfirmed."
+          },
+          "age_hours": {
+            "type": "number",
+            "format": "float",
+            "description": "How many hours ago the price was last confirmed."
+          },
+          "change_velocity": {
+            "type": "number",
+            "format": "float",
+            "description": "Number of price changes in the past 30 days."
+          }
+        },
+        "required": ["confirmed_at", "source", "confidence", "age_hours", "change_velocity"]
+      },
+      "ModelResponse": {
+        "type": "object",
+        "description": "A single LLM model with its latest pricing.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal model ID."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider name (e.g. 'openai', 'anthropic')."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable model name."
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-safe model identifier."
+          },
+          "modality": {
+            "type": "string",
+            "description": "Model modality (e.g. 'text', 'multimodal')."
+          },
+          "context_window": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Context window size in tokens."
+          },
+          "price_input": {
+            "type": "number",
+            "format": "float",
+            "description": "Input cost per token."
+          },
+          "price_output": {
+            "type": "number",
+            "format": "float",
+            "description": "Output cost per token."
+          }
+        },
+        "required": ["id", "provider", "name", "slug", "modality", "price_input", "price_output"]
+      },
+      "ModelEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ModelResponse"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TrustMeta"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "ModelListEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelResponse"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TrustMeta"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "HistoryRow": {
+        "type": "object",
+        "description": "A single price history record.",
+        "properties": {
+          "input_cost_per_token": {
+            "type": "number",
+            "format": "float"
+          },
+          "output_cost_per_token": {
+            "type": "number",
+            "format": "float"
+          },
+          "source": {
+            "type": "string"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["input_cost_per_token", "output_cost_per_token", "source", "confirmed_at", "recorded_at"]
+      },
+      "ProviderResponse": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "model_count": {
+            "type": "integer"
+          }
+        },
+        "required": ["name", "model_count"]
+      },
+      "ChangeRow": {
+        "type": "object",
+        "description": "A detected price change event.",
+        "properties": {
+          "model_id": {
+            "type": "integer"
+          },
+          "model_slug": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "old_input": {
+            "type": "number",
+            "format": "float"
+          },
+          "old_output": {
+            "type": "number",
+            "format": "float"
+          },
+          "new_input": {
+            "type": "number",
+            "format": "float"
+          },
+          "new_output": {
+            "type": "number",
+            "format": "float"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": ["model_id", "model_slug", "provider", "old_input", "old_output", "new_input", "new_output", "confirmed_at", "source"]
+      },
+      "WebhookRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The HTTPS endpoint to receive webhook payloads."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of event types to subscribe to."
+          }
+        },
+        "required": ["url"]
+      },
+      "WebhookResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Webhook registration ID."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "url", "created_at"]
+      },
+      "ContextModelRow": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "price_input": {
+            "type": "number",
+            "format": "float"
+          },
+          "price_output": {
+            "type": "number",
+            "format": "float"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["provider", "slug", "price_input", "price_output", "confidence", "confirmed_at"]
+      },
+      "AskRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query about LLM pricing."
+          }
+        },
+        "required": ["query"]
+      },
+      "AskResponse": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "description": "Structured natural language answer."
+          },
+          "inferred_params": {
+            "type": "object",
+            "description": "Parameters inferred from the query.",
+            "additionalProperties": true
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelResponse"
+            }
+          }
+        },
+        "required": ["answer"]
+      },
+      "ProblemDetail": {
+        "type": "object",
+        "description": "RFC 7807 Problem Details for HTTP APIs.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "description": "A URI reference that identifies the problem type."
+          },
+          "title": {
+            "type": "string",
+            "description": "A short, human-readable summary of the problem type."
+          },
+          "status": {
+            "type": "integer",
+            "description": "The HTTP status code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "A human-readable explanation specific to this occurrence."
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri",
+            "description": "A URI reference that identifies the specific occurrence."
+          }
+        },
+        "required": ["type", "title", "status"]
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid API key.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetail"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "API key tier does not have access to this endpoint.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetail"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Requested resource not found.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetail"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit exceeded.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetail"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Internal server error.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetail"
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check",
+        "description": "Returns the health status of the API and its dependencies.",
+        "security": [],
+        "tags": ["system"],
+        "responses": {
+          "200": {
+            "description": "Service is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok", "degraded"] },
+                    "db": { "type": "string", "enum": ["ok", "error"] },
+                    "redis": { "type": "string", "enum": ["ok", "error"] }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more dependencies are unhealthy."
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPISpec",
+        "summary": "OpenAPI specification",
+        "description": "Returns this OpenAPI 3.1 specification document.",
+        "security": [],
+        "tags": ["discovery"],
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/ai-plugin.json": {
+      "get": {
+        "operationId": "getAIPlugin",
+        "summary": "AI plugin manifest",
+        "description": "Returns the AI plugin manifest for agent discovery.",
+        "security": [],
+        "tags": ["discovery"],
+        "responses": {
+          "200": {
+            "description": "AI plugin manifest.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema_version": { "type": "string" },
+                    "name_for_model": { "type": "string" },
+                    "description_for_model": { "type": "string" },
+                    "api": {
+                      "type": "object",
+                      "properties": {
+                        "type": { "type": "string" },
+                        "url": { "type": "string", "format": "uri" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/llms.txt": {
+      "get": {
+        "operationId": "getLLMsTxt",
+        "summary": "Plain-text model listing",
+        "description": "Returns a plain-text listing of all current model prices, one per line. Suitable for agent context loading.",
+        "security": [],
+        "tags": ["discovery"],
+        "responses": {
+          "200": {
+            "description": "Plain-text model prices.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "openai/gpt-4o: input=$2.5000/1M output=$10.0000/1M\nanthropic/claude-3-5-sonnet: input=$3.0000/1M output=$15.0000/1M"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List models",
+        "description": "Returns a paginated list of LLM models with current pricing. Available on the Free tier.",
+        "tags": ["models"],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Filter by provider name (case-insensitive).",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "description": "Filter by modality (e.g. 'text', 'multimodal').",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "min_context",
+            "in": "query",
+            "description": "Filter to models with context_window >= this value.",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (1-based).",
+            "schema": { "type": "integer", "default": 1, "minimum": 1 }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Results per page (max 200).",
+            "schema": { "type": "integer", "default": 50, "maximum": 200 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated model list.",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Total number of models matching the filter.",
+                "schema": { "type": "integer" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelListEnvelope"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/models/{id}": {
+      "get": {
+        "operationId": "getModel",
+        "summary": "Get model by ID",
+        "description": "Returns a single LLM model with its current pricing and trust metadata. Available on the Free tier.",
+        "tags": ["models"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Model integer ID.",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelEnvelope"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/models/{id}/history": {
+      "get": {
+        "operationId": "getModelHistory",
+        "summary": "Get price history for a model",
+        "description": "Returns the full price history for a model. Requires Developer tier or above.",
+        "tags": ["models"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Model integer ID.",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of time range (ISO 8601).",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of time range (ISO 8601).",
+            "schema": { "type": "string", "format": "date-time" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Price history records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/HistoryRow" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/TrustMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/compare": {
+      "get": {
+        "operationId": "compareModels",
+        "summary": "Compare models",
+        "description": "Returns pricing and trust metadata for up to 5 models side-by-side. Available on the Free tier.",
+        "tags": ["models"],
+        "parameters": [
+          {
+            "name": "models",
+            "in": "query",
+            "required": true,
+            "description": "Comma-separated list of model IDs (max 5).",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comparison results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelListEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (e.g. too many models, invalid IDs).",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetail" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/recommend": {
+      "get": {
+        "operationId": "recommendModels",
+        "summary": "Recommend models",
+        "description": "Returns models ranked by price for a given task and context size. Requires Developer tier or above.",
+        "tags": ["models"],
+        "parameters": [
+          {
+            "name": "task",
+            "in": "query",
+            "description": "Task type (e.g. 'summarization', 'code-generation').",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "context_size",
+            "in": "query",
+            "description": "Minimum context window required (tokens).",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "max_price_input",
+            "in": "query",
+            "description": "Maximum input cost per token.",
+            "schema": { "type": "number", "format": "float" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked model recommendations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelListEnvelope"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "summary": "List providers",
+        "description": "Returns all providers with their model counts. Available on the Free tier.",
+        "tags": ["providers"],
+        "responses": {
+          "200": {
+            "description": "Provider list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ProviderResponse" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/TrustMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/changes": {
+      "get": {
+        "operationId": "listChanges",
+        "summary": "List recent price changes",
+        "description": "Returns recent price change events detected by the reconciliation engine. Available on the Free tier.",
+        "tags": ["changes"],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Return changes after this timestamp (ISO 8601). Defaults to last 24 hours.",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Filter by provider name.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Price change events.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ChangeRow" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/TrustMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks": {
+      "post": {
+        "operationId": "createWebhook",
+        "summary": "Register webhook",
+        "description": "Registers a webhook endpoint to receive price change notifications. Requires Pro tier.",
+        "tags": ["webhooks"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Webhook registered successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/WebhookResponse" },
+                    "meta": { "$ref": "#/components/schemas/TrustMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid webhook URL or request body.",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetail" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}": {
+      "delete": {
+        "operationId": "deleteWebhook",
+        "summary": "Remove webhook",
+        "description": "Deletes a registered webhook. Requires Pro tier.",
+        "tags": ["webhooks"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Webhook registration ID.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Webhook deleted successfully."
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/context": {
+      "get": {
+        "operationId": "getContext",
+        "summary": "Pricing snapshot for agent context",
+        "description": "Returns a compact (~2k token) pricing snapshot suitable for inclusion in agent system prompts. Requires Developer tier or above.",
+        "tags": ["agent"],
+        "responses": {
+          "200": {
+            "description": "Context snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ContextModelRow" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/TrustMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/ask": {
+      "post": {
+        "operationId": "askNaturalLanguage",
+        "summary": "Natural language pricing query",
+        "description": "Accepts a natural language query about LLM pricing and returns a structured response. Requires Developer tier or above.",
+        "tags": ["agent"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured answer with inferred parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/AskResponse" },
+                    "meta": { "$ref": "#/components/schemas/TrustMeta" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or missing query.",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetail" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/stream/changes": {
+      "get": {
+        "operationId": "streamChanges",
+        "summary": "SSE stream of price changes",
+        "description": "Server-Sent Events stream of real-time price changes. Sends a keepalive comment every 30 seconds. Reconnection via Last-Event-ID header is supported. Requires Developer tier or above.",
+        "tags": ["agent"],
+        "parameters": [
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "description": "Resume stream from this event ID (for reconnection).",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream (text/event-stream). Connection is held open until client disconnects.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "example": ": ok\n\n"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "models",
+      "description": "LLM model listing, detail, comparison, and history."
+    },
+    {
+      "name": "providers",
+      "description": "Provider information."
+    },
+    {
+      "name": "changes",
+      "description": "Price change events."
+    },
+    {
+      "name": "webhooks",
+      "description": "Webhook registration for price change notifications (Pro tier)."
+    },
+    {
+      "name": "agent",
+      "description": "Agent-oriented endpoints: context snapshot, NL query, SSE stream."
+    },
+    {
+      "name": "discovery",
+      "description": "API discovery endpoints (public, no auth required)."
+    },
+    {
+      "name": "system",
+      "description": "Health and system endpoints."
+    }
+  ]
+}

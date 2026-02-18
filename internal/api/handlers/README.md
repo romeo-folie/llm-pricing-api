@@ -1,0 +1,91 @@
+# internal/api/handlers
+
+HTTP handler functions for the LLM pricing REST API. Every handler function reads from the `Store` interface and writes responses using the shared helpers in `internal/api` (RFC 7807 errors, envelope, trust metadata). No handler function touches the database pool directly.
+
+## Structure
+
+| File | Role |
+| --- | --- |
+| `store.go` | `Store` interface, all filter/row types, `pgxStore` production implementation |
+| `register.go` | `Handlers` struct, `RegisterFree()` and `RegisterDev()` route registration helpers |
+| `models.go` | `GET /v1/models` (paginated list) and `GET /v1/models/:id` (single model) |
+| `providers.go` | `GET /v1/providers` (providers with model counts) |
+| `compare.go` | `GET /v1/compare?models=id1,id2,...` (side-by-side pricing, max 5 models) |
+| `changes.go` | `GET /v1/changes` (recent price changes, 24h default window) |
+| `handlers_test.go` | Table-driven unit tests using Fiber's `app.Test()` and an in-memory mock store |
+| `README.md` | This file |
+
+## Key Components
+
+### Store interface
+
+All database access goes through `Store`. The production implementation (`pgxStore`) is backed by `*pgxpool.Pool`; tests use an in-process `mockStore` that replaces individual method callbacks per test.
+
+```go
+store := handlers.NewPgxStore(db)   // production
+h := handlers.New(store)            // create Handlers
+```
+
+The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProviders`, `CompareModels`, `ListChanges`, `GetPriceHistory`) as well as stubs for Developer+ features (`GetModelHistory`, `ListModelsForContext`, `RecommendModels`) that will be implemented by issue #20.
+
+### Handlers struct
+
+`Handlers` holds the `Store` dependency and acts as the receiver for all handler methods. Create one with `handlers.New(store)` and register its methods on a Fiber router.
+
+### Registration helpers
+
+`RegisterFree(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client)` constructs the production store and wires all five Free-tier routes onto the supplied router group. Call it from `cmd/api/main.go` passing the existing `/v1` group.
+
+`RegisterDev(...)` is a placeholder for issue #20.
+
+### Trust metadata
+
+Every model response includes a `meta` field with `confirmed_at`, `source`, `confidence`, `age_hours`, and `change_velocity`. These are computed by `api.ComputeTrustMeta()` from the model's `price_history` rows, which are fetched for each model via `store.GetPriceHistory()`.
+
+List endpoints aggregate metadata by choosing the most recently confirmed model's meta as the envelope-level meta value.
+
+### Error responses
+
+All errors are RFC 7807 `ProblemDetail` objects returned by the constructors in `internal/api/problem.go`:
+
+| Situation | Constructor |
+| --- | --- |
+| Invalid query param | `api.NewBadRequest(detail)` |
+| Resource not found | `api.NewNotFound(detail)` |
+| Database error | `api.NewInternalError(detail)` |
+
+The Fiber `ErrorHandler` in `internal/api/problem.go` serialises all returned errors with `Content-Type: application/problem+json`.
+
+## Dependencies
+
+- `internal/api` — `ProblemDetail`, `TrustMeta`, `ComputeTrustMeta`, `OK`, `Envelope`
+- `internal/models` — `Confidence` constants
+- `github.com/gofiber/fiber/v2` — HTTP framework
+- `github.com/jackc/pgx/v5/pgxpool` — production DB pool (only in `store.go` and `register.go`)
+- `github.com/redis/go-redis/v9` — passed through `RegisterFree`/`RegisterDev` for future use (currently unused in handler logic, caching is handled at middleware layer)
+
+## Usage
+
+Wire Free-tier routes from `cmd/api/main.go`:
+
+```go
+import "llm-pricing-api/internal/api/handlers"
+
+// v1 is the existing fiber.Router with Auth, RateLimit, Cache middleware.
+handlers.RegisterFree(v1, db, redisClient)
+```
+
+## Running Tests
+
+```bash
+# All handler tests (no live database required)
+go test ./internal/api/handlers/...
+
+# Verbose output
+go test -v ./internal/api/handlers/...
+
+# With coverage
+go test -cover ./internal/api/handlers/...
+```
+
+Tests use Fiber's `app.Test()` with an in-memory `mockStore`. Each test overrides only the store method it exercises, keeping tests focused and independent.
