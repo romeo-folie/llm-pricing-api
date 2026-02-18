@@ -1,0 +1,35 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck       # Unhandled errors (critical for Fiber c.Next(), DB ops)
+    - govet          # Misuse patterns the compiler misses
+    - staticcheck    # Broader static analysis (SA*, S*, QF* checks)
+    - gosimple       # Simplification suggestions
+    - ineffassign    # Assignments whose values are never used
+    - unused         # Unexported identifiers that are never used
+    - gosec          # Security: SQL injection, weak crypto, SSRF patterns
+    - bodyclose      # Unclosed HTTP response bodies (scraper safety)
+    - noctx          # HTTP requests without context (timeout enforcement)
+    - misspell       # Common typos in comments and strings
+
+linters-settings:
+  errcheck:
+    # These return errors that are intentionally ignored in Fiber middleware chains
+    exclude-functions:
+      - (github.com/gofiber/fiber/v2.Ctx).Next
+      - (github.com/gofiber/fiber/v2.Ctx).SendStatus
+
+  gosec:
+    excludes:
+      - G115  # integer overflow (false positives on safe conversions)
+
+issues:
+  # Don't report the same issue more than once per line
+  max-same-issues: 3
+  exclude-rules:
+    # Test files: relax some rules
+    - path: _test\.go
+      linters: [gosec, errcheck]

@@ -308,6 +308,79 @@ go test -v ./...
 go test -cover ./...
 ```
 
+## Security
+
+Security is a first-class requirement, not a post-hoc concern. Every feature that touches authentication, external data, user-supplied input, or secret material must be reviewed against the rules below before the task is closed. The `/code-reviewer` gate must catch any violations — flag and fix them, do not skip.
+
+### Hard Rules — Never Do These
+
+- **Never log API keys, tokens, or credentials** — not in error messages, not in debug output, not in structured logs. Redact them at the boundary before they reach the logger.
+- **Never bypass tier checks** — every endpoint that requires Dev+ or Pro must validate the tier via the Unkey middleware. There must be no code path that reaches business logic without passing through auth middleware.
+- **Never build SQL with string formatting** — use parameterized queries via `pgx` / `sqlc` exclusively. `fmt.Sprintf` or string concatenation in a query is an automatic code review rejection.
+- **Never commit secrets** — `.env`, Unkey keys, DB connection strings, Redis URLs, and Lemon Squeezy signing secrets must never be committed. Verify `.gitignore` covers `.env` before touching any secret-adjacent code.
+- **Never expose internal error details in API responses** — DB errors, stack traces, and internal state must be logged server-side only. API responses use RFC 7807 with a stable `type` URI and a safe `detail` string.
+
+### Authentication & Tier Gating
+
+- Unkey middleware validates API keys and attaches the tier to the Fiber context. All subsequent handlers read the tier from context — they never re-validate or re-parse the key themselves.
+- Cache Unkey validation results in Redis with a **30-second TTL maximum**. Do not extend this TTL; key revocations must propagate within one TTL window.
+- Rate limiting is enforced at the middleware layer, before any business logic executes. Do not implement per-handler rate limiting as a substitute.
+- Free-tier endpoints are still authenticated (key required) — "Free" refers to the allowed operations, not unauthenticated access.
+
+### External Data & Scraper Safety
+
+- All data fetched from OpenRouter, LiteLLM, and provider docs is **untrusted external input**. Validate schema and types before passing to the reconciliation engine.
+- HTTP clients used by scrapers must set explicit timeouts (`context.WithTimeout`). No unbounded external requests.
+- Scrapers must not follow redirects to private IP ranges or `localhost`. Use a custom `http.Transport` that blocks RFC 1918 addresses (`10.x`, `172.16–31.x`, `192.168.x`) and loopback.
+- Numeric price values from external sources must be validated as finite, non-negative floats before storage. Reject `NaN`, `Inf`, and negative values.
+
+### Webhook Security
+
+- Webhook URLs are user-supplied. Before enqueuing a delivery job, validate:
+  - URL scheme is `https` only (no `http`, no `file://`, no other schemes)
+  - Resolved hostname is not a private IP, loopback, or link-local address (SSRF prevention)
+- Webhook delivery jobs must not include raw database row structs in their payload. Serialize only the fields explicitly defined in the webhook event schema.
+- If webhook signing secrets are added in future, store them hashed (HMAC-SHA256 key derivation) — never in plaintext.
+
+### Redis Cache Safety
+
+- Cache keys must not embed raw user-supplied values. Construct keys from validated, normalised identifiers (e.g. `unkey:val:<sha256-of-key>`, not `unkey:val:<raw-api-key>`).
+- Do not cache error responses or partial results. Only cache successful, fully-validated data.
+- Cached Unkey validation entries must include the tier claim — never infer tier from a stale cache entry that predates a tier change.
+
+### SSE Stream & Natural Language Endpoints
+
+- SSE connections at `/v1/stream/changes` require a valid API key (Dev+ tier). Unauthenticated connections must be rejected before the stream is opened.
+- The `Last-Event-ID` reconnection header is user-controlled. Treat it as an opaque cursor, validate it matches the expected format (e.g. a UUID or integer), and never pass it directly into a SQL `WHERE` clause without parameterization.
+- The `/v1/ask` natural language endpoint must not reflect internal state, query plans, or error details back in its response. Log failures server-side; return a safe structured error to the caller.
+
+### Frontend (Next.js)
+
+- API keys and service secrets must never appear in client-side bundles. Use `NEXT_PUBLIC_` prefix only for genuinely public values. Server-only secrets go in `process.env` accessed exclusively from server components or API routes.
+- The cost calculator and model recommender accept user numeric input — validate and clamp values server-side; do not trust client-supplied numbers for any pricing calculation.
+- Set `Content-Security-Policy`, `X-Content-Type-Options`, and `X-Frame-Options` headers on all Next.js responses.
+
+### Secrets Management
+
+- All secrets are loaded from environment variables. The canonical list of required secrets is in `.env.example` with placeholder values only — never real values.
+- When adding a new secret, update `.env.example` with the key name and a comment describing its source.
+- Rotate any secret that is accidentally committed immediately — do not assume the commit will be squashed or force-pushed away.
+
+### Dependency Hygiene
+
+Run these before closing any epic that introduces or updates dependencies:
+
+```bash
+# Go vulnerability scan
+govulncheck ./...
+
+# npm audit (frontend and MCP)
+cd frontend && npm audit --audit-level=high
+cd mcp && npm audit --audit-level=high
+```
+
+Any high or critical finding must be resolved (upgrade, patch, or documented exception) before the epic is merged. Do not merge with known high-severity vulnerabilities.
+
 ## What This Project Is
 
 LLM Token Pricing Platform — a reconciled, multi-source pricing data API for LLM models. It aggregates pricing from OpenRouter, LiteLLM, and provider docs, reconciles discrepancies, stores immutable price history in TimescaleDB, and serves it through a versioned REST API and MCP server.
