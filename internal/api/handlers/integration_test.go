@@ -87,13 +87,10 @@ func redisURL() string {
 func applySeed(t *testing.T, db *pgxpool.Pool) {
 	t.Helper()
 
-	// The working directory during `go test ./internal/api/handlers/...` is
-	// the package directory (internal/api/handlers). Testdata lives at the
-	// repo root, three levels up.
-	seedPath := "testdata/seed.sql"
-	if _, err := os.Stat(seedPath); os.IsNotExist(err) {
-		seedPath = "../../../testdata/seed.sql"
-	}
+	// `go test` sets the working directory to the package directory
+	// (internal/api/handlers/). testdata/seed.sql lives at the repo root,
+	// three levels up.
+	seedPath := "../../../testdata/seed.sql"
 
 	data, err := os.ReadFile(seedPath)
 	if err != nil {
@@ -184,6 +181,9 @@ func setupTestApp(t *testing.T) *fiber.App {
 	handlers.RegisterFree(v1, db, rdb)
 	handlers.RegisterDev(v1, db, rdb)
 	log := zerolog.Nop()
+	// Pass "" as webhookSecretKey: the handler skips AES-256-GCM when no
+	// 32-byte key is configured and stores secrets as plaintext. Intentional
+	// for tests — never use an empty key in production.
 	handlers.RegisterPro(v1, db, rdb, "", log)
 	if err := handlers.RegisterSSE(v1); err != nil {
 		t.Fatalf("register SSE: %v", err)
@@ -382,21 +382,10 @@ func assertTierGating403(t *testing.T, status int, body []byte, expectedTier str
 // -----------------------------------------------------------------------
 
 // TestIntegrationRateLimit_FreeKeyExceedsDailyLimit_Returns429 exhausts the
-// 100-request free daily limit in one test run. It flushes the rate-limit
-// counter first so this test is self-contained regardless of run order.
+// 100-request free daily limit in one test run. setupTestApp flushes all
+// rate-limit / cache / unkey Redis keys on entry, so this test starts from a
+// clean counter regardless of run order.
 func TestIntegrationRateLimit_FreeKeyExceedsDailyLimit_Returns429(t *testing.T) {
-	ctx := context.Background()
-	rURL := redisURL()
-	rdb, err := cache.Connect(ctx, rURL)
-	if err != nil {
-		t.Skipf("redis unavailable: %v", err)
-	}
-	defer rdb.Close()
-
-	// Flush all rate-limit keys so we start from zero.
-	flushTestRedisKeys(t, ctx, rdb)
-
-	// Build the app after flushing so the mock verifier caches don't interfere.
 	app := setupTestApp(t)
 
 	// Make exactly 100 requests (the free daily limit).

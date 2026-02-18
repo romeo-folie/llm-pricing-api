@@ -20,7 +20,7 @@ DELETE FROM sources WHERE name IN ('openrouter-test', 'litellm-test');
 -- Models: 10 rows across 3 providers and 3+ modalities
 -- Providers: openai (4), anthropic (3), google (3)
 -- Modalities: text (6), multimodal (2), embedding (2)
--- Context ≥ 100k: models 3, 5, 8, 10
+-- Context ≥ 100k: models 1 (128k), 3 (128k), 5 (200k), 8 (131k)
 -- -----------------------------------------------------------------------
 
 INSERT INTO models (id, provider, name, slug, modality, context_window) VALUES
