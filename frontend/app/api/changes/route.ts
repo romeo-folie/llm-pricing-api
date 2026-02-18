@@ -9,6 +9,11 @@ export async function GET(req: Request) {
   const provider = url.searchParams.get("provider") ?? undefined
   const since    = url.searchParams.get("since")    ?? undefined
 
-  const changes = await getChanges({ provider, since })
-  return NextResponse.json(changes)
+  try {
+    const changes = await getChanges({ provider, since })
+    return NextResponse.json(changes)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error"
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
 }

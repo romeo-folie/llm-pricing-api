@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useId } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
 import ModelPicker from "./ModelPicker"
@@ -19,6 +19,7 @@ export default function CompareClient({
 }: CompareClientProps) {
   const router       = useRouter()
   const searchParams = useSearchParams()
+  const emptyGridId  = useId()
 
   const [selectedIds,    setSelectedIds]    = useState<string[]>(initialIds)
   const [compareModels,  setCompareModels]  = useState<Model[]>(initialCompare)
@@ -135,11 +136,11 @@ export default function CompareClient({
         >
           <svg aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.06, pointerEvents: "none" }}>
             <defs>
-              <pattern id="cmp-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(-30) skewX(20)">
+              <pattern id={emptyGridId} x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(-30) skewX(20)">
                 <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--borderDk)" strokeWidth="0.5" />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#cmp-grid)" />
+            <rect width="100%" height="100%" fill={`url(#${emptyGridId})`} />
           </svg>
           <span style={{ position: "relative" }}>Select at least 2 models to compare.</span>
         </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useId } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
 import { calculateCost, type CostResult } from "@/app/calculator/actions"
@@ -32,6 +32,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
   const [outputTokens,   setOutputTokens]   = useState<number>(() => Number(searchParams.get("output") ?? 10_000))
   const [period,         setPeriod]         = useState<Period>((searchParams.get("period") as Period) ?? "monthly")
   const [results,        setResults]        = useState<CostResult[]>([])
+  const [calcError,      setCalcError]      = useState<string | null>(null)
 
   const updateUrl = useCallback((ids: string[], inp: number, out: number, per: Period) => {
     const params = new URLSearchParams()
@@ -43,9 +44,14 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
   }, [router])
 
   const runCalc = useCallback(async (ids: string[], inp: number, out: number, per: Period) => {
-    if (ids.length === 0) { setResults([]); return }
-    const r = await calculateCost(ids, inp, out, per)
-    setResults(r)
+    if (ids.length === 0) { setResults([]); setCalcError(null); return }
+    try {
+      const r = await calculateCost(ids, inp, out, per)
+      setResults(r)
+      setCalcError(null)
+    } catch (e) {
+      setCalcError(e instanceof Error ? e.message : "Calculation failed")
+    }
   }, [])
 
   useEffect(() => {
@@ -63,6 +69,8 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
   function handleRemove(id: string) {
     setSelectedIds(selectedIds.filter((i) => i !== id))
   }
+
+  const emptyGridId = useId()
 
   const cheapestId = results.length > 0
     ? results.reduce((a, b) => a.total < b.total ? a : b).modelId
@@ -182,6 +190,23 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
         </div>
       </div>
 
+      {/* Calculation error */}
+      {calcError && (
+        <div
+          className="font-outfit text-sm"
+          style={{
+            padding: "12px 16px",
+            border: "1px solid var(--red)",
+            borderRadius: "2px",
+            color: "var(--red)",
+            backgroundColor: "var(--redLt)",
+            marginBottom: "16px",
+          }}
+        >
+          {calcError}
+        </div>
+      )}
+
       {/* Results */}
       {results.length === 0 ? (
         <div
@@ -197,11 +222,11 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
         >
           <svg aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.06, pointerEvents: "none" }}>
             <defs>
-              <pattern id="calc-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(-30) skewX(20)">
+              <pattern id={emptyGridId} x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(-30) skewX(20)">
                 <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--borderDk)" strokeWidth="0.5" />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#calc-grid)" />
+            <rect width="100%" height="100%" fill={`url(#${emptyGridId})`} />
           </svg>
           <span style={{ position: "relative" }}>Add a model above to see cost estimates.</span>
         </div>

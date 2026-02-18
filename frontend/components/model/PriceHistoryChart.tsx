@@ -65,6 +65,44 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
     )
   }
 
+  if (filtered.length === 0) {
+    return (
+      <div>
+        <div style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
+          {RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setRange(r.value)}
+              className="font-orbitron text-xs"
+              style={{
+                padding: "4px 10px",
+                border: "1px solid var(--border)",
+                borderRadius: "2px",
+                backgroundColor: range === r.value ? "var(--accent)" : "var(--surface)",
+                color: range === r.value ? "white" : "var(--muted)",
+                cursor: "pointer",
+              }}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div
+          className="font-outfit text-sm"
+          style={{
+            textAlign: "center",
+            padding: "32px",
+            color: "var(--muted)",
+            border: "1px solid var(--border)",
+            borderRadius: "2px",
+          }}
+        >
+          No price history in this range.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* Range selector */}

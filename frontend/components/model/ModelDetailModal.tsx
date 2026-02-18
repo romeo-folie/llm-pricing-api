@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -128,6 +129,9 @@ export default function ModelDetailModal() {
               <DialogTitle className="font-outfit" style={{ color: "var(--ink)", fontSize: "18px", fontWeight: 700 }}>
                 {data.model.name}
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                Pricing details for {data.model.name} by {data.model.provider}
+              </DialogDescription>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
                 <Badge label={data.model.provider} color="var(--blue)"   bg="var(--blueLt)"   />
                 <Badge label={data.model.modality} color="var(--purple)" bg="var(--purpleLt)" />

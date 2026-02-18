@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import type { PriceChange, Provider } from "@/lib/api"
 import ChangeRow from "./ChangeRow"
@@ -30,6 +30,7 @@ export default function ChangesFeed({
   const [polling,     setPolling]     = useState(true)
   const [pollFailed,  setPollFailed]  = useState(false)
 
+  const emptyGridId = useId()
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const knownIdsRef = useRef<Set<string>>(new Set(initialChanges.map((c) => c.id)))
 
@@ -259,7 +260,7 @@ export default function ChangesFeed({
           >
             <defs>
               <pattern
-                id="empty-grid"
+                id={emptyGridId}
                 x="0" y="0"
                 width="40" height="40"
                 patternUnits="userSpaceOnUse"
@@ -268,7 +269,7 @@ export default function ChangesFeed({
                 <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--borderDk)" strokeWidth="0.5" />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#empty-grid)" />
+            <rect width="100%" height="100%" fill={`url(#${emptyGridId})`} />
           </svg>
           <span style={{ position: "relative" }}>No price changes yet.</span>
         </div>
