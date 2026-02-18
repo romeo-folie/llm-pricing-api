@@ -31,20 +31,45 @@ In the Railway dashboard:
 1. Open the project.
 2. Click **New** → **Database** → **PostgreSQL**.
 3. Railway automatically sets `DATABASE_URL` in the service environment.
-4. Enable the TimescaleDB extension after the database is provisioned:
 
-```sql
--- Run once via Railway's database console or psql
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+### 3. Run database migrations
+
+All seven migrations must be applied before the API can start. Migration 000001
+enables the TimescaleDB extension; the rest create the `sources`, `models`,
+`prices`, `price_history` (hypertable), `review_queue`, and `webhooks` tables.
+
+```bash
+# Install the golang-migrate CLI (once)
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Fetch the DATABASE_URL from Railway
+export DATABASE_URL=$(railway variables get DATABASE_URL)
+
+# Apply all pending migrations
+migrate -path migrations -database "$DATABASE_URL" up
 ```
 
-### 3. Add Redis
+Or using the Makefile shortcut if your shell already has `DATABASE_URL` exported:
+
+```bash
+make install-tools   # installs golang-migrate
+make migrate-up      # runs all pending migrations
+```
+
+Verify with:
+
+```bash
+psql "$DATABASE_URL" -c "\dt"
+# Should list: sources, models, prices, price_history, review_queue, webhooks
+```
+
+### 4. Add Redis
 
 In the Railway dashboard:
 1. Click **New** → **Database** → **Redis**.
 2. Railway automatically sets `REDIS_URL` in the service environment.
 
-### 4. Set environment variables
+### 5. Set environment variables
 
 Use the Railway CLI to set all required variables.  Replace placeholder values
 with real credentials before running.
@@ -63,8 +88,10 @@ railway variables set ADMIN_PASSWORD=<your-strong-password>
 railway variables set UNKEY_ROOT_KEY=<your-unkey-root-key>
 railway variables set UNKEY_API_ID=<your-unkey-api-id>
 
-# Webhook encryption key — generate with: openssl rand -hex 32
-railway variables set WEBHOOK_SECRET_KEY=$(openssl rand -hex 32)
+# Webhook encryption key — generate separately to keep the value out of shell history
+WEBHOOK_KEY=$(openssl rand -hex 32)
+railway variables set "WEBHOOK_SECRET_KEY=${WEBHOOK_KEY}"
+unset WEBHOOK_KEY
 
 # OpenTelemetry (optional — leave empty for no-op)
 # railway variables set OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otlp-endpoint
@@ -75,7 +102,7 @@ DATABASE_URL and REDIS_URL are injected automatically by Railway when you link
 the database and Redis services.  Do not set them manually unless you are using
 external services.
 
-### 5. Deploy
+### 6. Deploy
 
 ```bash
 # Push the current branch to Railway and trigger a build
@@ -91,7 +118,7 @@ Monitor the build log in the Railway dashboard.  A successful deploy will show:
 starting api  addr=:8080  env=production
 ```
 
-### 6. Verify health endpoint
+### 7. Verify health endpoint
 
 ```bash
 RAILWAY_URL=$(railway domain)
@@ -107,7 +134,7 @@ curl -s "https://${RAILWAY_URL}/health" | jq .
 
 If status is `degraded`, check the database and Redis connection strings.
 
-### 7. Obtain a developer-tier (or higher) API key from Unkey
+### 8. Obtain a developer-tier (or higher) API key from Unkey
 
 Before running the load test you need a valid API key.
 **Important**: the load test sends 10,000 requests. A free-tier key allows only
@@ -120,7 +147,7 @@ or a pro-tier key (unlimited).
 3. Create a new key with the `developer` (or `pro`) tier in the metadata.
 4. Copy the key — it will not be shown again.
 
-### 8. Warm cache and run load test
+### 9. Warm cache and run load test
 
 ```bash
 RAILWAY_URL=$(railway domain)
@@ -146,7 +173,7 @@ Target: p99 must be under 200 ms.  If p99 exceeds 200 ms:
 - Review Railway service metrics for CPU / memory pressure.
 - Check TimescaleDB query plans for missing indexes.
 
-### 9. Commit load test results
+### 10. Commit load test results
 
 ```bash
 git add loadtest-results.txt
