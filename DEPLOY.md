@@ -124,7 +124,7 @@ or a pro-tier key (unlimited).
 
 ```bash
 RAILWAY_URL=$(railway domain)
-DEV_KEY=<your-dev-or-free-tier-api-key>
+DEV_KEY=<your-developer-or-pro-tier-api-key>
 
 # Warm the cache with a single request
 curl -s -o /dev/null \
