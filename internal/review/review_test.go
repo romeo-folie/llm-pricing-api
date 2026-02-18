@@ -3,6 +3,7 @@ package review_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -191,7 +192,7 @@ func TestApprove_InvalidID(t *testing.T) {
 
 // TestApprove_NotPending verifies that ErrNotPending from the store returns 409 Conflict.
 func TestApprove_NotPending(t *testing.T) {
-	store := &mockStore{approveErr: review.ErrNotPending}
+	store := &mockStore{approveErr: fmt.Errorf("review store: approve 7: %w", review.ErrNotPending)}
 	app := newApp(store)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/review/7/approve", nil)
@@ -272,7 +273,7 @@ func TestReject_InvalidID(t *testing.T) {
 
 // TestReject_NotPending verifies that ErrNotPending from the store returns 409 Conflict.
 func TestReject_NotPending(t *testing.T) {
-	store := &mockStore{rejectErr: review.ErrNotPending}
+	store := &mockStore{rejectErr: fmt.Errorf("review store: reject 7: %w", review.ErrNotPending)}
 	app := newApp(store)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/review/7/reject", nil)

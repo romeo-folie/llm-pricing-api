@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -92,7 +93,11 @@ func main() {
 		})
 	})
 
-	admin := app.Group("/admin")
+	// /admin routes are protected by HTTP Basic Auth.
+	// Credentials are read from ADMIN_USER / ADMIN_PASSWORD env vars.
+	admin := app.Group("/admin", basicauth.New(basicauth.Config{
+		Users: map[string]string{cfg.AdminUser: cfg.AdminPassword},
+	}))
 	admin.Get("/review", reviewHandler.List)
 	admin.Post("/review/:id/approve", reviewHandler.Approve)
 	admin.Post("/review/:id/reject", reviewHandler.Reject)

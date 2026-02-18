@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -138,10 +139,13 @@ func (s *pgxReviewStore) Approve(ctx context.Context, id int) error {
 	var valueA float64
 	var fieldStr string
 
+	// FOR UPDATE acquires a row-level lock, preventing a concurrent Approve or
+	// Reject from reading and acting on the same row simultaneously.
 	err = tx.QueryRow(ctx,
 		`SELECT model_id, source_a, value_a, field
 		 FROM review_queue
-		 WHERE id = $1 AND status = 'pending'`,
+		 WHERE id = $1 AND status = 'pending'
+		 FOR UPDATE`,
 		id,
 	).Scan(&modelID, &sourceAID, &valueA, &fieldStr)
 	if err != nil {
@@ -180,15 +184,26 @@ func (s *pgxReviewStore) Approve(ctx context.Context, id int) error {
 	}
 
 	// Step 4: insert immutable price_history record.
-	_, err = tx.Exec(ctx, `
+	// ON CONFLICT DO NOTHING guards against duplicate calls with the same
+	// dedup key (model_id, source_id, confirmed_at). We compute `now` in Go
+	// so the timestamp is fixed before SQL execution — using NOW() would be
+	// evaluated at statement time and could differ between retries, making
+	// the conflict guard ineffective. Matches the reconciler's PublishPrice
+	// pattern. A suppressed insert is logged as a warning for observability.
+	now := time.Now().UTC()
+	ct4, err := tx.Exec(ctx, `
 		INSERT INTO price_history
 			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, recorded_at)
-		VALUES ($1, $2, $3, $4, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT DO NOTHING`,
-		modelID, newInput, newOutput, sourceAID,
+		modelID, newInput, newOutput, sourceAID, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("review store: approve %d: insert price_history: %w", id, err)
+	}
+	if ct4.RowsAffected() == 0 {
+		slog.Warn("review store: price_history insert suppressed by duplicate constraint",
+			"review_id", id, "model_id", modelID, "source_id", sourceAID)
 	}
 
 	// Step 5: upsert the current price.
@@ -208,12 +223,19 @@ func (s *pgxReviewStore) Approve(ctx context.Context, id int) error {
 	}
 
 	// Step 6: mark the review entry as resolved.
-	_, err = tx.Exec(ctx,
-		`UPDATE review_queue SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+	// AND status = 'pending' is belt-and-suspenders (the FOR UPDATE lock in
+	// step 1 prevents any concurrent session from changing the status, but
+	// checking RowsAffected here makes the invariant explicit and testable).
+	ct6, err := tx.Exec(ctx,
+		`UPDATE review_queue SET status = 'resolved', resolved_at = NOW()
+		 WHERE id = $1 AND status = 'pending'`,
 		id,
 	)
 	if err != nil {
 		return fmt.Errorf("review store: approve %d: update review_queue: %w", id, err)
+	}
+	if ct6.RowsAffected() == 0 {
+		return fmt.Errorf("review store: approve %d: %w", id, ErrNotPending)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -225,6 +247,14 @@ func (s *pgxReviewStore) Approve(ctx context.Context, id int) error {
 // Reject marks the given review_queue entry as 'overridden' without publishing
 // any price data. The WHERE clause includes status = 'pending' to prevent
 // double-actioning an already-resolved entry.
+//
+// Unlike Approve, Reject does not need an explicit transaction or FOR UPDATE
+// lock: a single UPDATE statement acquires a row-level lock implicitly during
+// execution, making it atomically safe against concurrent Approve/Reject calls.
+// Approve requires FOR UPDATE because it separates the SELECT (step 1) from
+// subsequent writes (steps 4-6) across multiple SQL statements in a
+// transaction — without the lock a concurrent session could act on the same
+// row between those statements.
 func (s *pgxReviewStore) Reject(ctx context.Context, id int) error {
 	ct, err := s.db.Exec(ctx,
 		`UPDATE review_queue SET status = 'overridden', resolved_at = NOW()
