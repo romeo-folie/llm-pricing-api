@@ -35,10 +35,10 @@ func NewDiscoveryHandler(db *pgxpool.Pool) *DiscoveryHandler {
 	}
 }
 
-// newDiscoveryHandlerWithStore creates a DiscoveryHandler with the supplied
-// Store and spec path. Used in tests to inject a mock store and a custom
-// path for the OpenAPI spec file.
-func newDiscoveryHandlerWithStore(store Store, specPath string) *DiscoveryHandler {
+// NewDiscoveryHandlerForTest creates a DiscoveryHandler with the supplied
+// Store and a custom specPath. Exported so that external test packages can
+// inject a mock store and point to the spec file without needing a live DB.
+func NewDiscoveryHandlerForTest(store Store, specPath string) *DiscoveryHandler {
 	return &DiscoveryHandler{store: store, specPath: specPath}
 }
 

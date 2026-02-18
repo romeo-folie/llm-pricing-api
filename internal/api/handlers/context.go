@@ -72,10 +72,16 @@ func (h *Handlers) GetContext(c *fiber.Ctx) error {
 		}
 	}
 
-	// Trim the list until the serialised response fits within the token budget.
+	// Trim the list until the serialised full response envelope fits within
+	// the token budget. We serialize the complete api.Envelope (including the
+	// meta wrapper) so the token count matches what the caller actually receives.
+	zeroMeta := api.TrustMeta{}
 	for len(items) > 0 {
-		payload := contextResponse{Models: items}
-		b, err := json.Marshal(payload)
+		fullEnvelope := api.Envelope{
+			Data: contextResponse{Models: items},
+			Meta: zeroMeta,
+		}
+		b, err := json.Marshal(fullEnvelope)
 		if err != nil {
 			return api.NewInternalError("failed to serialise context response")
 		}
@@ -89,5 +95,5 @@ func (h *Handlers) GetContext(c *fiber.Ctx) error {
 		items = items[:len(items)-1]
 	}
 
-	return api.OK(c, contextResponse{Models: items}, api.TrustMeta{})
+	return api.OK(c, contextResponse{Models: items}, zeroMeta)
 }

@@ -90,3 +90,19 @@ func RegisterSSE(v1 fiber.Router) error {
 	v1.Get("/stream/changes", middleware.RequireTier(middleware.TierDeveloper), sse.StreamChanges)
 	return nil
 }
+
+// RegisterPro registers Pro-tier endpoint handlers on the v1 router.
+// All routes here are gated behind RequireTier("pro") so Free and Developer
+// tier keys receive RFC 7807 403 responses.
+//
+// Routes registered:
+//
+//	POST   /v1/webhooks     — register a webhook URL
+//	DELETE /v1/webhooks/:id — remove a webhook by ID
+func RegisterPro(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
+	ws := NewWebhookStore(db)
+	wh := &WebhookHandler{store: ws}
+
+	v1.Post("/webhooks", middleware.RequireTier(middleware.TierPro), wh.Create)
+	v1.Delete("/webhooks/:id", middleware.RequireTier(middleware.TierPro), wh.Delete)
+}
