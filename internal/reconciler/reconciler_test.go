@@ -473,6 +473,29 @@ func TestReconcile_ThreeSource_AllDisagree_FlagsNoPublish(t *testing.T) {
 	}
 }
 
+func TestNew_ReturnsNonNilReconciler(t *testing.T) {
+	// New wraps NewWithStore with a real pgxStore. We pass nil here purely to
+	// exercise the New() code path in coverage; the resulting Reconciler must
+	// NOT be used for actual queries (the nil pool will panic at first DB call).
+	r := reconciler.New(nil)
+	if r == nil {
+		t.Fatal("New(nil) returned nil")
+	}
+}
+
+func TestReconcile_UnknownField_SkipsPublish(t *testing.T) {
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	diffs := []diff.PriceDiff{
+		{ModelSlug: "openai/gpt-4o", Field: models.PriceField("unknown_field"), NewValue: 0.000005, Source: "openrouter"},
+		{ModelSlug: "openai/gpt-4o", Field: models.PriceField("unknown_field"), NewValue: 0.000005, Source: "litellm"},
+	}
+	_ = r.Reconcile(context.Background(), diffs)
+	if len(s.published) != 0 {
+		t.Errorf("unknown field should skip publish, got %d publish calls", len(s.published))
+	}
+}
+
 func TestReconcile_ConcurrentAccess_NoRace(t *testing.T) {
 	// Verify that Reconciler is safe for concurrent use.
 	// This test is most meaningful when run with -race.

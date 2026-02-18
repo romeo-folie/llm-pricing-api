@@ -262,6 +262,45 @@ func TestFetch_RespectsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestNew_NilClientUsesDefault(t *testing.T) {
+	s := New(nil)
+	if s == nil {
+		t.Fatal("New(nil) returned nil")
+	}
+	if s.url != defaultURL {
+		t.Errorf("want url=%q, got %q", defaultURL, s.url)
+	}
+}
+
+func TestNew_CustomClient(t *testing.T) {
+	custom := &http.Client{}
+	s := New(custom)
+	if s == nil {
+		t.Fatal("New(custom) returned nil")
+	}
+}
+
+func TestModalityFromMode_Audio(t *testing.T) {
+	if got := modalityFromMode("audio_transcription"); got != "audio" {
+		t.Errorf("audio_transcription: want %q, got %q", "audio", got)
+	}
+	if got := modalityFromMode("audio_speech"); got != "audio" {
+		t.Errorf("audio_speech: want %q, got %q", "audio", got)
+	}
+}
+
+func TestModalityFromMode_Multimodal(t *testing.T) {
+	if got := modalityFromMode("multimodal"); got != "multimodal" {
+		t.Errorf("multimodal: want %q, got %q", "multimodal", got)
+	}
+}
+
+func TestModalityFromMode_UnknownDefault(t *testing.T) {
+	if got := modalityFromMode("reranking"); got != "text" {
+		t.Errorf("reranking: want %q (default), got %q", "text", got)
+	}
+}
+
 func TestFetch_ModalityFromModeField(t *testing.T) {
 	const resp = `{
 		"text-embedding-ada-002": {

@@ -167,3 +167,35 @@ func TestFetch_ProviderExtractedFromSlug(t *testing.T) {
 		t.Errorf("want provider=mistral, got %s", models[0].Provider)
 	}
 }
+
+func TestNew_NilClientUsesDefault(t *testing.T) {
+	s := New(nil)
+	if s == nil {
+		t.Fatal("New(nil) returned nil")
+	}
+	if s.baseURL != defaultBaseURL {
+		t.Errorf("want baseURL=%q, got %q", defaultBaseURL, s.baseURL)
+	}
+}
+
+func TestNew_CustomClient(t *testing.T) {
+	custom := &http.Client{}
+	s := New(custom)
+	if s == nil {
+		t.Fatal("New(custom) returned nil")
+	}
+}
+
+func TestProviderFromSlug_NoSlash(t *testing.T) {
+	got := providerFromSlug("no-slash-here")
+	if got != "" {
+		t.Errorf("want empty string for slug with no slash, got %q", got)
+	}
+}
+
+func TestProviderFromSlug_WithSlash(t *testing.T) {
+	got := providerFromSlug("openai/gpt-4")
+	if got != "openai" {
+		t.Errorf("want %q, got %q", "openai", got)
+	}
+}
