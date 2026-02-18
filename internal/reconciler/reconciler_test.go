@@ -53,11 +53,24 @@ func (m *mockStore) LookupSourceID(_ context.Context, name string) (int, error) 
 	return 0, errors.New("source not found: " + name)
 }
 
+func (m *mockStore) LookupSourceName(_ context.Context, id int) (string, error) {
+	for name, sid := range m.sourceIDs {
+		if sid == id {
+			return name, nil
+		}
+	}
+	return "", errors.New("source id not found")
+}
+
 func (m *mockStore) LookupModelID(_ context.Context, slug string) (int, error) {
 	if id, ok := m.modelIDs[slug]; ok {
 		return id, nil
 	}
 	return 0, errors.New("model not found: " + slug)
+}
+
+func (m *mockStore) LookupModelProvider(_ context.Context, _ int) (string, error) {
+	return "openai", nil
 }
 
 func (m *mockStore) LookupCurrentPrice(_ context.Context, modelID, sourceID int) (float64, float64, bool, error) {
@@ -88,6 +101,10 @@ func (m *mockStore) FlagDiscrepancy(_ context.Context, modelID, sourceAID, sourc
 	m.flagged = append(m.flagged, flagCall{modelID, sourceAID, sourceBID, field, valueA, valueB, deltaPct})
 	m.mu.Unlock()
 	return nil
+}
+
+func (m *mockStore) ListActiveWebhooks(_ context.Context) ([]reconciler.WebhookRow, error) {
+	return nil, nil
 }
 
 func newMockStore() *mockStore {

@@ -17,11 +17,12 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `context.go` | `GET /v1/context` (compact pricing snapshot ≤ 2 100 tokens for agents; Developer+ only) |
 | `discovery.go` | `GET /openapi.json`, `GET /.well-known/ai-plugin.json`, `GET /llms.txt` (public) |
 | `sse.go` | `GET /v1/stream/changes` (SSE price-change stream; Developer+ only) |
-| `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (Pro only) |
+| `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (Pro only); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
 | `handlers_test.go` | Unit tests for Free-tier handlers using Fiber's `app.Test()` and an in-memory mock store |
 | `dev_handlers_test.go` | Unit tests for Developer+ handlers (history, recommend, context) with tier-gate coverage |
 | `sse_test.go` | Unit tests for SSE stream handler |
 | `discovery_test.go` | Unit tests for discovery endpoints |
+| `webhooks_test.go` | Unit tests for Pro-tier webhook create/delete handlers with tier-gate and ownership coverage |
 | `README.md` | This file |
 
 ## Key Components

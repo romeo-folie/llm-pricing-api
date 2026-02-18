@@ -11,4 +11,5 @@ package worker
 const (
 	TaskOpenRouterScrape = "scrape:openrouter"
 	TaskLiteLLMScrape    = "scrape:litellm"
+	TypeWebhookDeliver   = "webhook:deliver"
 )

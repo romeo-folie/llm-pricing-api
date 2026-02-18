@@ -21,9 +21,9 @@ every confirmed change flows through the `Reconciler`. It enforces:
 
 ```
 internal/reconciler/
-  reconciler.go       # Reconciler type, Reconcile method, multi- and single-source logic
+  reconciler.go       # Reconciler type, Reconcile method, multi- and single-source logic, webhook fan-out
   store.go            # Store interface + pgxStore (PostgreSQL-backed implementation)
-  reconciler_test.go  # Unit tests using an in-memory mockStore (21 tests)
+  reconciler_test.go  # Unit tests using an in-memory mockStore
   README.md           # This file
 ```
 
@@ -37,21 +37,41 @@ Implementations must be safe for concurrent use.
 | Method | Purpose |
 |--------|---------|
 | `LookupSourceID(ctx, name)` | Resolve a source name to its DB primary key |
+| `LookupSourceName(ctx, id)` | Resolve a source primary key to its name (used for webhook payloads) |
 | `LookupModelID(ctx, slug)` | Resolve a model slug to its DB primary key |
+| `LookupModelProvider(ctx, id)` | Resolve a model primary key to its provider name (used for webhook payloads) |
 | `LookupCurrentPrice(ctx, modelID, sourceID)` | Fetch current input/output costs for the unchanged field |
 | `PublishPrice(ctx, modelID, sourceID, input, output, confidence)` | Transactionally insert into `price_history` and upsert `prices` |
 | `FlagDiscrepancy(ctx, modelID, srcA, srcB, field, valA, valB, delta)` | Insert into `review_queue` (idempotent via `ON CONFLICT DO NOTHING`) |
+| `ListActiveWebhooks(ctx)` | Return all non-deleted `webhooks` rows (used by the webhook fan-out after publish) |
 
 `pgxStore` is the production PostgreSQL implementation backed by `*pgxpool.Pool`.
 
+### `WebhookRow` type (`store.go`)
+
+```go
+type WebhookRow struct {
+    ID         string
+    APIKeyHash string
+    URL        string
+    Secret     string // plaintext (stored as-is in DB so the delivery worker can sign)
+}
+```
+
 ### `Reconciler` struct (`reconciler.go`)
 
-Holds a `Store` reference and an in-memory `pending` map (key: `slug+":"+field+":"+source`)
-that persists across `Reconcile` calls to track single-source changes awaiting confirmation.
+Holds a `Store` reference, an in-memory `pending` map (key: `slug+":"+field+":"+source`)
+that persists across `Reconcile` calls, and an optional `*asynq.Client` for webhook delivery.
 
 **Constructors:**
 - `New(db *pgxpool.Pool) *Reconciler` — production use
 - `NewWithStore(s Store) *Reconciler` — test use (pass any `Store` implementation)
+
+**Setter:**
+```go
+func (r *Reconciler) SetAsynqClient(c *asynq.Client)
+```
+Attaches an asynq client to enable webhook fan-out after every confirmed price publish. Passing `nil` (the default) disables webhook delivery.
 
 **Main method:**
 ```go
@@ -92,6 +112,7 @@ type pendingChange struct {
 
 | Dependency | Role |
 |---|---|
+| `github.com/hibiken/asynq` | Task queue client used for webhook fan-out (optional) |
 | `github.com/jackc/pgx/v5/pgxpool` | PostgreSQL connection pool (production `pgxStore`) |
 | `github.com/jackc/pgx/v5` | `pgx.ErrNoRows` check in `LookupCurrentPrice` |
 | `llm-pricing-api/internal/diff` | `PriceDiff` type consumed by `Reconcile` |
@@ -102,10 +123,17 @@ type pendingChange struct {
 ```go
 // Production: pass the pgxpool.Pool from internal/database
 r := reconciler.New(db)
+
+// Optionally attach an asynq client to enable webhook delivery.
+// The client is safe to set before the first Reconcile call.
+asynqClient := asynq.NewClient(redisOpt)
+r.SetAsynqClient(asynqClient)
+
 err := r.Reconcile(ctx, diffs)
 
 // Testing: pass a mockStore implementing the Store interface
 r := reconciler.NewWithStore(myMockStore)
+// No asynq client → webhook fan-out is disabled in tests
 ```
 
 ## Testing Notes

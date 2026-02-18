@@ -3,17 +3,55 @@ package reconciler
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/models"
 )
+
+const typeWebhookDeliver = "webhook:deliver"
+
+// webhookPayload is the event body sent to registered webhook URLs.
+type webhookPayload struct {
+	ModelID        int       `json:"model_id"`
+	Provider       string    `json:"provider"`
+	OldPriceInput  float64   `json:"old_price_input"`
+	OldPriceOutput float64   `json:"old_price_output"`
+	NewPriceInput  float64   `json:"new_price_input"`
+	NewPriceOutput float64   `json:"new_price_output"`
+	ConfirmedAt    time.Time `json:"confirmed_at"`
+	Source         string    `json:"source"`
+}
+
+// webhookTaskPayload is the asynq task payload for webhook delivery.
+type webhookTaskPayload struct {
+	WebhookID string         `json:"webhook_id"`
+	URL       string         `json:"url"`
+	Secret    string         `json:"secret"`
+	Event     webhookPayload `json:"event"`
+}
+
+// newWebhookDeliverTask builds an asynq.Task for TypeWebhookDeliver.
+func newWebhookDeliverTask(p webhookTaskPayload) (*asynq.Task, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal webhook task payload: %w", err)
+	}
+	return asynq.NewTask(typeWebhookDeliver,
+		data,
+		asynq.MaxRetry(3),
+		asynq.Timeout(30*time.Second),
+	), nil
+}
 
 const (
 	// epsilon is the floating-point tolerance used when comparing prices.
@@ -42,9 +80,10 @@ type pendingChange struct {
 //
 // Reconciler is safe for concurrent use.
 type Reconciler struct {
-	store   Store
-	pending map[string]*pendingChange // key: slug+":"+field+":"+source
-	mu      sync.Mutex
+	store       Store
+	pending     map[string]*pendingChange // key: slug+":"+field+":"+source
+	mu          sync.Mutex
+	asynqClient *asynq.Client // optional; nil = webhook delivery disabled
 }
 
 // New returns a Reconciler backed by the given PostgreSQL pool.
@@ -59,6 +98,13 @@ func NewWithStore(s Store) *Reconciler {
 		store:   s,
 		pending: make(map[string]*pendingChange),
 	}
+}
+
+// SetAsynqClient attaches an asynq.Client to the Reconciler so that confirmed
+// price changes fan out webhook delivery tasks.  Calling with nil disables
+// webhook delivery (the default).
+func (r *Reconciler) SetAsynqClient(c *asynq.Client) {
+	r.asynqClient = c
 }
 
 // sweepStalePending removes pending entries whose lastSeen time is older than
@@ -302,6 +348,8 @@ func (r *Reconciler) processSingleSource(
 // publish writes a confirmed price event to the database.
 // It reads the current price row first so the unchanged field value is preserved
 // in the price_history snapshot (both columns are NOT NULL).
+// After a successful write, if an asynq client is configured, it fans out
+// webhook delivery tasks to all active registrations.
 func (r *Reconciler) publish(
 	ctx context.Context,
 	modelID, sourceID int,
@@ -332,5 +380,70 @@ func (r *Reconciler) publish(
 	if err := r.store.PublishPrice(ctx, modelID, sourceID, input, output, confidence); err != nil {
 		slog.Warn("reconciler: PublishPrice failed",
 			"model_id", modelID, "source_id", sourceID, "err", err)
+		return
+	}
+
+	if r.asynqClient != nil {
+		r.enqueueWebhooks(ctx, modelID, sourceID, currInput, currOutput, input, output)
+	}
+}
+
+// enqueueWebhooks fans out a webhook:deliver task to every active webhook registration.
+// Errors are logged but never returned — a delivery failure must not abort reconciliation.
+func (r *Reconciler) enqueueWebhooks(
+	ctx context.Context,
+	modelID, sourceID int,
+	oldInput, oldOutput float64,
+	newInput, newOutput float64,
+) {
+	webhooks, err := r.store.ListActiveWebhooks(ctx)
+	if err != nil {
+		slog.Warn("reconciler: ListActiveWebhooks failed; skipping webhook fan-out",
+			"model_id", modelID, "err", err)
+		return
+	}
+	if len(webhooks) == 0 {
+		return
+	}
+
+	sourceName, err := r.store.LookupSourceName(ctx, sourceID)
+	if err != nil {
+		slog.Warn("reconciler: LookupSourceName failed; using empty string in webhook payload",
+			"source_id", sourceID, "err", err)
+	}
+
+	provider, err := r.store.LookupModelProvider(ctx, modelID)
+	if err != nil {
+		slog.Warn("reconciler: LookupModelProvider failed; using empty string in webhook payload",
+			"model_id", modelID, "err", err)
+	}
+
+	event := webhookPayload{
+		ModelID:        modelID,
+		Provider:       provider,
+		OldPriceInput:  oldInput,
+		OldPriceOutput: oldOutput,
+		NewPriceInput:  newInput,
+		NewPriceOutput: newOutput,
+		ConfirmedAt:    time.Now().UTC(),
+		Source:         sourceName,
+	}
+
+	for _, wh := range webhooks {
+		task, err := newWebhookDeliverTask(webhookTaskPayload{
+			WebhookID: wh.ID,
+			URL:       wh.URL,
+			Secret:    wh.Secret,
+			Event:     event,
+		})
+		if err != nil {
+			slog.Warn("reconciler: failed to build webhook task",
+				"webhook_id", wh.ID, "err", err)
+			continue
+		}
+		if _, err := r.asynqClient.EnqueueContext(ctx, task); err != nil {
+			slog.Warn("reconciler: failed to enqueue webhook delivery",
+				"webhook_id", wh.ID, "err", err)
+		}
 	}
 }

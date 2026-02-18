@@ -78,6 +78,7 @@ func main() {
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)
+	mux.HandleFunc(worker.TypeWebhookDeliver, worker.HandleWebhookDeliver)
 
 	// Start cron scheduler using the same Redis options as the server.
 	scheduler := asynq.NewScheduler(redisOpt, nil)
