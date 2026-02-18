@@ -4,15 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/models"
 )
+
+// WebhookRow holds the essential fields of a webhooks table row returned by
+// ListActiveWebhooks.  The secret field contains the plaintext secret so the
+// delivery worker can compute HMAC-SHA256 signatures without a round-trip.
+type WebhookRow struct {
+	ID         string
+	APIKeyHash string
+	URL        string
+	Secret     string
+}
 
 // Store abstracts all database operations required by the Reconciler.
 // Implementations must be safe for concurrent use.
@@ -21,9 +31,17 @@ type Store interface {
 	// Returns an error if the source is not found.
 	LookupSourceID(ctx context.Context, name string) (int, error)
 
+	// LookupSourceName returns the name for a source by its primary key.
+	// Returns an error if the source is not found.
+	LookupSourceName(ctx context.Context, id int) (string, error)
+
 	// LookupModelID returns the primary key for a model by slug.
 	// Returns an error if the model is not found.
 	LookupModelID(ctx context.Context, slug string) (int, error)
+
+	// LookupModelProvider returns the provider name for a model by its primary key.
+	// Returns an error if the model is not found.
+	LookupModelProvider(ctx context.Context, id int) (string, error)
 
 	// LookupCurrentPrice returns the stored input and output costs for the
 	// given (modelID, sourceID) pair.  found is false when no row exists yet.
@@ -37,11 +55,17 @@ type Store interface {
 	// disagreement.  Uses ON CONFLICT DO NOTHING so repeated calls while a
 	// pending entry already exists are silently ignored.
 	FlagDiscrepancy(ctx context.Context, modelID, sourceAID, sourceBID int, field models.PriceField, valueA, valueB float64, deltaPct float64) error
+
+	// ListActiveWebhooks returns all non-deleted webhook registrations.
+	// The reconciler calls this after every successful price publish to fan
+	// out delivery tasks.
+	ListActiveWebhooks(ctx context.Context) ([]WebhookRow, error)
 }
 
 // pgxStore is the PostgreSQL-backed implementation of Store.
 type pgxStore struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger zerolog.Logger
 }
 
 func (s *pgxStore) LookupSourceID(ctx context.Context, name string) (int, error) {
@@ -53,6 +77,15 @@ func (s *pgxStore) LookupSourceID(ctx context.Context, name string) (int, error)
 	return id, nil
 }
 
+func (s *pgxStore) LookupSourceName(ctx context.Context, id int) (string, error) {
+	var name string
+	err := s.db.QueryRow(ctx, `SELECT name FROM sources WHERE id = $1`, id).Scan(&name)
+	if err != nil {
+		return "", fmt.Errorf("lookup source name for id=%d: %w", id, err)
+	}
+	return name, nil
+}
+
 func (s *pgxStore) LookupModelID(ctx context.Context, slug string) (int, error) {
 	var id int
 	err := s.db.QueryRow(ctx, `SELECT id FROM models WHERE slug = $1`, slug).Scan(&id)
@@ -60,6 +93,15 @@ func (s *pgxStore) LookupModelID(ctx context.Context, slug string) (int, error) 
 		return 0, fmt.Errorf("lookup model %q: %w", slug, err)
 	}
 	return id, nil
+}
+
+func (s *pgxStore) LookupModelProvider(ctx context.Context, id int) (string, error) {
+	var provider string
+	err := s.db.QueryRow(ctx, `SELECT provider FROM models WHERE id = $1`, id).Scan(&provider)
+	if err != nil {
+		return "", fmt.Errorf("lookup model provider for id=%d: %w", id, err)
+	}
+	return provider, nil
 }
 
 func (s *pgxStore) LookupCurrentPrice(ctx context.Context, modelID, sourceID int) (float64, float64, bool, error) {
@@ -104,8 +146,10 @@ func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, inpu
 		// confirmed_at, recorded_at) already exists. This indicates a double-publish
 		// within the same nanosecond — effectively impossible in normal operation but
 		// warrants a warning since price_history is intended to be append-only.
-		slog.Warn("store: price_history insert suppressed by duplicate constraint — possible double-publish",
-			"model_id", modelID, "source_id", sourceID)
+		s.logger.Warn().
+			Int("model_id", modelID).
+			Int("source_id", sourceID).
+			Msg("store: price_history insert suppressed by duplicate constraint — possible double-publish")
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -135,4 +179,29 @@ func (s *pgxStore) FlagDiscrepancy(ctx context.Context, modelID, sourceAID, sour
 		return fmt.Errorf("flag discrepancy (model=%d, field=%s): %w", modelID, field, err)
 	}
 	return nil
+}
+
+func (s *pgxStore) ListActiveWebhooks(ctx context.Context) ([]WebhookRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, api_key_hash, url, secret
+		FROM webhooks
+		WHERE deleted_at IS NULL
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list active webhooks: %w", err)
+	}
+	defer rows.Close()
+
+	var result []WebhookRow
+	for rows.Next() {
+		var w WebhookRow
+		if err := rows.Scan(&w.ID, &w.APIKeyHash, &w.URL, &w.Secret); err != nil {
+			return nil, fmt.Errorf("scan webhook row: %w", err)
+		}
+		result = append(result, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate webhook rows: %w", err)
+	}
+	return result, nil
 }

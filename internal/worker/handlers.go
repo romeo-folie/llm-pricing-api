@@ -3,9 +3,9 @@ package worker
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/hibiken/asynq"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/reconciler"
@@ -20,18 +20,25 @@ import (
 type Handlers struct {
 	store      WorkerStore
 	reconciler *reconciler.Reconciler
+	logger     zerolog.Logger
 }
 
 // NewHandlers returns a Handlers wired with the given store and reconciler.
+// The logger defaults to zerolog.Nop(); call SetLogger to configure one.
 func NewHandlers(store WorkerStore, rec *reconciler.Reconciler) *Handlers {
-	return &Handlers{store: store, reconciler: rec}
+	return &Handlers{store: store, reconciler: rec, logger: zerolog.Nop()}
+}
+
+// SetLogger configures the zerolog.Logger used by the Handlers.
+func (h *Handlers) SetLogger(l zerolog.Logger) {
+	h.logger = l
 }
 
 // runPipeline executes the full scrape→diff→reconcile pipeline for one source.
 // taskName is used for error wrapping and log context; sourceName is the sources
 // table name used to pre-fetch matching stored prices for the diff engine.
 func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string, s scraper.Scraper) error {
-	slog.Info("handler: starting", "task", taskName)
+	h.logger.Info().Str("task", taskName).Msg("handler: starting")
 
 	scraped, err := s.Fetch(ctx)
 	if err != nil {
@@ -60,7 +67,7 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 		return fmt.Errorf("%s: reconcile: %w", taskName, err)
 	}
 
-	slog.Info("handler: done", "task", taskName, "model_count", len(scraped))
+	h.logger.Info().Str("task", taskName).Int("model_count", len(scraped)).Msg("handler: done")
 	return nil
 }
 
@@ -75,4 +82,3 @@ func (h *Handlers) HandleOpenRouterScrape(ctx context.Context, _ *asynq.Task) er
 func (h *Handlers) HandleLiteLLMScrape(ctx context.Context, _ *asynq.Task) error {
 	return h.runPipeline(ctx, TaskLiteLLMScrape, "litellm", litellm.New(nil))
 }
-

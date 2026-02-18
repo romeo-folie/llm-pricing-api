@@ -2,20 +2,32 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
+	"llm-pricing-api/internal/logger"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/worker"
 )
+
+// parseLogLevel converts a LOG_LEVEL string to a zerolog.Level.
+// Unknown or empty strings default to InfoLevel.
+func parseLogLevel(s string) zerolog.Level {
+	l, err := zerolog.ParseLevel(s)
+	if err != nil {
+		return zerolog.InfoLevel
+	}
+	return l
+}
 
 // asynqOptFromURL converts a Redis URL (redis://[user:pass@]host:port/db)
 // or a bare host:port string into a fully-populated asynq.RedisClientOpt.
@@ -40,16 +52,23 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("config error", "err", err)
-		os.Exit(1)
+		// Logger not yet available — write directly to stderr.
+		l := zerolog.New(os.Stderr)
+		l.Fatal().Err(err).Msg("config error")
 	}
+
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	log := logger.New(logger.Config{
+		ServiceName: cfg.OTELServiceName,
+		Environment: cfg.AppEnv,
+		Level:       parseLogLevel(cfg.LogLevel),
+	})
 
 	ctx := context.Background()
 
-	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5)
+	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5, log)
 	if err != nil {
-		slog.Error("could not connect to database", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("could not connect to database")
 	}
 	defer db.Close()
 
@@ -65,33 +84,36 @@ func main() {
 
 	store := worker.NewPgxStore(db)
 	rec := reconciler.New(db)
+	rec.SetLogger(log)
 	h := worker.NewHandlers(store, rec)
+	h.SetLogger(log)
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)
+
+	// WebhookDeliveryHandler holds the AES key so it can decrypt secrets at
+	// task execution time — secrets are stored encrypted at rest.
+	webhookHandler := worker.NewWebhookDeliveryHandler(cfg.WebhookSecretKey)
+	mux.HandleFunc(worker.TypeWebhookDeliver, webhookHandler.Handle)
 
 	// Start cron scheduler using the same Redis options as the server.
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 
 	if _, err := scheduler.Register("@every 6h", asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
-		slog.Error("scheduler: register openrouter", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("scheduler: register openrouter")
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
-		slog.Error("scheduler: register litellm", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("scheduler: register litellm")
 	}
 
 	if err := scheduler.Start(); err != nil {
-		slog.Error("scheduler: start", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("scheduler: start")
 	}
 	defer scheduler.Shutdown()
 
-	slog.Info("worker started", "env", cfg.AppEnv, "concurrency", 10)
+	log.Info().Str("env", cfg.AppEnv).Int("concurrency", 10).Msg("worker started")
 	if err := srv.Start(mux); err != nil {
-		slog.Error("worker error", "err", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("worker error")
 	}
 
 	// Block until SIGINT or SIGTERM, then shut down gracefully.
@@ -99,6 +121,6 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
 	<-quit
-	slog.Info("worker shutting down...")
+	log.Info().Msg("worker shutting down...")
 	srv.Shutdown()
 }

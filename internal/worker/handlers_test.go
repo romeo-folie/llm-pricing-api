@@ -47,8 +47,14 @@ type mockReconcilerStore struct{}
 func (s *mockReconcilerStore) LookupSourceID(_ context.Context, _ string) (int, error) {
 	return 1, nil
 }
+func (s *mockReconcilerStore) LookupSourceName(_ context.Context, _ int) (string, error) {
+	return "openrouter", nil
+}
 func (s *mockReconcilerStore) LookupModelID(_ context.Context, _ string) (int, error) {
 	return 1, nil
+}
+func (s *mockReconcilerStore) LookupModelProvider(_ context.Context, _ int) (string, error) {
+	return "openai", nil
 }
 func (s *mockReconcilerStore) LookupCurrentPrice(_ context.Context, _, _ int) (float64, float64, bool, error) {
 	return 0, 0, false, nil
@@ -58,6 +64,10 @@ func (s *mockReconcilerStore) PublishPrice(_ context.Context, _, _ int, _, _ flo
 }
 func (s *mockReconcilerStore) FlagDiscrepancy(_ context.Context, _, _, _ int, _ models.PriceField, _, _ float64, _ float64) error {
 	return nil
+}
+
+func (s *mockReconcilerStore) ListActiveWebhooks(_ context.Context) ([]reconciler.WebhookRow, error) {
+	return nil, nil
 }
 
 // newTestHandlers builds a Handlers backed by mock dependencies.

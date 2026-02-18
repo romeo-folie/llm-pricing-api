@@ -1,6 +1,6 @@
 # internal/worker
 
-Asynq task constants, DB read layer, and handler functions for the LLM Pricing Platform's background scraper pipeline.
+Asynq task constants, DB read layer, handler functions, and webhook delivery job for the LLM Pricing Platform's background worker pipeline.
 
 ## Purpose
 
@@ -9,6 +9,7 @@ This package is the bridge between the asynq job queue and the scrape→diff→r
 - **Task name constants** used when registering handlers and scheduling cron jobs.
 - **`WorkerStore`** — a DB read interface (and its pgx implementation) that supplies the diff engine with the current stored models and prices for each source.
 - **`Handlers`** — one public handler method per data source, each executing the full pipeline: fetch scraped data, fetch stored data, compute diffs, reconcile.
+- **Webhook delivery** — `HandleWebhookDeliver` processes `webhook:deliver` asynq tasks, signs the payload with HMAC-SHA256, and POSTs to the registered URL with retry on failure.
 
 `cmd/worker/main.go` instantiates this package and wires it into the asynq server and cron scheduler.
 
@@ -16,28 +17,26 @@ This package is the bridge between the asynq job queue and the scrape→diff→r
 
 ```
 internal/worker/
-  tasks.go        # String constants for all 7 asynq task names
-  store.go        # WorkerStore interface + pgxWorkerStore implementation
-  handlers.go     # Handlers struct, runPipeline helper, 7 public handler methods
-  handlers_test.go # Unit tests using mock store and mock scraper
-  README.md       # This file
+  tasks.go              # String constants for asynq task names (including TypeWebhookDeliver)
+  store.go              # WorkerStore interface + pgxWorkerStore implementation
+  handlers.go           # Handlers struct, runPipeline helper, scraper handler methods
+  webhook_handler.go    # WebhookPayload, WebhookTaskPayload, NewWebhookDeliverTask, HandleWebhookDeliver
+  handlers_test.go      # Unit tests using mock store and mock scraper
+  webhook_handler_test.go # Unit tests for HMAC signing and non-2xx retry
+  README.md             # This file
 ```
 
 ## Key Components
 
 ### Task constants (`tasks.go`)
 
-Seven `string` constants of the form `"scrape:<source>"` used as the asynq task type. The same constants are used in `cmd/worker/main.go` for both `mux.HandleFunc` registration and `scheduler.Register` cron scheduling.
+String constants used as the asynq task type. The same constants are used in `cmd/worker/main.go` for both `mux.HandleFunc` registration and `scheduler.Register` cron scheduling.
 
 | Constant | Value | Schedule |
 |---|---|---|
 | `TaskOpenRouterScrape` | `"scrape:openrouter"` | Every 6 hours |
 | `TaskLiteLLMScrape` | `"scrape:litellm"` | Every 24 hours |
-| `TaskOpenAIScrape` | `"scrape:openai"` | Every 24 hours |
-| `TaskAnthropicScrape` | `"scrape:anthropic"` | Every 24 hours |
-| `TaskGoogleScrape` | `"scrape:google"` | Every 24 hours |
-| `TaskMistralScrape` | `"scrape:mistral"` | Every 24 hours |
-| `TaskAmazonScrape` | `"scrape:amazon"` | Every 24 hours |
+| `TypeWebhookDeliver` | `"webhook:deliver"` | On-demand (enqueued by reconciler) |
 
 ### WorkerStore (`store.go`)
 
@@ -54,7 +53,7 @@ type WorkerStore interface {
 
 ### Handlers (`handlers.go`)
 
-`NewHandlers(store WorkerStore, rec *reconciler.Reconciler) *Handlers` is the constructor. All seven public methods (`HandleOpenRouterScrape`, `HandleLiteLLMScrape`, `HandleOpenAIScrape`, `HandleAnthropicScrape`, `HandleGoogleScrape`, `HandleMistralScrape`, `HandleAmazonScrape`) delegate to the private `runPipeline` helper.
+`NewHandlers(store WorkerStore, rec *reconciler.Reconciler) *Handlers` is the constructor. Public methods (`HandleOpenRouterScrape`, `HandleLiteLLMScrape`) delegate to the private `runPipeline` helper.
 
 **Pipeline per handler:**
 1. `slog.Info("handler: starting", ...)` — structured log with task name
@@ -69,6 +68,40 @@ type WorkerStore interface {
 
 Scrapers never write to the database directly; all writes go through the reconciler.
 
+### Webhook delivery (`webhook_handler.go`)
+
+`HandleWebhookDeliver(ctx, task)` processes `webhook:deliver` asynq tasks:
+
+1. Unmarshal `WebhookTaskPayload` from the task body.
+2. Serialise the nested `WebhookPayload` event as JSON.
+3. Compute `HMAC-SHA256(secret, eventJSON)` and add `X-LLMPricing-Signature: sha256=<hex>` header.
+4. POST the event JSON to the registered URL with a 15-second timeout.
+5. Return an error for non-2xx responses so asynq retries (max 3 retries, 30s task timeout).
+
+`NewWebhookDeliverTask(payload WebhookTaskPayload) (*asynq.Task, error)` creates the enqueue-ready task.
+
+**Types:**
+
+```go
+type WebhookPayload struct {
+    ModelID        int       `json:"model_id"`
+    Provider       string    `json:"provider"`
+    OldPriceInput  float64   `json:"old_price_input"`
+    OldPriceOutput float64   `json:"old_price_output"`
+    NewPriceInput  float64   `json:"new_price_input"`
+    NewPriceOutput float64   `json:"new_price_output"`
+    ConfirmedAt    time.Time `json:"confirmed_at"`
+    Source         string    `json:"source"`
+}
+
+type WebhookTaskPayload struct {
+    WebhookID string         `json:"webhook_id"`
+    URL       string         `json:"url"`
+    Secret    string         `json:"secret"` // plaintext; enqueued by reconciler
+    Event     WebhookPayload `json:"event"`
+}
+```
+
 ## Dependencies
 
 | Package | Role |
@@ -76,7 +109,6 @@ Scrapers never write to the database directly; all writes go through the reconci
 | `internal/scraper` | `Scraper` interface accepted by `runPipeline` |
 | `internal/scraper/openrouter` | OpenRouter API scraper |
 | `internal/scraper/litellm` | LiteLLM GitHub JSON scraper |
-| `internal/scraper/providers` | HTML scrapers for OpenAI, Anthropic, Google, Mistral, Amazon |
 | `internal/diff` | Diff engine — computes price changes |
 | `internal/reconciler` | Reconciliation engine — mediates all DB writes |
 | `internal/models` | Shared domain types (`Model`, `Price`) |
@@ -93,11 +125,11 @@ rec   := reconciler.New(db)
 h     := worker.NewHandlers(store, rec)
 
 mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
-// ... remaining 6 handlers
+mux.HandleFunc(worker.TaskLiteLLMScrape,    h.HandleLiteLLMScrape)
+mux.HandleFunc(worker.TypeWebhookDeliver,   worker.HandleWebhookDeliver)
 
 scheduler.Register("@every 6h",  asynq.NewTask(worker.TaskOpenRouterScrape, nil))
 scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil))
-// ... remaining 5 tasks
 ```
 
 ## Testing
@@ -106,4 +138,6 @@ scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil))
 go test ./internal/worker/...
 ```
 
-The test file uses a `mockStore` implementing `WorkerStore` and a `mockScraper` implementing `scraper.Scraper`. The reconciler is backed by a `mockReconcilerStore` (via `reconciler.NewWithStore`) so tests run without a database.
+`handlers_test.go` uses a `mockStore` implementing `WorkerStore` and a `mockScraper` implementing `scraper.Scraper`. The reconciler is backed by a `mockReconcilerStore` (via `reconciler.NewWithStore`) so tests run without a database.
+
+`webhook_handler_test.go` spins up an `httptest.Server` to verify HMAC signature correctness and that non-2xx responses return an error.
