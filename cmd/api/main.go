@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/api/handlers"
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
@@ -134,7 +135,17 @@ func main() {
 		middleware.RateLimit(redisClient),
 		middleware.Cache(redisClient),
 	)
-	_ = v1 // route handlers will be attached to v1 by subsequent issues
+
+	// Register public discovery routes outside the auth group.
+	handlers.RegisterDiscovery(app, db)
+
+	// Register all /v1/ endpoint groups.
+	handlers.RegisterFree(v1, db, redisClient)
+	handlers.RegisterDev(v1, db, redisClient)
+	handlers.RegisterPro(v1, db, redisClient)
+	if err := handlers.RegisterSSE(v1); err != nil {
+		log.Fatal().Err(err).Msg("failed to register SSE handler")
+	}
 
 	// /admin routes are protected by HTTP Basic Auth.
 	// Credentials are read from ADMIN_USER / ADMIN_PASSWORD env vars.
