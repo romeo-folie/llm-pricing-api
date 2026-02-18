@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
@@ -46,6 +47,7 @@ func main() {
 		l.Fatal().Err(err).Msg("config error")
 	}
 
+	zerolog.TimeFieldFormat = time.RFC3339Nano
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,
 		Environment: cfg.AppEnv,

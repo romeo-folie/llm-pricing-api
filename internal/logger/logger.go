@@ -35,8 +35,6 @@ type Config struct {
 // permanent field.  Pretty-print mode is active in all non-production
 // environments.
 func New(cfg Config) zerolog.Logger {
-	zerolog.TimeFieldFormat = time.RFC3339Nano
-
 	var w io.Writer
 	if cfg.Environment == "production" {
 		w = os.Stdout

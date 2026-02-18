@@ -34,6 +34,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	zerolog.TimeFieldFormat = time.RFC3339Nano
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,
 		Environment: cfg.AppEnv,
@@ -132,17 +133,22 @@ func main() {
 	addr := fmt.Sprintf(":%s", cfg.AppPort)
 	log.Info().Str("addr", addr).Str("env", cfg.AppEnv).Msg("starting api")
 
+	serverErr := make(chan error, 1)
 	go func() {
 		if err := app.Listen(addr); err != nil {
-			log.Error().Err(err).Msg("server error")
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	<-quit
-	log.Info().Msg("shutting down...")
-	if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
-		log.Error().Err(err).Msg("shutdown error")
+	select {
+	case err := <-serverErr:
+		log.Error().Err(err).Msg("server error")
+		return
+	case <-quit:
+		log.Info().Msg("shutting down...")
+		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
+			log.Error().Err(err).Msg("shutdown error")
+		}
 	}
 }
 
