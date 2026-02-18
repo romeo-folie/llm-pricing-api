@@ -12,7 +12,6 @@ import (
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/litellm"
 	"llm-pricing-api/internal/scraper/openrouter"
-	"llm-pricing-api/internal/scraper/providers"
 )
 
 // Handlers holds the shared dependencies for all asynq task handler functions.
@@ -77,32 +76,3 @@ func (h *Handlers) HandleLiteLLMScrape(ctx context.Context, _ *asynq.Task) error
 	return h.runPipeline(ctx, TaskLiteLLMScrape, "litellm", litellm.New(nil))
 }
 
-// HandleOpenAIScrape runs the OpenAI HTML scraper and feeds the result
-// through the diff and reconciliation pipeline.
-func (h *Handlers) HandleOpenAIScrape(ctx context.Context, _ *asynq.Task) error {
-	return h.runPipeline(ctx, TaskOpenAIScrape, "openai-docs", providers.NewOpenAI(nil))
-}
-
-// HandleAnthropicScrape runs the Anthropic HTML scraper and feeds the result
-// through the diff and reconciliation pipeline.
-func (h *Handlers) HandleAnthropicScrape(ctx context.Context, _ *asynq.Task) error {
-	return h.runPipeline(ctx, TaskAnthropicScrape, "anthropic-docs", providers.NewAnthropic(nil))
-}
-
-// HandleGoogleScrape runs the Google HTML scraper and feeds the result
-// through the diff and reconciliation pipeline.
-func (h *Handlers) HandleGoogleScrape(ctx context.Context, _ *asynq.Task) error {
-	return h.runPipeline(ctx, TaskGoogleScrape, "google-docs", providers.NewGoogle(nil))
-}
-
-// HandleMistralScrape runs the Mistral HTML scraper and feeds the result
-// through the diff and reconciliation pipeline.
-func (h *Handlers) HandleMistralScrape(ctx context.Context, _ *asynq.Task) error {
-	return h.runPipeline(ctx, TaskMistralScrape, "mistral-docs", providers.NewMistral(nil))
-}
-
-// HandleAmazonScrape runs the Amazon Bedrock HTML scraper and feeds the result
-// through the diff and reconciliation pipeline.
-func (h *Handlers) HandleAmazonScrape(ctx context.Context, _ *asynq.Task) error {
-	return h.runPipeline(ctx, TaskAmazonScrape, "amazon-docs", providers.NewAmazon(nil))
-}

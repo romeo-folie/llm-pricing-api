@@ -69,11 +69,6 @@ func main() {
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)
-	mux.HandleFunc(worker.TaskOpenAIScrape, h.HandleOpenAIScrape)
-	mux.HandleFunc(worker.TaskAnthropicScrape, h.HandleAnthropicScrape)
-	mux.HandleFunc(worker.TaskGoogleScrape, h.HandleGoogleScrape)
-	mux.HandleFunc(worker.TaskMistralScrape, h.HandleMistralScrape)
-	mux.HandleFunc(worker.TaskAmazonScrape, h.HandleAmazonScrape)
 
 	// Start cron scheduler using the same Redis options as the server.
 	scheduler := asynq.NewScheduler(redisOpt, nil)
@@ -84,26 +79,6 @@ func main() {
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
 		slog.Error("scheduler: register litellm", "err", err)
-		os.Exit(1)
-	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskOpenAIScrape, nil)); err != nil {
-		slog.Error("scheduler: register openai", "err", err)
-		os.Exit(1)
-	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskAnthropicScrape, nil)); err != nil {
-		slog.Error("scheduler: register anthropic", "err", err)
-		os.Exit(1)
-	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskGoogleScrape, nil)); err != nil {
-		slog.Error("scheduler: register google", "err", err)
-		os.Exit(1)
-	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskMistralScrape, nil)); err != nil {
-		slog.Error("scheduler: register mistral", "err", err)
-		os.Exit(1)
-	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskAmazonScrape, nil)); err != nil {
-		slog.Error("scheduler: register amazon", "err", err)
 		os.Exit(1)
 	}
 
