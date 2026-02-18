@@ -98,6 +98,24 @@ body {
   animation: flash 0.5s ease-out;
 }
 
+/* ─── Footer link hover utilities (server component — no JS event handlers) ── */
+
+.footer-link {
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.footer-link:hover {
+  color: var(--accent);
+}
+
+.footer-discovery-link {
+  color: var(--dim);
+  transition: color 0.15s;
+}
+.footer-discovery-link:hover {
+  color: var(--accent);
+}
+
 /* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */
 
 @keyframes live-pulse {

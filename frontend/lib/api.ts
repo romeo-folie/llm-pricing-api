@@ -145,9 +145,8 @@ export async function getChanges(filter?: ChangesFilter): Promise<PriceChange[]>
   if (filter?.since)    params.set("since", filter.since)
   if (filter?.provider) params.set("provider", filter.provider)
   const qs = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch<ApiResponse<PriceChange[]>>(
-    `/v1/changes${qs}`,
-    { next: { revalidate: 60 } },
-  )
+  // /v1/changes uses the default revalidate: 300. Live updates are handled
+  // by the client-side poller in the /changes page (hitting /api/changes route).
+  const res = await apiFetch<ApiResponse<PriceChange[]>>(`/v1/changes${qs}`)
   return res.data
 }

@@ -2,14 +2,14 @@ import type { NextConfig } from "next"
 
 const ContentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
+  script-src 'self' 'unsafe-inline' https://unpkg.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com;
   img-src 'self' data: blob: https:;
   media-src 'self' blob:;
-  connect-src 'self';
+  connect-src 'self' https://checkout.lemonsqueezy.com https://assets10.lottiefiles.com;
   worker-src 'self' blob:;
-  frame-src 'none';
+  frame-src 'none' https://checkout.lemonsqueezy.com;
   object-src 'none';
   base-uri 'self';
   form-action 'self' https://checkout.lemonsqueezy.com;

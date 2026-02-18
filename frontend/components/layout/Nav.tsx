@@ -67,12 +67,15 @@ export default function Nav() {
           })}
         </nav>
 
-        {/* Mobile menu button — accessible, no JS toggle for SSR */}
+        {/* Mobile menu button — accessible; full JS toggle deferred to a future task */}
         <button
           type="button"
           className="md:hidden p-2 rounded-sm"
           style={{ color: "var(--muted)", border: "1px solid var(--border)" }}
           aria-label="Open navigation menu"
+          aria-expanded="false"
+          aria-controls="mobile-nav"
+          disabled
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square"/>
@@ -80,8 +83,9 @@ export default function Nav() {
         </button>
       </div>
 
-      {/* Mobile nav — hidden for now; expandable in a future task */}
+      {/* Mobile nav — inert until hamburger toggle is implemented */}
       <nav
+        id="mobile-nav"
         className="md:hidden border-t"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
         aria-label="Mobile navigation"
