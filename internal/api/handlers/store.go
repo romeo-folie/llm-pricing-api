@@ -483,12 +483,10 @@ func (s *pgxStore) ListChanges(ctx context.Context, filter ChangesFilter) ([]Cha
 	}
 
 	args := []any{*since}
-	argIdx := 2
 	providerFilter := ""
 	if filter.Provider != "" {
-		providerFilter = fmt.Sprintf("AND m.provider = $%d", argIdx)
+		providerFilter = fmt.Sprintf("AND m.provider = $%d", 2)
 		args = append(args, filter.Provider)
-		argIdx++
 	}
 
 	// Use LAG window function to detect rows where price changed vs prior row.

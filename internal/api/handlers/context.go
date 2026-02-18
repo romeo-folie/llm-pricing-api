@@ -61,15 +61,7 @@ func (h *Handlers) GetContext(c *fiber.Ctx) error {
 
 	items := make([]contextModelItem, len(rows))
 	for i, r := range rows {
-		items[i] = contextModelItem{
-			ID:          r.ID,
-			Provider:    r.Provider,
-			Slug:        r.Slug,
-			PriceInput:  r.PriceInput,
-			PriceOutput: r.PriceOutput,
-			Confidence:  r.Confidence,
-			ConfirmedAt: r.ConfirmedAt,
-		}
+		items[i] = contextModelItem(r)
 	}
 
 	// Trim the list until the serialised full response envelope fits within

@@ -15,14 +15,6 @@ import (
 	"llm-pricing-api/internal/middleware"
 )
 
-// rateLimitCacheKey mirrors the key pattern used by the RateLimit middleware.
-func rateLimitCacheKey(rawKey string) string {
-	sum := sha256.Sum256([]byte(rawKey))
-	hash := fmt.Sprintf("%x", sum)
-	date := time.Now().UTC().Format("2006-01-02")
-	return fmt.Sprintf("ratelimit:%s:%s", hash, date)
-}
-
 // newRateLimitApp builds a Fiber app that:
 //  1. Sets LocalKeyTier and LocalKeyHash from the supplied values.
 //  2. Applies the RateLimit middleware.

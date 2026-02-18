@@ -22,10 +22,7 @@ func (h *Handlers) ListProviders(c *fiber.Ctx) error {
 
 	items := make([]providerResponse, len(providers))
 	for i, p := range providers {
-		items[i] = providerResponse{
-			Name:       p.Name,
-			ModelCount: p.ModelCount,
-		}
+		items[i] = providerResponse(p)
 	}
 
 	// Providers endpoint has no price data, so TrustMeta is zero-value.

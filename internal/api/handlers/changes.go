@@ -45,17 +45,7 @@ func (h *Handlers) ListChanges(c *fiber.Ctx) error {
 
 	items := make([]changeResponse, len(changes))
 	for i, ch := range changes {
-		items[i] = changeResponse{
-			ModelID:     ch.ModelID,
-			ModelSlug:   ch.ModelSlug,
-			Provider:    ch.Provider,
-			OldInput:    ch.OldInput,
-			OldOutput:   ch.OldOutput,
-			NewInput:    ch.NewInput,
-			NewOutput:   ch.NewOutput,
-			ConfirmedAt: ch.ConfirmedAt,
-			Source:      ch.Source,
-		}
+		items[i] = changeResponse(ch)
 	}
 
 	// Changes endpoint has aggregated data; use zero-value meta.

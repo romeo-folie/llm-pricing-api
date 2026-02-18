@@ -75,13 +75,7 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 
 	items := make([]historyItemResponse, len(history))
 	for i, r := range history {
-		items[i] = historyItemResponse{
-			InputCostPerToken:  r.InputCostPerToken,
-			OutputCostPerToken: r.OutputCostPerToken,
-			Source:             r.Source,
-			ConfirmedAt:        r.ConfirmedAt,
-			RecordedAt:         r.RecordedAt,
-		}
+		items[i] = historyItemResponse(r)
 	}
 
 	// Build trust metadata from the full unfiltered history so that confidence,
