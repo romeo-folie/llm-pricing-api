@@ -207,16 +207,19 @@ func (s *pgxReviewStore) Approve(ctx context.Context, id int) error {
 	}
 
 	// Step 5: upsert the current price.
+	// Use the same `now` computed in step 4 so that price_history.confirmed_at
+	// and prices.confirmed_at are identical for the same logical event — joins
+	// or audits that rely on timestamp equality will otherwise produce gaps.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO prices
 			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, confidence)
-		VALUES ($1, $2, $3, $4, NOW(), 'high')
+		VALUES ($1, $2, $3, $4, $5, 'high')
 		ON CONFLICT (model_id, source_id) DO UPDATE SET
 			input_cost_per_token  = EXCLUDED.input_cost_per_token,
 			output_cost_per_token = EXCLUDED.output_cost_per_token,
 			confirmed_at          = EXCLUDED.confirmed_at,
 			confidence            = EXCLUDED.confidence`,
-		modelID, newInput, newOutput, sourceAID,
+		modelID, newInput, newOutput, sourceAID, now,
 	)
 	if err != nil {
 		return fmt.Errorf("review store: approve %d: upsert prices: %w", id, err)

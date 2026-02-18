@@ -146,7 +146,8 @@ func TestRunPipeline_FetchPricesError(t *testing.T) {
 }
 
 // TestRunPipeline_EmptyScrapeResult verifies that an empty scrape result is
-// handled without error — no diffs are produced and reconcile is a no-op.
+// treated as an error so that asynq retries the task. A zero-model response
+// indicates an upstream schema or HTML change, not a normal "no new data" state.
 func TestRunPipeline_EmptyScrapeResult(t *testing.T) {
 	store := &mockStore{
 		models: []models.Model{},
@@ -156,13 +157,15 @@ func TestRunPipeline_EmptyScrapeResult(t *testing.T) {
 
 	s := &mockScraper{result: []scraper.ScrapedModel{}}
 
-	if err := h.runPipeline(context.Background(), TaskLiteLLMScrape, "litellm", s); err != nil {
-		t.Fatalf("unexpected error on empty result: %v", err)
+	err := h.runPipeline(context.Background(), TaskLiteLLMScrape, "litellm", s)
+	if err == nil {
+		t.Fatal("expected error for zero-model result, got nil")
 	}
 }
 
 // TestRunPipeline_PassesSourceName verifies that the sourceName argument is
-// forwarded to FetchPricesBySource unchanged.
+// forwarded to FetchPricesBySource unchanged. A non-empty scraper result is
+// used so the zero-model guard does not fire before reaching FetchPricesBySource.
 func TestRunPipeline_PassesSourceName(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -177,8 +180,11 @@ func TestRunPipeline_PassesSourceName(t *testing.T) {
 			store := &mockStore{models: []models.Model{}, prices: []models.Price{}}
 			h := newTestHandlers(store)
 
+			oneModel := []scraper.ScrapedModel{
+				{Slug: "test/model", SourceName: tc.sourceName, InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6},
+			}
 			_ = h.runPipeline(context.Background(), tc.sourceName, tc.sourceName,
-				&mockScraper{result: []scraper.ScrapedModel{}})
+				&mockScraper{result: oneModel})
 
 			if store.pricesSource != tc.sourceName {
 				t.Errorf("FetchPricesBySource called with sourceName %q; want %q",

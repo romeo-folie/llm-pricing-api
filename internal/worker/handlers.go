@@ -38,6 +38,13 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 	if err != nil {
 		return fmt.Errorf("%s: fetch: %w", taskName, err)
 	}
+	if len(scraped) == 0 {
+		// An empty result after a successful fetch indicates an upstream schema
+		// change or an HTML structure change that broke parsing. Treat this as
+		// an error so asynq retries the task and the failure appears in logs —
+		// silently skipping the diff+reconcile pipeline would stall price updates.
+		return fmt.Errorf("%s: scraper returned 0 models; possible upstream change", taskName)
+	}
 
 	storedModels, err := h.store.FetchModels(ctx)
 	if err != nil {

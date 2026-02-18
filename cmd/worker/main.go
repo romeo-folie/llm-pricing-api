@@ -9,13 +9,31 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 
-	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/worker"
 )
+
+// asynqOptFromURL converts a Redis URL (redis://[user:pass@]host:port/db)
+// or a bare host:port string into a fully-populated asynq.RedisClientOpt.
+// It preserves the username, password, and database number so that asynq
+// can authenticate to Redis in production environments.
+func asynqOptFromURL(rawURL string) asynq.RedisClientOpt {
+	opts, err := redis.ParseURL(rawURL)
+	if err != nil {
+		// Treat as bare host:port — no credentials to pass.
+		return asynq.RedisClientOpt{Addr: rawURL}
+	}
+	return asynq.RedisClientOpt{
+		Addr:     opts.Addr,
+		Username: opts.Username,
+		Password: opts.Password,
+		DB:       opts.DB,
+	}
+}
 
 func main() {
 	_ = godotenv.Load()
@@ -35,11 +53,9 @@ func main() {
 	}
 	defer db.Close()
 
-	// RedisAddr normalises full Redis URLs to the bare host:port that
-	// asynq's RedisClientOpt.Addr expects.
-	redisAddr := cache.RedisAddr(cfg.RedisURL)
+	redisOpt := asynqOptFromURL(cfg.RedisURL)
 	srv := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisAddr},
+		redisOpt,
 		asynq.Config{
 			Concurrency: 10,
 		},
@@ -59,8 +75,7 @@ func main() {
 	mux.HandleFunc(worker.TaskMistralScrape, h.HandleMistralScrape)
 	mux.HandleFunc(worker.TaskAmazonScrape, h.HandleAmazonScrape)
 
-	// Start cron scheduler
-	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
+	// Start cron scheduler using the same Redis options as the server.
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 
 	if _, err := scheduler.Register("@every 6h", asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {

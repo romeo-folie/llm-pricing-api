@@ -257,6 +257,10 @@ func (r *Reconciler) processMultiSource(
 	}
 
 	// Minor disagreement (≤5%): all sources broadly agree, publish with reduced confidence.
+	// We publish `ref` (values[0].value) — the value from the first source alphabetically
+	// after the sort above.  All candidates are within 5% of each other, so any value is
+	// a valid representation; alphabetical determinism is intentional and keeps the output
+	// stable across re-runs with the same source set.
 	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium)
 }
 

@@ -109,12 +109,22 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 			}
 		}
 
+		// Deep-copy the *int pointer so that each ScrapedModel owns an
+		// independent integer — sharing the decoded pointer would allow
+		// a future in-place mutation of one model's ContextWindow to
+		// silently corrupt the JSON-decoded map entry.
+		var ctxWindow *int
+		if entry.MaxInputTokens != nil {
+			v := *entry.MaxInputTokens
+			ctxWindow = &v
+		}
+
 		models = append(models, scraper.ScrapedModel{
 			Slug:               key,
 			Provider:           provider,
 			InputCostPerToken:  *entry.InputCostPerToken,
 			OutputCostPerToken: *entry.OutputCostPerToken,
-			ContextWindow:      entry.MaxInputTokens,
+			ContextWindow:      ctxWindow,
 			Modality:           modalityFromMode(entry.Mode),
 			SourceName:         "litellm",
 			FetchedAt:          fetchedAt,
