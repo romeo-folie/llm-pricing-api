@@ -18,6 +18,7 @@ import (
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
+	"llm-pricing-api/internal/review"
 )
 
 func main() {
@@ -57,6 +58,9 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	reviewStore := review.NewPgxStore(db)
+	reviewHandler := review.NewHandler(reviewStore)
+
 	app := fiber.New(fiber.Config{
 		AppName: "llm-pricing-api",
 	})
@@ -87,6 +91,11 @@ func main() {
 			"redis":  redisStatus,
 		})
 	})
+
+	admin := app.Group("/admin")
+	admin.Get("/review", reviewHandler.List)
+	admin.Post("/review/:id/approve", reviewHandler.Approve)
+	admin.Post("/review/:id/reject", reviewHandler.Reject)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
