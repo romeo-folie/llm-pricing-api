@@ -16,11 +16,13 @@ import (
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/logger"
+	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/review"
 )
 
@@ -85,9 +87,14 @@ func main() {
 
 	app := fiber.New(fiber.Config{
 		AppName: "llm-pricing-api",
+		// ErrorHandler serialises all errors as RFC 7807 Problem Details
+		// with Content-Type: application/problem+json.
+		ErrorHandler: api.ErrorHandler,
 	})
 
-	// Middleware order: OTel tracing first, then request logger, then recover.
+	// Middleware order: security headers first, then OTel tracing, request
+	// logger, and panic recovery.
+	app.Use(middleware.Security())
 	app.Use(otelfiber.Middleware())
 	app.Use(requestLogger(log))
 	app.Use(recover.New())
@@ -116,6 +123,18 @@ func main() {
 			"redis":  redisStatus,
 		})
 	})
+
+	// /v1 routes: require Unkey API key authentication, per-key rate limiting,
+	// and Redis response caching for cacheable GET endpoints.
+	// /health and discovery endpoints are registered outside this group so they
+	// are exempt from auth.
+	unkeyVerifier := middleware.NewUnkeyClient(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
+	v1 := app.Group("/v1",
+		middleware.Auth(unkeyVerifier, redisClient, cfg.UnkeyAPIID),
+		middleware.RateLimit(redisClient),
+		middleware.Cache(redisClient),
+	)
+	_ = v1 // route handlers will be attached to v1 by subsequent issues
 
 	// /admin routes are protected by HTTP Basic Auth.
 	// Credentials are read from ADMIN_USER / ADMIN_PASSWORD env vars.

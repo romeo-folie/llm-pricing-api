@@ -14,6 +14,8 @@ type Config struct {
 	AdminPassword   string
 	OTELEndpoint    string
 	OTELServiceName string
+	UnkeyRootKey    string
+	UnkeyAPIID      string
 }
 
 // Load reads configuration from environment variables.
@@ -43,6 +45,8 @@ func Load() (*Config, error) {
 		AdminPassword:   adminPassword,
 		OTELEndpoint:    os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		OTELServiceName: getEnv("OTEL_SERVICE_NAME", "llm-pricing-api"),
+		UnkeyRootKey:    os.Getenv("UNKEY_ROOT_KEY"),
+		UnkeyAPIID:      os.Getenv("UNKEY_API_ID"),
 	}, nil
 }
 
