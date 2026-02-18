@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Frontend Development
+
+For **all frontend work** (components, pages, UI features), always invoke the `frontend-design` skill first:
+
+```text
+/frontend-design:frontend-design
+```
+
+This skill produces distinctive, production-grade interfaces and must be used before writing any frontend code.
+
 ## Clarifying Questions Before Execution
 
 Before implementing any requested feature or task, always eliminate ambiguity first. Use the `AskUserQuestion` tool for quick targeted questions, or invoke the `/interview` skill for broader requirements gathering. Do not begin writing code until all ambiguities are resolved. Specifically, ask about:
