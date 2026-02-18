@@ -9,17 +9,17 @@
 
 | # | Task | Status | GitHub |
 |---|------|--------|--------|
-| #24 | Project Scaffolding & Design System | **in-progress (Opus review gate)** | [#24](https://github.com/romeo-folie/llm-pricing-api/issues/24) |
+| #24 | Project Scaffolding & Design System | **done** | [#24](https://github.com/romeo-folie/llm-pricing-api/issues/24) |
 | #27 | Hero Blender MCP Scene | **in-progress (Stream A done; Stream B needs Blender MCP)** | [#27](https://github.com/romeo-folie/llm-pricing-api/issues/27) |
-| #23 | Model Browser, Detail Modal & History | open (blocked by #24) | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
-| #25 | Price Change Feed | open (blocked by #24) | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
-| #26 | Compare Page & Cost Calculator | open (blocked by #24) | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
-| #28 | Pricing Page | open (blocked by #24) | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
-| #29 | Landing Page | open (blocked by #24, #27) | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
+| #23 | Model Browser, Detail Modal & History | open | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
+| #25 | Price Change Feed | open | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
+| #26 | Compare Page & Cost Calculator | open | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
+| #28 | Pricing Page | open | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
+| #29 | Landing Page | open (blocked by #27 Stream B) | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
 | #30 | SEO, Metadata, Sitemap & Deployment | open (blocked by #23–#29) | [#30](https://github.com/romeo-folie/llm-pricing-api/issues/30) |
 
-**Next action:** Wait for Opus review to complete, fix any findings, then run `/pm:issue-close 24`. Once #24 is closed, start #23, #25, #26, #28 in parallel.
-**#27 Stream B** (hero.glb + hero.webp) requires Blender running with blender-mcp addon. Start Blender, connect the addon, then run Blender MCP scene creation.
+**Next action:** Start **#23, #25, #26, #28 in parallel** — all unblocked now that #24 is closed. Run `/pm:issue-start 23`, `/pm:issue-start 25`, `/pm:issue-start 26`, `/pm:issue-start 28` concurrently.
+**#27 Stream B** (hero.glb + hero.webp) requires Blender running with blender-mcp addon. Start Blender, connect the addon, then run Blender MCP scene creation. #29 (Landing Page) is blocked until Stream B delivers the assets.
 
 ---
 
@@ -53,10 +53,11 @@
 ## What Was Done (Session 2026-02-18)
 
 - Created `.claude/epics/frontend/` directory with epic.md and all task files (#23–#30)
-- **#24 committed**: Next.js 16 scaffold, Tailwind v4 @theme design tokens, shadcn/ui (8 components), `lib/api.ts` (server-only typed client), Nav + Footer layout, security headers (CSP, X-Frame, X-Content-Type), Railway config, .env.example, README
-- **#27 Stream A committed**: HeroScene.tsx (model-viewer, lazy-loaded), HeroFallback.tsx (@lottiefiles/react-lottie-player), types/model-viewer.d.ts
-- Sonnet code review done — 7 findings fixed (CSP, revalidate, inline styles, a11y, healthcheck)
-- Opus code review in progress
+- **#24 closed**: Next.js 16 scaffold, Tailwind v4 @theme design tokens, shadcn/ui (8 components), `lib/api.ts` (server-only typed client, lazy `buildHeaders()`, RFC 7807 error parsing), Nav + Footer layout (with `CopyrightYear` client component), security headers (CSP, X-Frame, X-Content-Type), Railway config, `/api/health` route, `.env.example`, README
+- **#27 Stream A closed**: HeroScene.tsx (model-viewer, lazy-loaded, split into ModelViewerHero + HeroScene for Rules of Hooks), HeroFallback.tsx (@lottiefiles/react-lottie-player, useId() SVG dedup), types/model-viewer.d.ts
+- Sonnet code review: 7 findings, all fixed
+- Opus code review: 8 findings, all fixed (buildHeaders, Rules of Hooks split, useId, CopyrightYear, CSP frame-src, fallback script cleanup)
+- **#27 Stream B pending**: Blender MCP scene (hero.glb + hero.webp) — needs Blender running locally
 
 ---
 
@@ -81,11 +82,10 @@
 
 ```text
 /pm:next                       # What to work on next
-/pm:issue-close 24             # Close scaffolding after Opus review
-/pm:issue-start 23             # Model browser (after #24 closes)
-/pm:issue-start 25             # Changes feed (after #24 closes)
-/pm:issue-start 26             # Compare + Calculator (after #24 closes)
-/pm:issue-start 28             # Pricing page (after #24 closes)
+/pm:issue-start 23             # Model browser (unblocked)
+/pm:issue-start 25             # Changes feed (unblocked)
+/pm:issue-start 26             # Compare + Calculator (unblocked)
+/pm:issue-start 28             # Pricing page (unblocked)
 /pm:epic-status frontend       # This epic's progress
 ```
 
