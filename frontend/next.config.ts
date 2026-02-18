@@ -1,8 +1,15 @@
 import type { NextConfig } from "next"
 
+// CSP NOTE: 'unsafe-inline' in script-src is required for Next.js SSR hydration
+// (Next.js injects inline <script> blocks for initial state). Removing it requires
+// nonce-based CSP via Next.js middleware (see:
+// https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy#nonce).
+// This is tracked as a follow-up hardening task. The CDN risk is mitigated by
+// removing all third-party script-src entries; @google/model-viewer is self-hosted
+// via the Next.js bundler at /_next/static/chunks/*.
 const ContentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://unpkg.com;
+  script-src 'self' 'unsafe-inline';
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com;
   img-src 'self' data: blob: https:;

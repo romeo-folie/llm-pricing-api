@@ -1,7 +1,7 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import type { CSSProperties } from "react"
+import { useId, type CSSProperties } from "react"
 
 // Lazy-load LottiePlayer to avoid SSR issues with the animation library
 const Player = dynamic(
@@ -19,6 +19,7 @@ interface HeroFallbackProps {
 }
 
 export default function HeroFallback({ className, style }: HeroFallbackProps) {
+  const gridId = useId()
   return (
     <div
       className={className}
@@ -64,7 +65,7 @@ export default function HeroFallback({ className, style }: HeroFallbackProps) {
         >
           <defs>
             <pattern
-              id="iso-grid"
+              id={gridId}
               x="0"
               y="0"
               width="40"
@@ -80,7 +81,7 @@ export default function HeroFallback({ className, style }: HeroFallbackProps) {
               />
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#iso-grid)" />
+          <rect width="100%" height="100%" fill={`url(#${gridId})`} />
         </svg>
       </div>
     </div>

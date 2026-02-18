@@ -61,22 +61,32 @@ export interface ApiResponse<T> {
 // ─── Config ───────────────────────────────────────────────────────────────
 
 const BASE_URL = process.env.LLM_PRICING_API_BASE_URL ?? "http://localhost:8080"
-const API_KEY  = process.env.LLM_PRICING_API_KEY ?? ""
 
-const FREE_HEADERS: HeadersInit = {
-  "Content-Type": "application/json",
-  "Authorization": `Bearer ${API_KEY}`,
-}
-
-const DEFAULT_FETCH: RequestInit = {
-  next: { revalidate: 300 },
-  headers: FREE_HEADERS,
+// Headers constructed lazily per-request so that a missing API_KEY at module
+// evaluation does not silently produce an empty bearer token that persists
+// for the lifetime of the module.
+function buildHeaders(extra?: HeadersInit): Record<string, string> {
+  const apiKey = process.env.LLM_PRICING_API_KEY ?? ""
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${apiKey}`,
+    ...(extra as Record<string, string> | undefined),
+  }
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, { ...DEFAULT_FETCH, ...init })
+  const res = await fetch(`${BASE_URL}${path}`, {
+    next: { revalidate: 300 },
+    ...init,
+    // Merge caller headers on top of auth headers so Authorization is never dropped
+    headers: buildHeaders(init?.headers as HeadersInit | undefined),
+  })
   if (!res.ok) {
-    throw new Error(`API error ${res.status} at ${path}`)
+    // Attempt to parse RFC 7807 structured error for actionable log output
+    const body = await res.json().catch(() => ({})) as { detail?: string }
+    throw new Error(
+      `API error ${res.status} at ${path}${body.detail ? `: ${body.detail}` : ""}`,
+    )
   }
   return res.json() as Promise<T>
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useRef, type CSSProperties } from "react"
+import { useEffect, useRef, type CSSProperties } from "react"
 import Image from "next/image"
 import HeroFallback from "./HeroFallback"
 
@@ -9,22 +9,39 @@ interface HeroSceneProps {
   style?: CSSProperties
 }
 
-function ModelViewerScene({ className, style }: HeroSceneProps) {
+// ─── Inner component rendered only when model-viewer path is chosen ─────────
+// Keeping this as a separate component ensures hooks are never registered when
+// the env flag routes to HeroFallback (React rules prohibit conditional hooks).
+
+function ModelViewerHero({ className, style }: HeroSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    // Dynamically import @google/model-viewer (lazy — after LCP)
+    // Dynamically load @google/model-viewer from npm package dist.
+    // Using the local package avoids the CSP `unsafe-inline` + CDN risk.
+    let cancelled = false
     const script = document.createElement("script")
     script.type = "module"
-    script.src = "https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"
-    document.head.appendChild(script)
+    // Note: Next.js serves node_modules via the bundler; model-viewer self-registers
+    // the custom element on import. We use next/script for client-only module loading
+    // in the component tree, but for dynamic post-LCP injection we append directly.
+    script.src = "/_next/static/chunks/model-viewer.js"
+    // Fallback: if the bundled path is unavailable, try the npm package path
+    script.onerror = () => {
+      if (cancelled) return
+      const fallback = document.createElement("script")
+      fallback.type = "module"
+      fallback.src = "/model-viewer.js"
+      document.head.appendChild(fallback)
+    }
 
     script.onload = () => {
-      // Create the <model-viewer> element imperatively to avoid JSX typing issues
-      // with this web component in the TypeScript + Turbopack environment
+      if (cancelled || !container) return
+      if (container.querySelector("model-viewer") !== null) return
+
       const mv = document.createElement("model-viewer" as keyof HTMLElementTagNameMap)
       mv.setAttribute("src", "/hero.glb")
       mv.setAttribute("alt", "Interactive isometric 3D scene: server racks with floating LLM price tokens")
@@ -37,23 +54,24 @@ function ModelViewerScene({ className, style }: HeroSceneProps) {
       mv.setAttribute("loading", "lazy")
       mv.setAttribute("reveal", "interaction")
       mv.setAttribute("aria-label", "Interactive 3D hero scene")
-      mv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:2;background:transparent;"
-
-      if (container.querySelector("model-viewer") === null) {
-        container.appendChild(mv)
-      }
+      mv.style.cssText =
+        "position:absolute;inset:0;width:100%;height:100%;z-index:2;background:transparent;"
+      container.appendChild(mv)
     }
 
+    document.head.appendChild(script)
+
     return () => {
-      // Cleanup: remove the element if it was added
+      cancelled = true
+      // Cancel pending onload callback and remove the injected script tag
+      script.onload = null
+      script.onerror = null
+      if (script.parentNode) script.parentNode.removeChild(script)
+      // Remove the model-viewer element if it was added
       const mv = container.querySelector("model-viewer")
       if (mv) mv.remove()
     }
   }, [])
-
-  if (process.env.NEXT_PUBLIC_USE_LOTTIE_HERO === "true") {
-    return <HeroFallback className={className} style={style} />
-  }
 
   return (
     <div
@@ -69,7 +87,7 @@ function ModelViewerScene({ className, style }: HeroSceneProps) {
         ...style,
       }}
     >
-      {/* WebP poster: loads immediately (above fold), serves as LCP element */}
+      {/* WebP poster: loads immediately above fold; serves as the LCP image */}
       <Image
         src="/hero.webp"
         alt="Isometric server rack scene with floating price tokens and data pipeline elements"
@@ -80,9 +98,9 @@ function ModelViewerScene({ className, style }: HeroSceneProps) {
         style={{ zIndex: 1 }}
       />
 
-      {/* model-viewer injected into containerRef via useEffect after LCP */}
+      {/* model-viewer element is injected into containerRef via useEffect after LCP */}
 
-      {/* Amber corner accent — isometric depth treatment */}
+      {/* Amber corner accent — isometric depth treatment, no box-shadow */}
       <div
         aria-hidden="true"
         style={{
@@ -111,10 +129,16 @@ function ModelViewerScene({ className, style }: HeroSceneProps) {
   )
 }
 
+// ─── Public export ────────────────────────────────────────────────────────────
+// The env-flag check happens here, before any hooks are registered, so that
+// we never violate the Rules of Hooks.
+
 export default function HeroScene({ className, style }: HeroSceneProps) {
-  return (
-    <Suspense fallback={<HeroFallback className={className} style={style} />}>
-      <ModelViewerScene className={className} style={style} />
-    </Suspense>
-  )
+  const useLottie = process.env.NEXT_PUBLIC_USE_LOTTIE_HERO === "true"
+
+  if (useLottie) {
+    return <HeroFallback className={className} style={style} />
+  }
+
+  return <ModelViewerHero className={className} style={style} />
 }

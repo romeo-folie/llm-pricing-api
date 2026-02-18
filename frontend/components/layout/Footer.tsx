@@ -1,4 +1,5 @@
 import Link from "next/link"
+import CopyrightYear from "./CopyrightYear"
 
 const PRODUCT_LINKS = [
   { href: "/models",     label: "Model Browser" },
@@ -120,7 +121,7 @@ export default function Footer() {
           style={{ borderTop: "1px solid var(--border)" }}
         >
           <p className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
-            © {new Date().getFullYear()} LLMPrice. All prices reconciled from multiple sources.
+            © <CopyrightYear /> LLMPrice. All prices reconciled from multiple sources.
           </p>
           <p className="font-orbitron text-xs" style={{ color: "var(--dim)" }}>
             p99 &lt;200ms · updated every 5m
