@@ -70,14 +70,14 @@ func insertFixture(t *testing.T, db *pgxpool.Pool) fixture {
 
 	var srcAID int
 	if err := db.QueryRow(ctx,
-		`INSERT INTO sources (name) VALUES ($1) RETURNING id`, srcA,
+		`INSERT INTO sources (name, url, type) VALUES ($1, 'https://test.example.com', 'api') RETURNING id`, srcA,
 	).Scan(&srcAID); err != nil {
 		t.Fatalf("insert source A: %v", err)
 	}
 
 	var srcBID int
 	if err := db.QueryRow(ctx,
-		`INSERT INTO sources (name) VALUES ($1) RETURNING id`, srcB,
+		`INSERT INTO sources (name, url, type) VALUES ($1, 'https://test.example.com', 'api') RETURNING id`, srcB,
 	).Scan(&srcBID); err != nil {
 		t.Fatalf("insert source B: %v", err)
 	}
