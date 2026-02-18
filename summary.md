@@ -11,15 +11,14 @@
 |---|------|--------|--------|
 | #24 | Project Scaffolding & Design System | **done** | [#24](https://github.com/romeo-folie/llm-pricing-api/issues/24) |
 | #27 | Hero Blender MCP Scene | **in-progress (Stream A done; Stream B needs Blender MCP)** | [#27](https://github.com/romeo-folie/llm-pricing-api/issues/27) |
-| #23 | Model Browser, Detail Modal & History | open | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
-| #25 | Price Change Feed | open | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
-| #26 | Compare Page & Cost Calculator | open | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
-| #28 | Pricing Page | open | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
-| #29 | Landing Page | open (blocked by #27 Stream B) | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
+| #23 | Model Browser, Detail Modal & History | **done** | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
+| #25 | Price Change Feed | **done** | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
+| #26 | Compare Page & Cost Calculator | **done** | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
+| #28 | Pricing Page | **done** | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
+| #29 | Landing Page | open (blocked by #27 Stream B — needs hero.glb + hero.webp) | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
 | #30 | SEO, Metadata, Sitemap & Deployment | open (blocked by #23–#29) | [#30](https://github.com/romeo-folie/llm-pricing-api/issues/30) |
 
-**Next action:** Start **#23, #25, #26, #28 in parallel** — all unblocked now that #24 is closed. Run `/pm:issue-start 23`, `/pm:issue-start 25`, `/pm:issue-start 26`, `/pm:issue-start 28` concurrently.
-**#27 Stream B** (hero.glb + hero.webp) requires Blender running with blender-mcp addon. Start Blender, connect the addon, then run Blender MCP scene creation. #29 (Landing Page) is blocked until Stream B delivers the assets.
+**Next action:** Complete **#27 Stream B** — Build Blender hero scene (hero.glb + hero.webp). Requires Blender running locally with blender-mcp addon connected. Then start #29 (Landing Page) which depends on those assets.
 
 ---
 
@@ -44,19 +43,23 @@
 - API client (`lib/api.ts`) is a **server-only** module — it injects `LLM_PRICING_API_KEY` for Dev-tier endpoints; this key must never reach the client bundle
 - Filters and calculator inputs live in URL search params — all user state must be shareable via URL
 - `next: { revalidate: 300 }` on all fetches — do not use `cache: 'no-store'` except in the changes feed poller
-- #24 (scaffolding) must land before #23/#25/#26/#28; #27 (Blender) is parallel to #24 but must land before #29 (landing)
 - shadcn/ui components in `frontend/components/ui/`; design utilities in `frontend/app/globals.css`
 - `npm run build` must pass before any commit
 
 ---
 
-## What Was Done (Session 2026-02-18)
+## What Was Done
+
+### Session 2026-02-18 (Session 1 + 2)
 
 - Created `.claude/epics/frontend/` directory with epic.md and all task files (#23–#30)
 - **#24 closed**: Next.js 16 scaffold, Tailwind v4 @theme design tokens, shadcn/ui (8 components), `lib/api.ts` (server-only typed client, lazy `buildHeaders()`, RFC 7807 error parsing), Nav + Footer layout (with `CopyrightYear` client component), security headers (CSP, X-Frame, X-Content-Type), Railway config, `/api/health` route, `.env.example`, README
 - **#27 Stream A closed**: HeroScene.tsx (model-viewer, lazy-loaded, split into ModelViewerHero + HeroScene for Rules of Hooks), HeroFallback.tsx (@lottiefiles/react-lottie-player, useId() SVG dedup), types/model-viewer.d.ts
-- Sonnet code review: 7 findings, all fixed
-- Opus code review: 8 findings, all fixed (buildHeaders, Rules of Hooks split, useId, CopyrightYear, CSP frame-src, fallback script cleanup)
+- **#23 closed**: SSR model browser with URL filters, ModelCard list, ModelDetailModal (?model= deep-link), PriceHistoryChart (Recharts, 7d/30d/90d/All), /models/[id] detail page, JSON-LD Product schema
+- **#25 closed**: Price change feed with SSR initial data, 60s polling via /api/changes proxy, animate-flash on new items, LIVE/PAUSED badge, provider + date URL filters
+- **#26 closed**: Compare page (ModelPicker, CompareTable, best-value highlight, share URL) + cost calculator (server action calculateCost, daily/monthly/yearly toggle, URL state)
+- **#28 closed**: Static pricing page with 3 tier cards (Recruit/Engineer/Architect), rank progression strip, FAQ Accordion
+- All 4 Sonnet + 2 Opus code review passes completed; all findings fixed
 - **#27 Stream B pending**: Blender MCP scene (hero.glb + hero.webp) — needs Blender running locally
 
 ---
@@ -71,6 +74,11 @@
 | `frontend/components/layout/` | Nav.tsx + Footer.tsx |
 | `frontend/components/ui/` | shadcn/ui primitives |
 | `frontend/components/hero/` | HeroScene.tsx + HeroFallback.tsx |
+| `frontend/components/model/` | ModelCard, ModelDetailModal, ModelPicker, PriceHistoryChart |
+| `frontend/components/compare/` | CompareClient, CompareTable, ModelPicker |
+| `frontend/components/changes/` | ChangesFeed, ChangeRow |
+| `frontend/components/calculator/` | CalculatorClient |
+| `frontend/app/calculator/actions.ts` | Server action for cost calculation |
 | `frontend/lib/api.ts` | Typed server-side API client (server-only) |
 | `frontend/next.config.ts` | CSP + security headers |
 | `.claude/frontend-design-spec.md` | **Locked design language — read before writing any UI** |
@@ -82,10 +90,8 @@
 
 ```text
 /pm:next                       # What to work on next
-/pm:issue-start 23             # Model browser (unblocked)
-/pm:issue-start 25             # Changes feed (unblocked)
-/pm:issue-start 26             # Compare + Calculator (unblocked)
-/pm:issue-start 28             # Pricing page (unblocked)
+/pm:issue-start 29             # Landing page (unblocked once #27 Stream B done)
+/pm:issue-start 30             # SEO + deployment (unblocked once #23-#29 done)
 /pm:epic-status frontend       # This epic's progress
 ```
 
@@ -99,4 +105,4 @@
 4. Run `npm run build --prefix frontend` — TypeScript must be error-free before committing.
 5. Run `/code-reviewer` (Sonnet) then `/code-reviewer` (Opus) — fix all findings before closing.
 6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
-7. Parallel order: **#24 + #27** → **#23 + #25 + #26 + #28 + #29** → **#30**.
+7. Remaining order: **#27 Stream B** → **#29 (Landing)** → **#30 (SEO/deploy)**.
