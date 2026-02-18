@@ -1,7 +1,7 @@
-# Phase: rest-api
-> Build all 9 /v1/ REST endpoints with OTel SDK instrumentation, Unkey auth, tier gating, Redis caching, and trust metadata. Deploy to Railway.
+# Phase: frontend
+> Build the public-facing Next.js 15 (App Router + SSR) frontend — model browser, cost calculator, comparison page, price change feed, pricing page, and hero Blender scene.
 
-**Branch:** `epic/rest-api` | **Worktree:** `../epic-rest-api` | **Created:** 2026-02-18T12:52:51Z
+**Branch:** `epic/frontend` | **Worktree:** `../epic-frontend` | **Created:** 2026-02-18T21:30:05Z
 
 ---
 
@@ -9,44 +9,54 @@
 
 | # | Task | Status | GitHub |
 |---|------|--------|--------|
-| #12 | OTel SDK init + zerolog structured logging | done | [#12](https://github.com/romeo-folie/llm-pricing-api/issues/12) |
-| #14 | Unkey auth middleware + rate limiting | done | [#14](https://github.com/romeo-folie/llm-pricing-api/issues/14) |
-| #16 | Shared API layer (RFC 7807, caching, trust metadata) | done | [#16](https://github.com/romeo-folie/llm-pricing-api/issues/16) |
-| #18 | Free-tier endpoints | done | [#18](https://github.com/romeo-folie/llm-pricing-api/issues/18) |
-| #20 | Developer+ endpoints | done | [#20](https://github.com/romeo-folie/llm-pricing-api/issues/20) |
-| #13 | Pro endpoints + webhook asynq delivery | done | [#13](https://github.com/romeo-folie/llm-pricing-api/issues/13) |
-| #15 | SSE stub + discovery endpoints | done | [#15](https://github.com/romeo-folie/llm-pricing-api/issues/15) |
-| #17 | Integration test suite | open | [#17](https://github.com/romeo-folie/llm-pricing-api/issues/17) |
-| #19 | Railway deployment + load test | open (blocked by #17) | [#19](https://github.com/romeo-folie/llm-pricing-api/issues/19) |
+| #24 | Project Scaffolding & Design System | **in-progress (Opus review gate)** | [#24](https://github.com/romeo-folie/llm-pricing-api/issues/24) |
+| #27 | Hero Blender MCP Scene | **in-progress (Stream A done; Stream B needs Blender MCP)** | [#27](https://github.com/romeo-folie/llm-pricing-api/issues/27) |
+| #23 | Model Browser, Detail Modal & History | open (blocked by #24) | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
+| #25 | Price Change Feed | open (blocked by #24) | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
+| #26 | Compare Page & Cost Calculator | open (blocked by #24) | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
+| #28 | Pricing Page | open (blocked by #24) | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
+| #29 | Landing Page | open (blocked by #24, #27) | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
+| #30 | SEO, Metadata, Sitemap & Deployment | open (blocked by #23–#29) | [#30](https://github.com/romeo-folie/llm-pricing-api/issues/30) |
 
-**Next action:** Run `/pm:issue-start 17` — integration test suite is now unblocked.
+**Next action:** Wait for Opus review to complete, fix any findings, then run `/pm:issue-close 24`. Once #24 is closed, start #23, #25, #26, #28 in parallel.
+**#27 Stream B** (hero.glb + hero.webp) requires Blender running with blender-mcp addon. Start Blender, connect the addon, then run Blender MCP scene creation.
 
 ---
 
 ## Goals
 
-- Wire OTel SDK (otelfiber + otelgorm + otelredis) from day one; OTLP exporter defaults to no-op until Phase 6
-- Replace slog with zerolog; inject trace_id + span_id on every log line
-- Unkey API key authentication with Redis-cached validation (30s TTL)
-- Per-tier rate limiting (Free: 100/day, Developer: 10k/day, Pro: unlimited)
-- All 9 /v1/ endpoints with trust metadata on every response
-- RFC 7807 error format throughout
-- Redis response caching with per-endpoint TTLs
-- Webhook delivery via asynq (HMAC-SHA256 signed, 3 retries)
-- Integration test suite with 0 failures
-- Railway-deployed, p99 < 200ms at 100 concurrent on /v1/models
+- Next.js 15 App Router with SSR for SEO
+- Isometric design language (bone/ivory palette, amber accent, Orbitron + Outfit fonts, borders-not-shadows)
+- Model browser with filters, detail modal, price history chart
+- Cost calculator and comparison page with shareable URL params
+- Price change feed with 60s client-side polling
+- Pricing page with tier cards
+- Lighthouse Performance ≥ 90, SEO ≥ 95
+- Railway deployment as a new `frontend` service
 
 ---
 
 ## Architecture Notes
 
-- **Extend, don't rewrite** — existing Fiber app, pgx pool, Redis client, and graceful shutdown in `cmd/api/main.go` stay as-is; new middleware and routes registered on top
-- **Middleware stack order** — otelfiber → zerolog → recover → Unkey auth → rate limit → response cache → handlers; this order ensures span context is available everywhere
-- **OTel SDK with no-op default** — `OTEL_EXPORTER_OTLP_ENDPOINT` env var controls the OTLP exporter; when unset, SDK is a no-op; zero startup risk
-- **Unkey cache key** — `unkey:{sha256(raw_key)}` stored in Redis; raw key value never written to Redis or logs
-- **Trust metadata computed at query time** — `TrustMeta` struct populated from `price_history` rows fetched by the handler; confidence rule: high = 2+ sources agree, medium = single source <24h, low = single source ≥24h
-- **Webhook delivery** — reuses existing asynq worker from Phase 1; new task type `TypeWebhookDeliver` registered in `internal/worker/tasks.go`
-- **Scrapers** — Phase 1 refactor dropped provider HTML scrapers; only OpenRouter + LiteLLM sources in production
+- All work lives in `frontend/` — this is a Next.js 16 project within the monorepo root
+- Design tokens are locked in `.claude/frontend-design-spec.md` — read it before writing any CSS or components
+- **No box-shadows anywhere** — use `border border-[--border]` for component edges per the spec
+- API client (`lib/api.ts`) is a **server-only** module — it injects `LLM_PRICING_API_KEY` for Dev-tier endpoints; this key must never reach the client bundle
+- Filters and calculator inputs live in URL search params — all user state must be shareable via URL
+- `next: { revalidate: 300 }` on all fetches — do not use `cache: 'no-store'` except in the changes feed poller
+- #24 (scaffolding) must land before #23/#25/#26/#28; #27 (Blender) is parallel to #24 but must land before #29 (landing)
+- shadcn/ui components in `frontend/components/ui/`; design utilities in `frontend/app/globals.css`
+- `npm run build` must pass before any commit
+
+---
+
+## What Was Done (Session 2026-02-18)
+
+- Created `.claude/epics/frontend/` directory with epic.md and all task files (#23–#30)
+- **#24 committed**: Next.js 16 scaffold, Tailwind v4 @theme design tokens, shadcn/ui (8 components), `lib/api.ts` (server-only typed client), Nav + Footer layout, security headers (CSP, X-Frame, X-Content-Type), Railway config, .env.example, README
+- **#27 Stream A committed**: HeroScene.tsx (model-viewer, lazy-loaded), HeroFallback.tsx (@lottiefiles/react-lottie-player), types/model-viewer.d.ts
+- Sonnet code review done — 7 findings fixed (CSP, revalidate, inline styles, a11y, healthcheck)
+- Opus code review in progress
 
 ---
 
@@ -54,38 +64,39 @@
 
 | Path | Role |
 |------|------|
-| `cmd/api/main.go` | API entrypoint — extend with OTel init, middleware registration, /v1/ route group |
-| `internal/config/config.go` | Config — add UNKEY_ROOT_KEY, UNKEY_API_ID, OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME |
-| `internal/otel/` | New — OTel SDK init, OTLP exporter, shutdown hook |
-| `internal/logger/` | New — zerolog setup with trace_id/span_id injection |
-| `internal/middleware/` | New — auth.go, ratelimit.go, cache.go, security.go |
-| `internal/api/` | New — problem.go (RFC 7807), trust.go, response.go |
-| `internal/api/handlers/` | New — one file per route group |
-| `internal/worker/tasks.go` | Extend — register TypeWebhookDeliver task |
-| `internal/reconciler/reconciler.go` | Extend — enqueue webhook delivery on confirmed price change |
-| `migrations/` | May need webhooks table migration |
+| `frontend/` | Next.js 16 project root (primary work area) |
+| `frontend/app/` | App Router pages and layouts |
+| `frontend/app/globals.css` | Tailwind v4 @theme + all 23 design tokens |
+| `frontend/components/layout/` | Nav.tsx + Footer.tsx |
+| `frontend/components/ui/` | shadcn/ui primitives |
+| `frontend/components/hero/` | HeroScene.tsx + HeroFallback.tsx |
+| `frontend/lib/api.ts` | Typed server-side API client (server-only) |
+| `frontend/next.config.ts` | CSP + security headers |
+| `.claude/frontend-design-spec.md` | **Locked design language — read before writing any UI** |
+| `.claude/epics/frontend/epic.md` | Full epic spec with task order |
 
 ---
 
 ## CCPM Quick Commands
 
 ```text
-/pm:next                    # What to work on next
-/pm:issue-start 12          # Begin the foundation task (start here)
-/pm:issue-close <N>         # Mark a task complete
-/pm:status                  # Full project dashboard
-/pm:epic-status rest-api    # This epic's progress
-/pm:blocked                 # See blocked tasks
+/pm:next                       # What to work on next
+/pm:issue-close 24             # Close scaffolding after Opus review
+/pm:issue-start 23             # Model browser (after #24 closes)
+/pm:issue-start 25             # Changes feed (after #24 closes)
+/pm:issue-start 26             # Compare + Calculator (after #24 closes)
+/pm:issue-start 28             # Pricing page (after #24 closes)
+/pm:epic-status frontend       # This epic's progress
 ```
 
 ---
 
 ## Resuming Work
 
-1. Check **Current Status** table above for the next `open` task without blockers.
+1. Check the **Current Status** table above for the next `open` task without blockers.
 2. Run `/pm:issue-start <N>` to claim it and read its full spec.
-3. Write tests before implementation (TDD).
-4. Run `go test ./...` — all tests must pass before committing.
-5. Run `/code-reviewer` — fix all findings before closing.
+3. Before writing any UI code, invoke `/frontend-design:frontend-design` per CLAUDE.md.
+4. Run `npm run build --prefix frontend` — TypeScript must be error-free before committing.
+5. Run `/code-reviewer` (Sonnet) then `/code-reviewer` (Opus) — fix all findings before closing.
 6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
-7. The next unblocked task is always #12 first, then #14 and #16 in parallel, then #18/#20/#13/#15 in parallel, then #17, then #19.
+7. Parallel order: **#24 + #27** → **#23 + #25 + #26 + #28 + #29** → **#30**.
