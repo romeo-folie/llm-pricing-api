@@ -23,6 +23,7 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
     // Dynamically load @google/model-viewer from npm package dist.
     // Using the local package avoids the CSP `unsafe-inline` + CDN risk.
     let cancelled = false
+    let fallbackScript: HTMLScriptElement | null = null
     const script = document.createElement("script")
     script.type = "module"
     // Note: Next.js serves node_modules via the bundler; model-viewer self-registers
@@ -32,10 +33,10 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
     // Fallback: if the bundled path is unavailable, try the npm package path
     script.onerror = () => {
       if (cancelled) return
-      const fallback = document.createElement("script")
-      fallback.type = "module"
-      fallback.src = "/model-viewer.js"
-      document.head.appendChild(fallback)
+      fallbackScript = document.createElement("script")
+      fallbackScript.type = "module"
+      fallbackScript.src = "/model-viewer.js"
+      document.head.appendChild(fallbackScript)
     }
 
     script.onload = () => {
@@ -63,10 +64,11 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
 
     return () => {
       cancelled = true
-      // Cancel pending onload callback and remove the injected script tag
+      // Cancel pending onload callback and remove the injected script tags
       script.onload = null
       script.onerror = null
       if (script.parentNode) script.parentNode.removeChild(script)
+      if (fallbackScript?.parentNode) fallbackScript.parentNode.removeChild(fallbackScript)
       // Remove the model-viewer element if it was added
       const mv = container.querySelector("model-viewer")
       if (mv) mv.remove()

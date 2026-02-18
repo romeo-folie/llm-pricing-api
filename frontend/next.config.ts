@@ -16,7 +16,7 @@ const ContentSecurityPolicy = `
   media-src 'self' blob:;
   connect-src 'self' https://checkout.lemonsqueezy.com https://assets10.lottiefiles.com;
   worker-src 'self' blob:;
-  frame-src 'none' https://checkout.lemonsqueezy.com;
+  frame-src https://checkout.lemonsqueezy.com;
   object-src 'none';
   base-uri 'self';
   form-action 'self' https://checkout.lemonsqueezy.com;
