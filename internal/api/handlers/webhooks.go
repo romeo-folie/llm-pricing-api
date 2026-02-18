@@ -164,6 +164,10 @@ type WebhookHandler struct {
 // WebhookHandlerExport is a test-visible alias that exposes the Store field so
 // tests in the handlers_test package can inject a mock WebhookStore.
 // Production code should use WebhookHandler directly via RegisterPro.
+//
+// WARNING: This shim does not set a secretKey, so webhook secrets are stored
+// and used as plaintext. It is intended solely for unit tests that do not
+// need end-to-end encryption. Never use in production code paths.
 type WebhookHandlerExport struct {
 	Store WebhookStore
 }
@@ -195,8 +199,12 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	if body.URL == "" {
 		return api.NewBadRequest("url is required")
 	}
-	if _, err := url.ParseRequestURI(body.URL); err != nil {
+	parsed, err := url.ParseRequestURI(body.URL)
+	if err != nil {
 		return api.NewBadRequest(fmt.Sprintf("invalid url: %s", err.Error()))
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return api.NewBadRequest("url scheme must be http or https")
 	}
 
 	apiKeyHash, _ := c.Locals(middleware.LocalKeyHash).(string)

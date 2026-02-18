@@ -184,13 +184,21 @@ func TestGetModelHistory_InvalidToDate_Returns400(t *testing.T) {
 }
 
 func TestGetModelHistory_DateFiltersPassedToStore(t *testing.T) {
+	// When date filters are present, GetModelHistory is called twice:
+	// once with the filters (for items) and once without (for TrustMeta
+	// computed over the full history). Capture the first call to verify
+	// the filter was forwarded correctly.
 	var capturedFilter handlers.HistoryFilter
+	callCount := 0
 	store := &mockStore{
 		modelExists: func(_ context.Context, _ int) (bool, error) {
 			return true, nil
 		},
 		getModelHistory: func(_ context.Context, _ int, f handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
-			capturedFilter = f
+			callCount++
+			if callCount == 1 {
+				capturedFilter = f
+			}
 			return nil, nil
 		},
 	}

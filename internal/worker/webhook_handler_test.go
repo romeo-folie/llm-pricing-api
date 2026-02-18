@@ -13,10 +13,10 @@ import (
 	"time"
 )
 
-// TestHandleWebhookDeliver_HMACSignatureCorrect verifies that the handler
+// TestWebhookDeliveryHandler_HMACSignatureCorrect verifies that the handler
 // sends an X-LLMPricing-Signature header whose value matches a locally-
 // computed HMAC-SHA256 of the marshalled event body.
-func TestHandleWebhookDeliver_HMACSignatureCorrect(t *testing.T) {
+func TestWebhookDeliveryHandler_HMACSignatureCorrect(t *testing.T) {
 	secret := "super-secret"
 	var gotSig string
 	var gotBody []byte
@@ -42,7 +42,7 @@ func TestHandleWebhookDeliver_HMACSignatureCorrect(t *testing.T) {
 	payload := WebhookTaskPayload{
 		WebhookID: "wh-001",
 		URL:       srv.URL,
-		Secret:    secret,
+		Secret:    secret, // plaintext — no encryption key configured
 		Event:     event,
 	}
 	data, err := json.Marshal(payload)
@@ -56,8 +56,9 @@ func TestHandleWebhookDeliver_HMACSignatureCorrect(t *testing.T) {
 	}
 	_ = data
 
-	if err := HandleWebhookDeliver(context.Background(), task); err != nil {
-		t.Fatalf("HandleWebhookDeliver returned error: %v", err)
+	// Empty secretKey → DecryptSecret returns the value as-is (plaintext mode).
+	if err := NewWebhookDeliveryHandler("").Handle(context.Background(), task); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
 	}
 
 	// Compute the expected signature from the received body.
@@ -70,10 +71,10 @@ func TestHandleWebhookDeliver_HMACSignatureCorrect(t *testing.T) {
 	}
 }
 
-// TestHandleWebhookDeliver_Non2xxReturnsError verifies that a non-2xx response
+// TestWebhookDeliveryHandler_Non2xxReturnsError verifies that a non-2xx response
 // from the destination URL causes the handler to return an error so asynq
 // retries the task.
-func TestHandleWebhookDeliver_Non2xxReturnsError(t *testing.T) {
+func TestWebhookDeliveryHandler_Non2xxReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -96,14 +97,14 @@ func TestHandleWebhookDeliver_Non2xxReturnsError(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 
-	if err := HandleWebhookDeliver(context.Background(), task); err == nil {
+	if err := NewWebhookDeliveryHandler("").Handle(context.Background(), task); err == nil {
 		t.Error("expected error for non-2xx response, got nil")
 	}
 }
 
-// TestHandleWebhookDeliver_Payload400ReturnsError verifies that a 400 Bad
+// TestWebhookDeliveryHandler_Payload400ReturnsError verifies that a 400 Bad
 // Request from the destination is also treated as a failure.
-func TestHandleWebhookDeliver_Payload400ReturnsError(t *testing.T) {
+func TestWebhookDeliveryHandler_Payload400ReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -125,7 +126,7 @@ func TestHandleWebhookDeliver_Payload400ReturnsError(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 
-	if err := HandleWebhookDeliver(context.Background(), task); err == nil {
+	if err := NewWebhookDeliveryHandler("").Handle(context.Background(), task); err == nil {
 		t.Error("expected error for 400 response, got nil")
 	}
 }

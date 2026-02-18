@@ -90,7 +90,11 @@ func main() {
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)
-	mux.HandleFunc(worker.TypeWebhookDeliver, worker.HandleWebhookDeliver)
+
+	// WebhookDeliveryHandler holds the AES key so it can decrypt secrets at
+	// task execution time — secrets are stored encrypted at rest.
+	webhookHandler := worker.NewWebhookDeliveryHandler(cfg.WebhookSecretKey)
+	mux.HandleFunc(worker.TypeWebhookDeliver, webhookHandler.Handle)
 
 	// Start cron scheduler using the same Redis options as the server.
 	scheduler := asynq.NewScheduler(redisOpt, nil)

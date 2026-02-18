@@ -153,6 +153,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		groups[k] = append(groups[k], d)
 	}
 
+	// Fetch active webhooks once per reconciliation cycle instead of once per
+	// publish call to avoid an N+1 query when many models change in the same run.
+	// If the fetch fails, we proceed with an empty slice — price writes continue
+	// and webhook fan-out is skipped for this cycle only.
+	var activeWebhooks []WebhookRow
+	if r.asynqClient != nil {
+		var whErr error
+		activeWebhooks, whErr = r.store.ListActiveWebhooks(ctx)
+		if whErr != nil {
+			r.logger.Warn().Err(whErr).Msg("reconciler: ListActiveWebhooks failed; skipping webhook fan-out for this cycle")
+			activeWebhooks = nil
+		}
+	}
+
 	// --- process each group ---
 	// processMultiSource does DB I/O only — no lock needed (no shared state).
 	// processSingleSource acquires the lock internally when mutating r.pending.
@@ -164,9 +178,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		}
 
 		if len(groupDiffs) >= 2 {
-			r.processMultiSource(ctx, k.slug, k.field, modelID, groupDiffs, sourceIDs)
+			r.processMultiSource(ctx, k.slug, k.field, modelID, groupDiffs, sourceIDs, activeWebhooks)
 		} else {
-			r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs)
+			r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks)
 		}
 	}
 
@@ -194,6 +208,7 @@ func (r *Reconciler) processMultiSource(
 	modelID int,
 	groupDiffs []diff.PriceDiff,
 	sourceIDs map[string]int,
+	activeWebhooks []WebhookRow,
 ) {
 	type valuediff struct {
 		value    float64
@@ -220,7 +235,7 @@ func (r *Reconciler) processMultiSource(
 		}
 	}
 	if allAgree {
-		r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceHigh)
+		r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceHigh, activeWebhooks)
 		return
 	}
 
@@ -278,7 +293,7 @@ func (r *Reconciler) processMultiSource(
 		// If a consensus of 2+ sources exists, publish despite the outlier.
 		// This implements the PRD rule: single noisy source ≠ block on majority agreement.
 		if consensusSize >= 2 {
-			r.publish(ctx, modelID, consensusSourceID, field, consensusValue, models.ConfidenceHigh)
+			r.publish(ctx, modelID, consensusSourceID, field, consensusValue, models.ConfidenceHigh, activeWebhooks)
 		}
 		return
 	}
@@ -288,7 +303,7 @@ func (r *Reconciler) processMultiSource(
 	// after the sort above.  All candidates are within 5% of each other, so any value is
 	// a valid representation; alphabetical determinism is intentional and keeps the output
 	// stable across re-runs with the same source set.
-	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium)
+	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium, activeWebhooks)
 }
 
 // processSingleSource handles a group where only one source reported a change.
@@ -301,6 +316,7 @@ func (r *Reconciler) processSingleSource(
 	modelID int,
 	d diff.PriceDiff,
 	sourceIDs map[string]int,
+	activeWebhooks []WebhookRow,
 ) {
 	key := slug + ":" + string(field) + ":" + d.Source
 	sourceID := sourceIDs[d.Source]
@@ -322,7 +338,7 @@ func (r *Reconciler) processSingleSource(
 	r.mu.Unlock()
 
 	if shouldPublish {
-		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceMedium)
+		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceMedium, activeWebhooks)
 	}
 }
 
@@ -337,6 +353,7 @@ func (r *Reconciler) publish(
 	field models.PriceField,
 	newValue float64,
 	confidence models.Confidence,
+	activeWebhooks []WebhookRow,
 ) {
 	currInput, currOutput, _, err := r.store.LookupCurrentPrice(ctx, modelID, sourceID)
 	if err != nil {
@@ -373,27 +390,22 @@ func (r *Reconciler) publish(
 		return
 	}
 
-	if r.asynqClient != nil {
-		r.enqueueWebhooks(ctx, modelID, sourceID, currInput, currOutput, input, output)
+	if r.asynqClient != nil && len(activeWebhooks) > 0 {
+		r.enqueueWebhooks(ctx, modelID, sourceID, currInput, currOutput, input, output, activeWebhooks)
 	}
 }
 
 // enqueueWebhooks fans out a webhook:deliver task to every active webhook registration.
-// Errors are logged but never returned — a delivery failure must not abort reconciliation.
+// activeWebhooks is pre-fetched once per reconciliation cycle by Reconcile() to
+// avoid an N+1 query pattern. Errors are logged but never returned — a delivery
+// failure must not abort reconciliation.
 func (r *Reconciler) enqueueWebhooks(
 	ctx context.Context,
 	modelID, sourceID int,
 	oldInput, oldOutput float64,
 	newInput, newOutput float64,
+	activeWebhooks []WebhookRow,
 ) {
-	activeWebhooks, err := r.store.ListActiveWebhooks(ctx)
-	if err != nil {
-		r.logger.Warn().Int("model_id", modelID).Err(err).Msg("reconciler: ListActiveWebhooks failed; skipping webhook fan-out")
-		return
-	}
-	if len(activeWebhooks) == 0 {
-		return
-	}
 
 	sourceName, err := r.store.LookupSourceName(ctx, sourceID)
 	if err != nil {

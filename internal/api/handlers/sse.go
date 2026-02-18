@@ -35,7 +35,8 @@ func NewSSEHandler() (*SSEHandler, error) {
 // This is a Phase 2 stub: it sets the correct SSE response headers, increments
 // the active-connection counter, sends a single keepalive SSE comment
 // (": ok\n\n"), then holds the connection open by sending a heartbeat comment
-// every 30 seconds until the underlying TCP connection is closed by the client.
+// every 30 seconds until the underlying TCP connection is closed by the client
+// or the server signals shutdown via request context cancellation.
 //
 // Full reconnection logic (Last-Event-ID, real price-change events) is deferred
 // to Phase 4.
@@ -50,6 +51,12 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 	c.Set("X-Accel-Buffering", "no")
 
 	h.activeConns.Add(c.Context(), 1)
+
+	// Capture the request context before SetBodyStreamWriter so the writer
+	// goroutine can react to client disconnects and server shutdown.
+	// fasthttp may recycle c.Context() after the handler returns, so we must
+	// not access it from inside the writer callback.
+	reqCtx := c.UserContext()
 
 	c.Status(fiber.StatusOK)
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
@@ -67,17 +74,22 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 			return
 		}
 
-		// Poll on a 30-second heartbeat; write errors signal that the client
-		// has closed the connection, at which point we return and defer fires.
+		// Poll on a 30-second heartbeat. Use select so the loop exits cleanly
+		// when the request context is cancelled (client disconnect or graceful
+		// server shutdown), rather than blocking forever on the ticker.
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
-			<-ticker.C
-			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+			select {
+			case <-reqCtx.Done():
 				return
-			}
-			if err := w.Flush(); err != nil {
-				return
+			case <-ticker.C:
+				if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+					return
+				}
+				if err := w.Flush(); err != nil {
+					return
+				}
 			}
 		}
 	})

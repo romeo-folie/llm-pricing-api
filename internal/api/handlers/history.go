@@ -84,10 +84,19 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 		}
 	}
 
-	// Build trust metadata from the history rows so the response carries the
-	// same confidence/age/velocity fields as every other endpoint.
-	trustRows := make([]api.PriceHistoryRow, len(history))
-	for i, r := range history {
+	// Build trust metadata from the full unfiltered history so that confidence,
+	// age, and change_velocity reflect the model's actual data quality rather
+	// than the subset selected by the caller's date window.
+	metaHistory := history
+	if filter.From != nil || filter.To != nil {
+		metaHistory, err = h.store.GetModelHistory(c.Context(), id, HistoryFilter{})
+		if err != nil {
+			// Non-fatal: fall back to filtered history for meta computation.
+			metaHistory = history
+		}
+	}
+	trustRows := make([]api.PriceHistoryRow, len(metaHistory))
+	for i, r := range metaHistory {
 		trustRows[i] = api.PriceHistoryRow{
 			InputCostPerToken:  r.InputCostPerToken,
 			OutputCostPerToken: r.OutputCostPerToken,
