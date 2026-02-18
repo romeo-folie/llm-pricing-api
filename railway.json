@@ -6,7 +6,9 @@
     "watchPatterns": [
       "**/*.go",
       "go.mod",
-      "go.sum"
+      "go.sum",
+      "railway.json",
+      "start.sh"
     ]
   },
   "deploy": {
