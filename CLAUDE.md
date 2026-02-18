@@ -1,0 +1,163 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Development Workflow — CCPM
+
+This project uses **CCPM** (Claude Code Project Manager) for task management via GitHub Issues. The `/pm` slash commands are installed in `.claude/commands/pm/`.
+
+**When starting a new development phase**, always use the `/pm` workflow to decompose it into tracked tasks before writing code:
+
+1. `/pm:prd-new <phase-name>` — create or import the PRD for the phase
+2. `/pm:prd-parse <phase-name>` — convert it into a technical epic
+3. `/pm:epic-decompose <phase-name>` — break the epic into concrete tasks
+4. `/pm:epic-sync <phase-name>` — push tasks to GitHub Issues
+5. `/pm:issue-start <issue-number>` — begin work on a task
+6. `/pm:issue-close <issue-number>` — mark a task complete
+
+Useful during development:
+- `/pm:status` — project dashboard
+- `/pm:next` — get the next priority task
+- `/pm:blocked` — see blocked tasks
+- `/pm:standup` — daily standup summary
+
+### Issue Traceability
+
+All commits and pull requests **must** reference the GitHub Issue they implement. Keep implementation in sync with CCPM issues at all times.
+
+- **Commit messages**: include `#<issue-number>` (e.g. `feat: add diff engine for price reconciliation #12`)
+- **Pull requests**: reference the issue in the PR body with `Closes #<issue-number>` or `Resolves #<issue-number>`
+- **One issue per branch**: create a feature branch per task, named `<issue-number>-short-description` (e.g. `12-diff-engine`)
+- After completing work, use `/pm:issue-close <issue-number>` to mark the task done — do not close issues without a corresponding commit or PR
+
+## Test-Driven Development
+
+This project follows a **test-driven development (TDD)** approach for all core modules. Tests are a first-class priority, not an afterthought.
+
+- **Write tests before implementation**. For each unit of work, write failing tests that define the expected behaviour, then write the code to make them pass.
+- **No feature is complete without tests**. A task cannot be closed (via `/pm:issue-close`) unless its tests pass.
+- **Test the reconciliation engine thoroughly** — this is the critical data integrity boundary. Cover: discrepancy detection, threshold logic, 2-source agreement, flagging, and immutable history writes.
+- **Integration tests for API endpoints** — cover auth, tier gating, filtering, pagination, error responses (RFC 7807), and trust metadata presence.
+- **Run tests before committing**: `go test ./...` must pass with zero failures before any commit.
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests for a specific package
+go test ./internal/reconciler/...
+
+# Run a single test by name
+go test -run TestReconcile ./...
+
+# Run tests with verbose output
+go test -v ./...
+
+# Run tests with coverage
+go test -cover ./...
+```
+
+## What This Project Is
+
+LLM Token Pricing Platform — a reconciled, multi-source pricing data API for LLM models. It aggregates pricing from OpenRouter, LiteLLM, and provider docs, reconciles discrepancies, stores immutable price history in TimescaleDB, and serves it through a versioned REST API and MCP server.
+
+The differentiator is **price history + change tracking**. Every competitor gives a snapshot; this gives the full timeline and sells reliable programmatic access to it.
+
+## Architecture Overview
+
+The system has six layers, built in this order:
+
+1. **Data Pipeline** — Go goroutines + asynq cron workers scrape three sources (OpenRouter every 6h, LiteLLM daily, provider docs daily). A diff engine compares incoming values against stored values. A reconciliation engine requires 2-source agreement to publish; discrepancies >5% are flagged to a review queue. Every confirmed change is written as an immutable timestamped record.
+
+2. **Storage** — PostgreSQL + TimescaleDB for price history (immutable time-series records). Redis for job queue (asynq), response caching, and rate limiting.
+
+3. **REST API** — Go + Fiber serving `/v1/` endpoints. Auth via Unkey API keys with tier-based gating (Free/Developer/Pro). All responses use a consistent JSON envelope with trust metadata (`confirmed_at`, `source`, `confidence`, `age_hours`, `change_velocity`). Errors follow RFC 7807.
+
+4. **Agent Interface** — MCP server (`@llmpricing/mcp` on npm, TypeScript), SSE stream at `/v1/stream/changes`, natural language query at `/v1/ask`, context snapshot at `/v1/context` (~2k tokens), and discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`).
+
+5. **Frontend** — Next.js with TypeScript and Tailwind. SSR for SEO. Comparison table, cost calculator, price history charts (Tremor or Recharts), model recommender UI.
+
+6. **Monetisation** — Lemon Squeezy as Merchant of Record. Three tiers: Free ($0, 100 req/day), Developer ($15, 10k req/day), Pro ($50, unlimited + webhooks + SLA).
+
+## API Endpoints
+
+| Endpoint | Tier | Purpose |
+|---|---|---|
+| `GET /v1/models` | Free | List models with filters: `?provider=`, `?modality=`, `?min_context=` |
+| `GET /v1/models/:id` | Free | Single model detail |
+| `GET /v1/models/:id/history` | Dev+ | Price history with `?from=`, `?to=` |
+| `GET /v1/compare?models=` | Free | Compare up to 5 models |
+| `GET /v1/recommend` | Dev+ | Ranked models by task/context/price |
+| `GET /v1/providers` | Free | Provider list |
+| `GET /v1/changes` | Free | Recent price changes with `?since=`, `?provider=` |
+| `POST /v1/webhooks` | Pro | Register webhook |
+| `DELETE /v1/webhooks/:id` | Pro | Remove webhook |
+| `GET /v1/context` | Dev+ | ~2k token pricing snapshot for agent system prompts |
+| `POST /v1/ask` | Dev+ | NL query → structured response with `inferred_params` |
+| `GET /v1/stream/changes` | Dev+ | SSE stream with reconnection via `Last-Event-ID` |
+
+## Key Technical Decisions
+
+- **Reconciliation before publishing**: price data is never written directly from a scraper. The reconciliation engine mediates all writes. Single-source changes require 2 consecutive matching fetches. Multi-source disagreements are held in a review queue.
+- **Immutable history**: `price_history` records are append-only. No in-place updates. Every record has source attribution.
+- **Trust metadata on every response**: `confirmed_at`, `source`, `confidence` (high/medium/low), `age_hours`, `change_velocity`. Agents use these to decide whether to trust a value.
+- **Tier gating via Unkey middleware**: Fiber middleware validates the API key, extracts the tier, and attaches it to the request context. Cache Unkey validation in Redis with 30s TTL.
+- **Webhook delivery**: via asynq jobs, at-least-once with 3 retries and exponential backoff.
+
+## Build & Run Commands
+
+```bash
+# Go API
+go build -o bin/api ./cmd/api
+go run ./cmd/api
+
+# Background workers
+go run ./cmd/worker
+
+# Frontend (Next.js)
+cd frontend && npm install
+cd frontend && npm run dev
+cd frontend && npm run build
+
+# MCP server
+cd mcp && npm install
+cd mcp && npm run build
+npx @llmpricing/mcp
+```
+
+## Stack Reference
+
+| Component | Technology |
+|---|---|
+| API server | Go + Fiber |
+| Database | PostgreSQL + TimescaleDB |
+| Job queue / cache | Redis + asynq |
+| Frontend | Next.js + TypeScript + Tailwind |
+| Charts | Tremor or Recharts |
+| MCP server | TypeScript + MCP SDK |
+| API key management | Unkey |
+| Payments | Lemon Squeezy |
+| Hosting | Railway |
+
+## Data Sources
+
+| Source | Frequency | Role |
+|---|---|---|
+| OpenRouter `/v1/models` | Every 6 hours | Primary feed |
+| LiteLLM model cost map (GitHub JSON) | Daily | Cross-reference |
+| Provider docs (OpenAI, Anthropic, Google, Mistral, Amazon) | Daily scrape | Ground truth |
+
+## Reconciliation Rules
+
+- Any source disagreement >5% → flag for manual review (4hr SLA during working hours)
+- Single-source change → auto-publish after 2 consecutive matching fetches
+- Flagged records never silently resolve — require confirmed match or manual override
+- Every confirmed change → immutable record in `price_history` with source attribution
+
+## Performance Targets
+
+- API p99 latency: <200ms for all read endpoints
+- `/v1/context` response: ≤2,100 tokens (verified with tiktoken)
+- Webhook delivery: at-least-once, max 3 attempts over 15 minutes
+- SSE heartbeat: every 30 seconds
+- Data freshness: no published value older than 24 hours without a stale indicator

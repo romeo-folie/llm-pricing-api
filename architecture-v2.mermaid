@@ -1,0 +1,101 @@
+flowchart TD
+    subgraph SOURCES["⚡ External Data Sources"]
+        OR["⚡ OpenRouter\n/v1/models\n─────────────\nEvery 6 hours · Primary"]
+        LL["📦 LiteLLM\nGitHub JSON\n─────────────\nDaily · Cross-reference"]
+        PD["🔍 Provider Docs\nOpenAI · Anthropic\nGoogle · Mistral · Amazon\n─────────────\nDaily scrape · Ground truth"]
+    end
+
+    subgraph INGESTION["⚙️ Ingestion Pipeline"]
+        SW["⚙️ Scraper Workers\nGo goroutines + asynq\n─────────────\nCron · Diff detection"]
+        RE["🔬 Reconciliation Engine\nDiff + trust layer\n─────────────\n>5% delta → flag\n2x match → publish"]
+        RQ["🚩 Review Queue\nManual resolution\n─────────────\n4hr SLA · Audit log"]
+    end
+
+    subgraph STORAGE["🗄️ Storage"]
+        TS[("🗄️ PostgreSQL\n+ TimescaleDB\n─────────────\nImmutable history\nPrice snapshots")]
+        RD[("⚡ Redis\nQueue + Cache\n─────────────\nRate limiting · TTL")]
+    end
+
+    subgraph API["🚀 API Layer — REST /v1/"]
+        FB["🚀 Go + Fiber\nREST API\n─────────────\n/models · /compare\n/recommend · /changes\n/ask · /context · /stream"]
+        UK["🔑 Unkey\nAPI Key Management\n─────────────\nKey issuance · Tiers"]
+        PS["💳 Lemon Squeezy\nMerchant of Record\n─────────────\nFree · $15 · $50\nGlobal USD billing"]
+    end
+
+    subgraph AGENT["🤖 Agent Interface"]
+        MCP["🤖 MCP Server\nnpx @llmpricing/mcp\n─────────────\nget_cheapest_model\ncompare_models\nget_price_history\nget_context_snapshot"]
+        OAPI["📋 OpenAPI + Discovery\n─────────────\n/openapi.json\n/.well-known/ai-plugin.json\n/llms.txt"]
+        SSE["📡 SSE Stream\n/v1/stream/changes\n─────────────\nReal-time push\nDev+ tier"]
+        CTX["🗜️ Context Snapshot\n/v1/context\n─────────────\n~2k token summary\nSystem prompt ready"]
+        ASK["💬 NL Query\n/v1/ask\n─────────────\nPlain English input\nStructured output"]
+    end
+
+    subgraph CONSUMERS["🌐 Consumers"]
+        NX["🌐 Next.js Frontend\nPublic site + SEO\n─────────────\nComparison · Charts\nRecommender UI"]
+        WH["📨 Webhook Dispatch\nPro tier alerts\n─────────────\nAt-least-once · 3 retries"]
+        DEV["👨‍💻 Developer API\nExternal consumers\n─────────────\nREST · JSON"]
+        AGT["🤖 AI Agents\nClaude Code · Cursor\nWindsurf · Custom\n─────────────\nMCP or REST"]
+    end
+
+    OR -->|"pull every 6h"| SW
+    LL -->|"pull daily"| SW
+    PD -->|"scrape daily"| SW
+
+    SW -->|"change events"| RE
+    RE -.->|"flag discrepancy"| RQ
+    RQ -.->|"manual resolve"| RE
+
+    RE -->|"confirmed write"| TS
+    RE -.->|"invalidate"| RD
+    RE -->|"confirmed event"| SSE
+
+    TS -->|"read"| FB
+    RD -->|"cache / rate limit"| FB
+
+    FB -.->|"validate key"| UK
+    PS -.->|"upgrade key on plan change"| UK
+
+    FB -->|"tools"| MCP
+    FB -->|"spec"| OAPI
+    FB -->|"events"| SSE
+    FB -->|"snapshot"| CTX
+    FB -->|"NL inference"| ASK
+
+    FB -->|"SSR data"| NX
+    FB -.->|"dispatch"| WH
+    FB -->|"REST JSON"| DEV
+
+    MCP -->|"native tools"| AGT
+    SSE -->|"push events"| AGT
+    CTX -->|"system prompt inject"| AGT
+    ASK -->|"structured response"| AGT
+    OAPI -->|"self-describe"| AGT
+    DEV -->|"HTTP"| AGT
+
+    classDef sources fill:#1a120a,stroke:#F59E0B,stroke-width:2px,color:#FCD34D
+    classDef ingestion fill:#0a1a0f,stroke:#10B981,stroke-width:2px,color:#6EE7B7
+    classDef reconciler fill:#0f0a1a,stroke:#6366F1,stroke-width:2px,color:#A5B4FC
+    classDef flagged fill:#1a0a0a,stroke:#EF4444,stroke-width:2px,color:#FCA5A5
+    classDef storage fill:#0a1519,stroke:#06B6D4,stroke-width:2px,color:#67E8F9
+    classDef api fill:#0f0a1a,stroke:#6366F1,stroke-width:2px,color:#A5B4FC
+    classDef billing fill:#0a1a0f,stroke:#10B981,stroke-width:2px,color:#6EE7B7
+    classDef agent fill:#1a0a1a,stroke:#A855F7,stroke-width:2px,color:#D8B4FE
+    classDef consumers fill:#0f0a1a,stroke:#6366F1,stroke-width:2px,color:#A5B4FC
+    classDef agentconsumer fill:#1a0a1a,stroke:#A855F7,stroke-width:2px,color:#D8B4FE
+
+    class OR,LL,PD sources
+    class SW ingestion
+    class RE reconciler
+    class RQ flagged
+    class TS,RD storage
+    class FB,UK,DEV,NX api
+    class PS,WH billing
+    class MCP,OAPI,SSE,CTX,ASK agent
+    class AGT agentconsumer
+
+    style SOURCES fill:#0D0A00,stroke:#F59E0B,stroke-width:1px,stroke-dasharray:6 4,color:#F59E0B
+    style INGESTION fill:#00100A,stroke:#10B981,stroke-width:1px,stroke-dasharray:6 4,color:#10B981
+    style STORAGE fill:#00090D,stroke:#06B6D4,stroke-width:1px,stroke-dasharray:6 4,color:#06B6D4
+    style API fill:#08001A,stroke:#6366F1,stroke-width:1px,stroke-dasharray:6 4,color:#6366F1
+    style AGENT fill:#150020,stroke:#A855F7,stroke-width:1px,stroke-dasharray:6 4,color:#A855F7
+    style CONSUMERS fill:#08001A,stroke:#6366F1,stroke-width:1px,stroke-dasharray:6 4,color:#6366F1
