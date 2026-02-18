@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* ─── Design Tokens ─────────────────────────────────────────────────────── */
+
+@theme {
+  /* Base palette */
+  --color-bg:         #F2EDE8;
+  --color-surface:    #FDFAF7;
+  --color-surface-lo: #EDE8E2;
+  --color-surface-hi: #FFFFFF;
+
+  /* Borders */
+  --color-border:     #DDD7D0;
+  --color-border-dk:  #C8C0B6;
+
+  /* Text */
+  --color-text:       #1C1917;
+  --color-muted:      #78716C;
+  --color-dim:        #A8A29E;
+  --color-ink:        #1E293B;
+
+  /* Accent */
+  --color-accent:     #D97706;
+  --color-accent-lt:  #FEF3C7;
+  --color-accent-dk:  #92400E;
+
+  /* Semantic */
+  --color-green:      #059669;
+  --color-green-lt:   #D1FAE5;
+  --color-red:        #DC2626;
+  --color-red-lt:     #FEE2E2;
+  --color-yellow:     #D97706;
+  --color-yellow-lt:  #FEF3C7;
+  --color-blue:       #2563EB;
+  --color-blue-lt:    #DBEAFE;
+  --color-purple:     #7C3AED;
+  --color-purple-lt:  #EDE9FE;
+
+  /* Typography */
+  --font-orbitron: var(--font-orbitron-var), monospace;
+  --font-outfit:   var(--font-outfit-var), 'Space Mono', sans-serif;
+}
+
+/* ─── Raw CSS custom props (for var(--bg) usage in arbitrary values) ─────── */
+
+:root {
+  --bg:          #F2EDE8;
+  --surface:     #FDFAF7;
+  --surfaceLo:   #EDE8E2;
+  --surfaceHi:   #FFFFFF;
+  --border:      #DDD7D0;
+  --borderDk:    #C8C0B6;
+  --text:        #1C1917;
+  --muted:       #78716C;
+  --dim:         #A8A29E;
+  --ink:         #1E293B;
+  --accent:      #D97706;
+  --accentLt:    #FEF3C7;
+  --accentDk:    #92400E;
+  --green:       #059669;
+  --greenLt:     #D1FAE5;
+  --red:         #DC2626;
+  --redLt:       #FEE2E2;
+  --yellow:      #D97706;
+  --yellowLt:    #FEF3C7;
+  --blue:        #2563EB;
+  --blueLt:      #DBEAFE;
+  --purple:      #7C3AED;
+  --purpleLt:    #EDE9FE;
+}
+
+/* ─── Base Styles ─────────────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-outfit-var), 'Space Mono', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Flash animation for price change feed ─────────────────────────────── */
+
+@keyframes flash {
+  0%   { background-color: var(--yellowLt); }
+  100% { background-color: transparent; }
+}
+
+.animate-flash {
+  animation: flash 0.5s ease-out;
+}
+
+/* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.animate-live {
+  animation: live-pulse 2s ease-in-out infinite;
+}
