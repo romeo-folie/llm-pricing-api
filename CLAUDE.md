@@ -258,12 +258,25 @@ If a flagged issue is intentionally skipped (e.g. out of scope, deferred, won't-
 
 A task is **not done** until the code-reviewer confirms it is clean or all remaining findings have documented skip reasons.
 
+## Epic Completion Review Gate
+
+When the last issue in an epic is closed, a full-epic Opus review **must** be run before declaring the epic complete:
+
+1. Run `/code-reviewer` across the entire epic's changed surface (all packages and files introduced or modified during the epic) using **Opus** as the model.
+2. Fix every issue it identifies.
+3. Re-run with **Opus** until the review comes back clean with no actionable findings.
+4. Only then may you run `/pm:epic-close` or `/pm:epic-merge`.
+
+This final gate catches cross-cutting issues that per-task reviews miss — architectural inconsistencies, duplicated patterns, missing abstractions, and accumulated technical debt across the full body of work.
+
+If a finding is intentionally deferred (e.g. out of scope for this epic), document the reason before closing. An epic is **not complete** until the Opus review is clean or all skipped findings have written justifications.
+
 ## Pre-Commit Checklist
 
 Before creating any commit, the following must all pass:
 
 1. **All tests green**: `go test ./...` exits with zero failures.
-2. **Build succeeds**: `go build ./...` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors.
+2. **Build succeeds**: `go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors. Always build into `bin/` — never `go build ./...` as it drops binaries into the project root.
 3. **Code review clean**: `/code-reviewer` returns no actionable findings (see Code Review Gate above).
 
 Do not commit if any of the above fail.

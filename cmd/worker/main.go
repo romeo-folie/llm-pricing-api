@@ -6,12 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
+	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	"llm-pricing-api/internal/reconciler"
@@ -29,25 +28,18 @@ func main() {
 
 	ctx := context.Background()
 
-	// Connect to PostgreSQL with retry
-	var db *pgxpool.Pool
-	for i := range 5 {
-		p, err := database.Connect(ctx, cfg.DatabaseURL)
-		if err == nil {
-			db = p
-			break
-		}
-		slog.Warn("database connect failed, retrying", "attempt", i+1, "err", err)
-		time.Sleep(2 * time.Second)
-	}
-	if db == nil {
-		slog.Error("could not connect to database after 5 attempts")
+	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5)
+	if err != nil {
+		slog.Error("could not connect to database", "err", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
+	// RedisAddr normalises full Redis URLs to the bare host:port that
+	// asynq's RedisClientOpt.Addr expects.
+	redisAddr := cache.RedisAddr(cfg.RedisURL)
 	srv := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: cfg.RedisURL},
+		asynq.RedisClientOpt{Addr: redisAddr},
 		asynq.Config{
 			Concurrency: 10,
 		},
@@ -68,7 +60,7 @@ func main() {
 	mux.HandleFunc(worker.TaskAmazonScrape, h.HandleAmazonScrape)
 
 	// Start cron scheduler
-	redisOpt := asynq.RedisClientOpt{Addr: cfg.RedisURL}
+	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 
 	if _, err := scheduler.Register("@every 6h", asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {

@@ -2,6 +2,12 @@ package models
 
 import "time"
 
+// DiscrepancyThreshold is the minimum relative price difference between two
+// sources that triggers a review-queue flag or a NeedsReview annotation on a
+// PriceDiff. Both the diff engine and the reconciler import this constant so
+// the business rule is defined in exactly one place.
+const DiscrepancyThreshold = 0.05
+
 // Confidence represents how certain we are about a price value,
 // matching the CHECK constraint on the prices.confidence column.
 type Confidence string

@@ -13,7 +13,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
 	"llm-pricing-api/internal/cache"
@@ -33,19 +32,9 @@ func main() {
 
 	ctx := context.Background()
 
-	// Connect to PostgreSQL with retry
-	var db *pgxpool.Pool
-	for i := range 5 {
-		p, err := database.Connect(ctx, cfg.DatabaseURL)
-		if err == nil {
-			db = p
-			break
-		}
-		slog.Warn("database connect failed, retrying", "attempt", i+1, "err", err)
-		time.Sleep(2 * time.Second)
-	}
-	if db == nil {
-		slog.Error("could not connect to database after 5 attempts")
+	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5)
+	if err != nil {
+		slog.Error("could not connect to database", "err", err)
 		os.Exit(1)
 	}
 

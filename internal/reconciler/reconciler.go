@@ -16,10 +16,6 @@ import (
 )
 
 const (
-	// discrepancyThreshold is the minimum relative difference between two
-	// sources' reported values that triggers a review-queue flag.
-	discrepancyThreshold = 0.05
-
 	// epsilon is the floating-point tolerance used when comparing prices.
 	epsilon = 1e-12
 
@@ -242,7 +238,7 @@ func (r *Reconciler) processMultiSource(
 		}
 	}
 
-	if maxDelta > discrepancyThreshold {
+	if maxDelta > models.DiscrepancyThreshold {
 		slog.Warn("reconciler: flagging discrepancy",
 			"slug", slug, "field", field,
 			"value_a", valueA, "value_b", valueB,

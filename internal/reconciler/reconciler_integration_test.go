@@ -20,6 +20,9 @@ import (
 // env var is absent or the database is unreachable (keeps CI clean without Docker).
 func testDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	// DATABASE_URL is read directly here (bypassing config.Load) because this
+	// helper must skip—not fail—when the variable is absent, preserving
+	// CI-safe behaviour. Production code must always use config.Load() instead.
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping integration test")

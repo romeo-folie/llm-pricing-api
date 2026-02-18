@@ -7,7 +7,6 @@ import (
 	"llm-pricing-api/internal/scraper"
 )
 
-const reviewThreshold = 0.05 // 5%
 
 // PriceDiff describes a detected change in a single price field for one model.
 type PriceDiff struct {
@@ -99,6 +98,6 @@ func fieldDiff(slug, source string, field models.PriceField, oldVal, newVal floa
 		NewValue:    newVal,
 		PctChange:   pct,
 		Source:      source,
-		NeedsReview: math.Abs(pct) > reviewThreshold,
+		NeedsReview: math.Abs(pct) > models.DiscrepancyThreshold,
 	}, true
 }
