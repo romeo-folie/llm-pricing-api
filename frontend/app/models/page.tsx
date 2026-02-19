@@ -6,6 +6,7 @@ import { getModels, getProviders } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
 import ModelCard from "@/components/model/ModelCard"
 import ModelDetailModal from "@/components/model/ModelDetailModal"
+import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
   title: "Model Browser",
@@ -62,21 +63,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
         style={{ paddingTop: "32px", paddingBottom: "64px" }}
       >
         {/* API unavailable banner */}
-        {apiUnavailable && (
-          <div
-            className="font-outfit text-sm"
-            style={{
-              padding: "10px 14px",
-              marginBottom: "20px",
-              border: "1px solid var(--border)",
-              borderLeft: "3px solid var(--yellow)",
-              backgroundColor: "var(--yellowLt)",
-              color: "var(--muted)",
-            }}
-          >
-            ⚠ Pricing API is currently unavailable — data will appear once connectivity is restored.
-          </div>
-        )}
+        {apiUnavailable && <ApiUnavailableBanner />}
 
         {/* Header */}
         <div style={{ marginBottom: "24px" }}>

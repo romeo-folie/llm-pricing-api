@@ -2,19 +2,10 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
+import { formatPrice, formatContext } from "@/lib/format"
 
 interface ModelCardProps {
   model: Model
-}
-
-function formatPrice(p: number): string {
-  return `$${p.toFixed(4)}`
-}
-
-function formatContext(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`
-  return String(n)
 }
 
 function ConfidenceDot({ confidence }: { confidence: "high" | "medium" | "low" }) {

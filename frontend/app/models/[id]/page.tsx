@@ -5,6 +5,7 @@ import { safeJsonLd } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 import PriceHistoryChart from "@/components/model/PriceHistoryChart"
+import { formatPrice, formatContext } from "@/lib/format"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -14,7 +15,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params
   const model = await getModel(id).catch(() => null)
   if (!model) return { title: "Model Not Found" }
-  const desc = `Current and historical pricing for ${model.name} by ${model.provider}. Input: $${model.input_price_per_m.toFixed(4)}/1M tokens, Output: $${model.output_price_per_m.toFixed(4)}/1M tokens.`
+  const desc = `Current and historical pricing for ${model.name} by ${model.provider}. Input: ${formatPrice(model.input_price_per_m)}/1M tokens, Output: ${formatPrice(model.output_price_per_m)}/1M tokens.`
   return {
     title: `${model.name} Pricing`,
     description: desc,
@@ -23,13 +24,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       description: desc,
     },
   }
-}
-
-function formatPrice(p: number): string { return `$${p.toFixed(4)}` }
-function formatContext(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`
-  return String(n)
 }
 
 export default async function ModelDetailPage({ params }: PageProps) {

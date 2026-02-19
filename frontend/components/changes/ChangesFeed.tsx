@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import type { PriceChange, Provider } from "@/lib/api"
 import ChangeRow from "./ChangeRow"
+import EmptyState from "@/components/ui/EmptyState"
 
 interface ChangesFeedProps {
   initialChanges: PriceChange[]
@@ -30,7 +31,6 @@ export default function ChangesFeed({
   const [polling,     setPolling]     = useState(true)
   const [pollFailed,  setPollFailed]  = useState(false)
 
-  const emptyGridId = useId()
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const knownIdsRef = useRef<Set<string>>(new Set(initialChanges.map((c) => c.id)))
 
@@ -238,44 +238,7 @@ export default function ChangesFeed({
 
       {/* Rows */}
       {changes.length === 0 ? (
-        <div
-          className="font-outfit text-sm"
-          style={{
-            position: "relative",
-            padding: "80px 24px",
-            textAlign: "center",
-            color: "var(--muted)",
-            borderBottom: "1px solid var(--border)",
-            overflow: "hidden",
-          }}
-        >
-          {/* Isometric grid overlay */}
-          <svg
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              opacity: 0.06,
-              pointerEvents: "none",
-            }}
-          >
-            <defs>
-              <pattern
-                id={emptyGridId}
-                x="0" y="0"
-                width="40" height="40"
-                patternUnits="userSpaceOnUse"
-                patternTransform="rotate(-30) skewX(20)"
-              >
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--borderDk)" strokeWidth="0.5" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill={`url(#${emptyGridId})`} />
-          </svg>
-          <span style={{ position: "relative" }}>No price changes yet.</span>
-        </div>
+        <EmptyState padding="80px 24px">No price changes yet.</EmptyState>
       ) : (
         changes.map((change) => (
           <ChangeRow

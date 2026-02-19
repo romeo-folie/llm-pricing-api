@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback, useId } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
+import { formatCurrency } from "@/lib/format"
 import { calculateCost, type CostResult } from "@/app/calculator/actions"
 import ModelPicker from "@/components/compare/ModelPicker"
+import EmptyState from "@/components/ui/EmptyState"
 
 interface CalculatorClientProps {
   allModels: Model[]
@@ -16,10 +18,6 @@ const PERIODS: { label: string; value: Period }[] = [
   { label: "Monthly", value: "monthly" },
   { label: "Yearly",  value: "yearly"  },
 ]
-
-function formatCurrency(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
-}
 
 const MAX_TOKENS = 10_000_000_000
 
@@ -69,8 +67,6 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
   function handleRemove(id: string) {
     setSelectedIds(selectedIds.filter((i) => i !== id))
   }
-
-  const emptyGridId = useId()
 
   const cheapestId = results.length > 0
     ? results.reduce((a, b) => a.total < b.total ? a : b).modelId
@@ -211,27 +207,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
 
       {/* Results */}
       {results.length === 0 ? (
-        <div
-          className="font-outfit text-sm"
-          style={{
-            position: "relative",
-            textAlign: "center",
-            padding: "64px 24px",
-            border: "1px solid var(--border)",
-            color: "var(--muted)",
-            overflow: "hidden",
-          }}
-        >
-          <svg aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.06, pointerEvents: "none" }}>
-            <defs>
-              <pattern id={emptyGridId} x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(-30) skewX(20)">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--borderDk)" strokeWidth="0.5" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill={`url(#${emptyGridId})`} />
-          </svg>
-          <span style={{ position: "relative" }}>Add a model above to see cost estimates.</span>
-        </div>
+        <EmptyState>Add a model above to see cost estimates.</EmptyState>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
           {results.map((r) => {

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import PriceHistoryChart from "./PriceHistoryChart"
 import type { Model, PriceHistoryEntry } from "@/lib/api"
+import { formatPrice, formatContext, formatAge } from "@/lib/format"
 
 interface ModalData {
   model: Model
@@ -39,18 +40,6 @@ function ConfidenceBadge({ confidence }: { confidence: "high" | "medium" | "low"
   if (confidence === "high")   return <Badge label="HIGH"   color="var(--green)"  bg="var(--greenLt)"  />
   if (confidence === "medium") return <Badge label="MEDIUM" color="var(--accent)" bg="var(--accentLt)" />
   return                                <Badge label="LOW"   color="var(--red)"    bg="var(--redLt)"    />
-}
-
-function formatPrice(p: number): string { return `$${p.toFixed(4)}` }
-function formatContext(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`
-  return String(n)
-}
-function formatAge(hours: number): string {
-  if (hours < 1)  return "< 1h ago"
-  if (hours < 24) return `${Math.round(hours)}h ago`
-  return `${Math.round(hours / 24)}d ago`
 }
 
 export default function ModelDetailModal() {

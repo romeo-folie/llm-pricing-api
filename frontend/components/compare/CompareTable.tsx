@@ -1,17 +1,11 @@
 "use client"
 
 import type { Model } from "@/lib/api"
+import { formatPrice, formatContext, formatAge } from "@/lib/format"
 
 interface CompareTableProps {
   models: Model[]
   onRemove: (id: string) => void
-}
-
-function formatPrice(p: number): string { return `$${p.toFixed(4)}` }
-function formatContext(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`
-  return String(n)
 }
 
 const ROWS: { label: string; key: keyof Model | string; render: (m: Model) => string }[] = [
@@ -21,7 +15,7 @@ const ROWS: { label: string; key: keyof Model | string; render: (m: Model) => st
   { label: "Context",      key: "context_window", render: (m) => formatContext(m.context_window) },
   { label: "Modality",     key: "modality",       render: (m) => m.modality },
   { label: "Confidence",   key: "confidence",     render: (m) => m.trust.confidence.toUpperCase() },
-  { label: "Updated",      key: "updated",        render: (m) => `${Math.round(m.trust.age_hours)}h ago` },
+  { label: "Updated",      key: "updated",        render: (m) => formatAge(m.trust.age_hours) },
   { label: "Source",       key: "source",         render: (m) => m.trust.source },
 ]
 

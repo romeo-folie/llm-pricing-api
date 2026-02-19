@@ -1,25 +1,11 @@
 "use client"
 
 import type { PriceChange } from "@/lib/api"
+import { formatPrice, formatDelta, formatRelative } from "@/lib/format"
 
 interface ChangeRowProps {
   change: PriceChange
   isNew?: boolean
-}
-
-function formatPrice(p: number): string { return `$${p.toFixed(4)}` }
-function formatDelta(pct: number): string {
-  const sign = pct >= 0 ? "+" : ""
-  return `${sign}${pct.toFixed(1)}%`
-}
-function formatRelative(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1)   return "just now"
-  if (mins < 60)  return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24)   return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
 }
 
 const PROVIDER_COLORS: Record<string, { color: string; bg: string }> = {

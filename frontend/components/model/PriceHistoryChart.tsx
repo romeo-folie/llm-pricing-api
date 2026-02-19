@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import type { PriceHistoryEntry } from "@/lib/api"
+import { formatPrice } from "@/lib/format"
 
 interface PriceHistoryChartProps {
   history: PriceHistoryEntry[]
@@ -157,7 +158,7 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
             }}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             formatter={(value: any, name: any) => [
-              typeof value === "number" ? `$${(value as number).toFixed(4)}` : "—",
+              typeof value === "number" ? formatPrice(value as number) : "—",
               name === "input" ? "Input /1M" : "Output /1M",
             ]}
           />

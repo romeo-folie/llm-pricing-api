@@ -4,6 +4,7 @@ import type { Metadata } from "next"
 export const dynamic = "force-dynamic"
 import { getChanges, getProviders } from "@/lib/api"
 import ChangesFeed from "@/components/changes/ChangesFeed"
+import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
   title: "Price Changes",
@@ -40,21 +41,7 @@ export default async function ChangesPage({ searchParams }: PageProps) {
       className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
       style={{ paddingTop: "32px", paddingBottom: "64px" }}
     >
-      {apiUnavailable && (
-        <div
-          className="font-outfit text-sm"
-          style={{
-            padding: "10px 14px",
-            marginBottom: "20px",
-            border: "1px solid var(--border)",
-            borderLeft: "3px solid var(--yellow)",
-            backgroundColor: "var(--yellowLt)",
-            color: "var(--muted)",
-          }}
-        >
-          ⚠ Pricing API is currently unavailable — data will appear once connectivity is restored.
-        </div>
-      )}
+      {apiUnavailable && <ApiUnavailableBanner />}
       <Suspense fallback={null}>
         <ChangesFeed
           initialChanges={changes}
