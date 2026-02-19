@@ -22,7 +22,7 @@ interface PageProps {
   searchParams: Promise<{ provider?: string; modality?: string; min_context?: string; model?: string }>
 }
 
-const MODALITIES = ["text", "vision", "audio", "code", "embedding"]
+const MODALITIES = ["text", "multimodal", "image", "audio", "embedding"]
 
 export default async function ModelsPage({ searchParams }: PageProps) {
   const sp = await searchParams
