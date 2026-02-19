@@ -284,6 +284,13 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 				if err := w.Flush(); err != nil {
 					return
 				}
+				// Refresh the connection-count key TTL on every heartbeat so the
+				// safety-net expiry only kicks in after a real crash (i.e. after
+				// sseConnTTL of silence, meaning all active connections have closed
+				// or the process has died without running their defers).
+				if keyHash != "" && rdb != nil {
+					_ = rdb.Expire(context.Background(), sseConnKeyPrefix+keyHash, sseConnTTL).Err()
+				}
 			}
 		}
 	})
