@@ -47,6 +47,16 @@ func asynqOptFromURL(rawURL string) asynq.RedisClientOpt {
 	}
 }
 
+// asynqLogger adapts zerolog.Logger to asynq's Logger interface so that
+// task errors and retries appear in the structured log output.
+type asynqLogger struct{ l zerolog.Logger }
+
+func (a *asynqLogger) Debug(args ...any) { a.l.Debug().Msgf("%v", args) }
+func (a *asynqLogger) Info(args ...any)  { a.l.Info().Msgf("%v", args) }
+func (a *asynqLogger) Warn(args ...any)  { a.l.Warn().Msgf("%v", args) }
+func (a *asynqLogger) Error(args ...any) { a.l.Error().Msgf("%v", args) }
+func (a *asynqLogger) Fatal(args ...any) { a.l.Fatal().Msgf("%v", args) }
+
 func main() {
 	_ = godotenv.Load()
 
@@ -77,6 +87,7 @@ func main() {
 		redisOpt,
 		asynq.Config{
 			Concurrency: 10,
+			Logger:      &asynqLogger{log},
 		},
 	)
 

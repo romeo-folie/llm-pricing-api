@@ -55,9 +55,11 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 	// Upsert model rows so the reconciler's LookupModelID succeeds for
 	// newly discovered models. On a fresh database this populates the
 	// entire models table from the first scrape.
+	h.logger.Info().Str("task", taskName).Int("scraped_count", len(scraped)).Msg("handler: ensuring models")
 	if err := h.store.EnsureModels(ctx, scraped); err != nil {
 		return fmt.Errorf("%s: ensure models: %w", taskName, err)
 	}
+	h.logger.Info().Str("task", taskName).Msg("handler: models ensured")
 
 	storedModels, err := h.store.FetchModels(ctx)
 	if err != nil {

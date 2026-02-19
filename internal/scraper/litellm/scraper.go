@@ -25,7 +25,7 @@ type Scraper struct {
 // If client is nil a default client with a 15s timeout is used.
 func New(client *http.Client) *Scraper {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = &http.Client{Timeout: 60 * time.Second}
 	}
 	return &Scraper{client: client, url: defaultURL}
 }

@@ -127,9 +127,11 @@ func (s *pgxWorkerStore) FetchPricesBySource(ctx context.Context, sourceName str
 
 // EnsureModels upserts model rows from scraped data. New slugs are inserted;
 // existing slugs get their metadata refreshed (context_window, modality).
-// The upsert runs each row individually to avoid a single bad modality value
-// (violating the CHECK constraint) from aborting the entire batch.
+// Individual row failures are counted but do not abort the batch — the pipeline
+// continues with whichever models succeeded. An error is only returned if
+// every single row failed (catastrophic DB issue).
 func (s *pgxWorkerStore) EnsureModels(ctx context.Context, scraped []scraper.ScrapedModel) error {
+	var failures int
 	for _, m := range scraped {
 		modality := normalizeModality(m.Modality)
 		name := nameFromSlug(m.Slug)
@@ -142,8 +144,11 @@ func (s *pgxWorkerStore) EnsureModels(ctx context.Context, scraped []scraper.Scr
 				provider       = EXCLUDED.provider
 		`, m.Provider, name, m.Slug, modality, m.ContextWindow)
 		if err != nil {
-			return fmt.Errorf("worker store: ensure model %q: %w", m.Slug, err)
+			failures++
 		}
+	}
+	if failures == len(scraped) {
+		return fmt.Errorf("worker store: ensure models: all %d rows failed", failures)
 	}
 	return nil
 }
