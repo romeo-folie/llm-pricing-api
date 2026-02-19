@@ -52,6 +52,13 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 		return fmt.Errorf("%s: scraper returned 0 models; possible upstream change", taskName)
 	}
 
+	// Upsert model rows so the reconciler's LookupModelID succeeds for
+	// newly discovered models. On a fresh database this populates the
+	// entire models table from the first scrape.
+	if err := h.store.EnsureModels(ctx, scraped); err != nil {
+		return fmt.Errorf("%s: ensure models: %w", taskName, err)
+	}
+
 	storedModels, err := h.store.FetchModels(ctx)
 	if err != nil {
 		return fmt.Errorf("%s: fetch models: %w", taskName, err)

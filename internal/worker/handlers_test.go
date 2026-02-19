@@ -13,11 +13,13 @@ import (
 // --- mock WorkerStore ---
 
 type mockStore struct {
-	models      []models.Model
-	prices      []models.Price
-	modelsErr   error
-	pricesErr   error
+	models       []models.Model
+	prices       []models.Price
+	modelsErr    error
+	pricesErr    error
+	ensureErr    error
 	pricesSource string // last sourceName passed to FetchPricesBySource
+	ensuredSlugs []string
 }
 
 func (m *mockStore) FetchModels(_ context.Context) ([]models.Model, error) {
@@ -27,6 +29,13 @@ func (m *mockStore) FetchModels(_ context.Context) ([]models.Model, error) {
 func (m *mockStore) FetchPricesBySource(_ context.Context, sourceName string) ([]models.Price, error) {
 	m.pricesSource = sourceName
 	return m.prices, m.pricesErr
+}
+
+func (m *mockStore) EnsureModels(_ context.Context, scraped []scraper.ScrapedModel) error {
+	for _, s := range scraped {
+		m.ensuredSlugs = append(m.ensuredSlugs, s.Slug)
+	}
+	return m.ensureErr
 }
 
 // --- mock scraper.Scraper ---
@@ -109,6 +118,47 @@ func TestRunPipeline_ScraperError(t *testing.T) {
 	}
 	if !errors.Is(err, fetchErr) {
 		t.Errorf("error chain should contain original error; got: %v", err)
+	}
+}
+
+// TestRunPipeline_EnsureModelsError verifies that a DB failure on EnsureModels
+// is propagated with task name context and prevents the pipeline from continuing.
+func TestRunPipeline_EnsureModelsError(t *testing.T) {
+	dbErr := errors.New("db constraint violation")
+	store := &mockStore{ensureErr: dbErr}
+	h := newTestHandlers(store)
+
+	s := &mockScraper{result: []scraper.ScrapedModel{
+		{Slug: "some/model", SourceName: "openrouter", InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6},
+	}}
+
+	err := h.runPipeline(context.Background(), TaskOpenRouterScrape, "openrouter", s)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Errorf("error chain should contain db error; got: %v", err)
+	}
+}
+
+// TestRunPipeline_EnsureModelsCalled verifies that EnsureModels receives
+// the scraped slugs so the models table is populated before reconciliation.
+func TestRunPipeline_EnsureModelsCalled(t *testing.T) {
+	store := &mockStore{
+		models: []models.Model{{ID: 1, Slug: "openai/gpt-4o"}},
+		prices: []models.Price{},
+	}
+	h := newTestHandlers(store)
+
+	s := &mockScraper{result: []scraper.ScrapedModel{
+		{Slug: "openai/gpt-4o", SourceName: "openrouter", InputCostPerToken: 5e-6, OutputCostPerToken: 15e-6},
+	}}
+
+	if err := h.runPipeline(context.Background(), TaskOpenRouterScrape, "openrouter", s); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.ensuredSlugs) != 1 || store.ensuredSlugs[0] != "openai/gpt-4o" {
+		t.Errorf("expected EnsureModels called with [openai/gpt-4o], got %v", store.ensuredSlugs)
 	}
 }
 

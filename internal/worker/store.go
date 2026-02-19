@@ -3,10 +3,12 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"llm-pricing-api/internal/models"
+	"llm-pricing-api/internal/scraper"
 )
 
 // WorkerStore abstracts the database reads required by handler functions.
@@ -22,6 +24,12 @@ type WorkerStore interface {
 	// "litellm", "openai-docs", "anthropic-docs", "google-docs",
 	// "mistral-docs", "amazon-docs").
 	FetchPricesBySource(ctx context.Context, sourceName string) ([]models.Price, error)
+
+	// EnsureModels upserts model rows from scraped data so that the
+	// reconciler's LookupModelID succeeds for newly discovered models.
+	// Existing rows are updated with the latest metadata (context_window,
+	// modality) but the original created_at is preserved.
+	EnsureModels(ctx context.Context, scraped []scraper.ScrapedModel) error
 }
 
 // pgxWorkerStore is the PostgreSQL-backed implementation of WorkerStore.
@@ -115,4 +123,55 @@ func (s *pgxWorkerStore) FetchPricesBySource(ctx context.Context, sourceName str
 		return nil, fmt.Errorf("worker store: iterate price rows: %w", err)
 	}
 	return result, nil
+}
+
+// EnsureModels upserts model rows from scraped data. New slugs are inserted;
+// existing slugs get their metadata refreshed (context_window, modality).
+// The upsert runs each row individually to avoid a single bad modality value
+// (violating the CHECK constraint) from aborting the entire batch.
+func (s *pgxWorkerStore) EnsureModels(ctx context.Context, scraped []scraper.ScrapedModel) error {
+	for _, m := range scraped {
+		modality := normalizeModality(m.Modality)
+		name := nameFromSlug(m.Slug)
+		_, err := s.db.Exec(ctx, `
+			INSERT INTO models (provider, name, slug, modality, context_window)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (slug) DO UPDATE SET
+				context_window = COALESCE(EXCLUDED.context_window, models.context_window),
+				modality       = EXCLUDED.modality,
+				provider       = EXCLUDED.provider
+		`, m.Provider, name, m.Slug, modality, m.ContextWindow)
+		if err != nil {
+			return fmt.Errorf("worker store: ensure model %q: %w", m.Slug, err)
+		}
+	}
+	return nil
+}
+
+// nameFromSlug extracts a human-readable name from a "provider/model" slug.
+// For example, "openai/gpt-4" → "gpt-4".
+func nameFromSlug(slug string) string {
+	if idx := strings.IndexByte(slug, '/'); idx >= 0 && idx < len(slug)-1 {
+		return slug[idx+1:]
+	}
+	return slug
+}
+
+// normalizeModality maps raw modality strings from external APIs to the
+// values allowed by the models.modality CHECK constraint.
+func normalizeModality(raw string) string {
+	switch strings.ToLower(raw) {
+	case "text", "text->text":
+		return "text"
+	case "multimodal", "text+image->text":
+		return "multimodal"
+	case "image", "text->image", "image_generation":
+		return "image"
+	case "audio", "audio_transcription", "audio_speech", "text->audio":
+		return "audio"
+	case "embedding":
+		return "embedding"
+	default:
+		return "text"
+	}
 }
