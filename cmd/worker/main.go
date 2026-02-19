@@ -116,6 +116,19 @@ func main() {
 		log.Fatal().Err(err).Msg("worker error")
 	}
 
+	// Enqueue one-shot scrapes so the database is populated immediately after
+	// a fresh deploy. The @every cron schedules only fire after the full
+	// interval elapses, which would leave the DB empty for hours on first boot.
+	client := asynq.NewClient(redisOpt)
+	defer client.Close()
+	if _, err := client.Enqueue(asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
+		log.Warn().Err(err).Msg("initial openrouter scrape enqueue failed")
+	}
+	if _, err := client.Enqueue(asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
+		log.Warn().Err(err).Msg("initial litellm scrape enqueue failed")
+	}
+	log.Info().Msg("enqueued initial scrape tasks")
+
 	// Block until SIGINT or SIGTERM, then shut down gracefully.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

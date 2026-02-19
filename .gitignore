@@ -33,3 +33,5 @@ Thumbs.db
 
 # CCPM local workspace
 .claude/epics/
+.vercel
+.env*.local
