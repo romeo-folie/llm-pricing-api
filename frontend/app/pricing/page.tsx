@@ -9,14 +9,13 @@ import {
 export const revalidate = false
 
 export const metadata: Metadata = {
-  title: "LLM Pricing API — Plans & Pricing | LLMPrice",
+  title: "Plans & Pricing",
   description:
     "Transparent, reconciled LLM token pricing. Free tier, Developer API access, and Pro with webhooks and SLA.",
   openGraph: {
     title: "LLM Pricing API Plans",
     description:
       "Free to $50/mo. Developer API: $15/mo, 10k req/day. Pro: $50/mo, unlimited + webhooks.",
-    type: "website",
   },
 }
 

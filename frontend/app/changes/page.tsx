@@ -6,8 +6,14 @@ import { getChanges, getProviders } from "@/lib/api"
 import ChangesFeed from "@/components/changes/ChangesFeed"
 
 export const metadata: Metadata = {
-  title: "LLM Price Changes | LLMPrice",
-  description: "Real-time LLM token pricing changes tracked across providers. Updated every 5 minutes from OpenRouter, LiteLLM, and provider docs.",
+  title: "Price Changes",
+  description:
+    "Real-time LLM token pricing changes tracked across providers. Updated every 5 minutes from OpenRouter, LiteLLM, and provider docs.",
+  openGraph: {
+    title: "LLM Price Changes",
+    description:
+      "Live feed of LLM pricing changes across OpenRouter, LiteLLM, and provider docs.",
+  },
 }
 
 interface PageProps {

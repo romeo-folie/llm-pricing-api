@@ -6,8 +6,14 @@ import { getModels } from "@/lib/api"
 import CalculatorClient from "@/components/calculator/CalculatorClient"
 
 export const metadata: Metadata = {
-  title: "LLM Cost Calculator | LLMPrice",
-  description: "Calculate your LLM API costs by token volume. Compare daily, monthly, and yearly spend across OpenAI, Anthropic, Google, Mistral and more.",
+  title: "Cost Calculator",
+  description:
+    "Calculate your LLM API costs by token volume. Compare daily, monthly, and yearly spend across OpenAI, Anthropic, Google, Mistral and more.",
+  openGraph: {
+    title: "LLM Cost Calculator",
+    description:
+      "Estimate LLM API spend by token volume — daily, monthly, and yearly projections across providers.",
+  },
 }
 
 export default async function CalculatorPage() {

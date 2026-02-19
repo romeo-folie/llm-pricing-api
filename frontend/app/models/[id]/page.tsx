@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { getModel, getModelHistory } from "@/lib/api"
+import { safeJsonLd } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 import PriceHistoryChart from "@/components/model/PriceHistoryChart"
@@ -11,10 +13,15 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params
   const model = await getModel(id).catch(() => null)
-  if (!model) return { title: "Model Not Found | LLMPrice" }
+  if (!model) return { title: "Model Not Found" }
+  const desc = `Current and historical pricing for ${model.name} by ${model.provider}. Input: $${model.input_price_per_m.toFixed(4)}/1M tokens, Output: $${model.output_price_per_m.toFixed(4)}/1M tokens.`
   return {
-    title: `${model.name} Pricing | LLMPrice`,
-    description: `Current and historical pricing for ${model.name} by ${model.provider}. Input: $${model.input_price_per_m.toFixed(4)}/1M tokens, Output: $${model.output_price_per_m.toFixed(4)}/1M tokens.`,
+    title: `${model.name} Pricing`,
+    description: desc,
+    openGraph: {
+      title: `${model.name} — LLM Token Pricing`,
+      description: desc,
+    },
   }
 }
 
@@ -27,10 +34,9 @@ function formatContext(n: number): string {
 
 export default async function ModelDetailPage({ params }: PageProps) {
   const { id } = await params
-  const [model, history] = await Promise.all([
-    getModel(id),
-    getModelHistory(id),
-  ])
+  const model = await getModel(id).catch(() => null)
+  if (!model) notFound()
+  const history = await getModelHistory(id).catch(() => [])
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -53,7 +59,7 @@ export default async function ModelDetailPage({ params }: PageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
       />
 
       <main

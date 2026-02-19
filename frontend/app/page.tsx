@@ -6,7 +6,9 @@ import { getModels, getProviders, getChanges } from "@/lib/api"
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export const metadata: Metadata = {
-  title: "LLMPrice — Reconciled LLM Token Pricing for Agents & Developers",
+  title: {
+    absolute: "LLMPrice — Reconciled LLM Token Pricing for Agents & Developers",
+  },
   description:
     "Multi-source reconciled LLM token pricing with full price history, real-time change feed, and agent-optimized APIs. Compare models, calculate costs, and track price changes.",
   openGraph: {
@@ -14,7 +16,6 @@ export const metadata: Metadata = {
     description:
       "Free and paid tiers. Full price history. /v1/context, /v1/ask, SSE stream. Built for agents and developers.",
     type: "website",
-    images: [{ url: "/og-hero.png", width: 1200, height: 630, alt: "LLMPrice — Reconciled LLM Token Pricing" }],
   },
 }
 

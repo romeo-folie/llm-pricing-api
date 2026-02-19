@@ -3,13 +3,19 @@ import type { Metadata } from "next"
 
 export const dynamic = "force-dynamic"
 import { getModels, getProviders } from "@/lib/api"
+import { safeJsonLd } from "@/lib/utils"
 import ModelCard from "@/components/model/ModelCard"
 import ModelDetailModal from "@/components/model/ModelDetailModal"
 
 export const metadata: Metadata = {
-  title: "LLM Model Browser | LLMPrice",
+  title: "Model Browser",
   description:
     "Browse current pricing for 200+ LLM models across OpenAI, Anthropic, Google, Mistral and more. Filter by provider, modality, and context window.",
+  openGraph: {
+    title: "LLM Model Browser",
+    description:
+      "Browse and filter reconciled pricing for 200+ LLM models across major providers.",
+  },
 }
 
 interface PageProps {
@@ -48,7 +54,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
       />
 
       <main

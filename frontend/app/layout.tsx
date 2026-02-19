@@ -20,6 +20,12 @@ export const metadata: Metadata = {
     description:
       "Reconciled, source-attributed LLM token pricing with full price history. Built for agents and developers.",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "LLMPrice — Reconciled LLM Token Pricing",
+    description:
+      "Multi-source verified LLM token pricing with full price history and agent-optimized APIs.",
+  },
   robots: { index: true, follow: true },
 }
 

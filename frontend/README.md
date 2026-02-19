@@ -14,7 +14,7 @@ Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distin
 | Language | TypeScript (strict mode) |
 | Styling | Tailwind CSS v4 + design tokens |
 | Components | shadcn/ui (stone base) |
-| Charts | Recharts (tasks #23, #26) |
+| Charts | Recharts |
 | Fonts | Geist Sans + Geist Mono via `geist` package |
 | Hero | Inline SVG architecture diagram (server component, zero client JS) |
 | Deployment | Railway (Nixpacks) |
@@ -24,37 +24,72 @@ Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distin
 ```
 frontend/
 ├── app/
-│   ├── layout.tsx          # Root layout: fonts, Nav, Footer, metadata
-│   ├── page.tsx            # Landing page with hero diagram + SSR stats
-│   ├── globals.css         # Tailwind v4 @theme block + all design tokens
-│   └── api/                # Next.js route handlers (proxy routes for client polling)
+│   ├── layout.tsx              # Root layout: fonts, Nav, Footer, metadata template
+│   ├── page.tsx                # Landing page with hero diagram + SSR stats
+│   ├── globals.css             # Tailwind v4 @theme block + all design tokens
+│   ├── sitemap.ts              # Dynamic sitemap (static + model routes)
+│   ├── robots.ts               # Robots.txt generation
+│   ├── opengraph-image.tsx     # Auto-generated OG image (1200x630)
+│   ├── error.tsx               # Global error boundary
+│   ├── not-found.tsx           # 404 page
+│   ├── models/
+│   │   ├── page.tsx            # SSR model browser with filters
+│   │   ├── error.tsx           # Model browser error boundary
+│   │   └── [id]/
+│   │       ├── page.tsx        # Model detail with price history chart
+│   │       └── error.tsx       # Model detail error boundary
+│   ├── compare/page.tsx        # Side-by-side model comparison
+│   ├── calculator/
+│   │   ├── page.tsx            # Cost calculator page
+│   │   └── actions.ts          # Server action for cost calculation
+│   ├── changes/page.tsx        # Real-time price change feed (60s polling)
+│   ├── pricing/page.tsx        # Static pricing page with tier cards + FAQ
+│   └── api/                    # Route handlers (proxy routes for client polling)
+│       ├── health/route.ts     # Health check endpoint
+│       ├── changes/route.ts    # Changes proxy for client-side polling
+│       └── model/[id]/route.ts # Model detail proxy
 ├── components/
 │   ├── layout/
-│   │   ├── Nav.tsx         # Sticky top navigation ("use client" for active state)
-│   │   └── Footer.tsx      # Footer with product, dev, and agent discovery links
-│   ├── ui/                 # shadcn/ui primitives (Button, Dialog, Badge, etc.)
-│   ├── model/              # Model browser, detail modal, price history chart (task #23)
-│   └── hero/               # HeroScene SVG architecture diagram
+│   │   ├── Nav.tsx             # Sticky top navigation (client component)
+│   │   └── Footer.tsx          # Footer with product, dev, and agent links
+│   ├── ui/                     # shadcn/ui primitives (Button, Dialog, Badge, etc.)
+│   ├── hero/
+│   │   ├── HeroScene.tsx       # SVG isometric architecture diagram
+│   │   └── index.ts            # Re-export
+│   ├── model/
+│   │   ├── ModelCard.tsx       # Individual model row in browser
+│   │   ├── ModelDetailModal.tsx # Modal triggered by ?model= param
+│   │   ├── ModelPicker.tsx     # Model selector (compare + calculator)
+│   │   └── PriceHistoryChart.tsx # Recharts line chart (7d/30d/90d/All)
+│   ├── compare/
+│   │   ├── CompareClient.tsx   # Compare page client logic
+│   │   ├── CompareTable.tsx    # Side-by-side comparison table
+│   │   └── ModelPicker.tsx     # Model picker for compare
+│   ├── changes/
+│   │   ├── ChangesFeed.tsx     # Change feed with polling + filters
+│   │   └── ChangeRow.tsx       # Individual change row
+│   └── calculator/
+│       └── CalculatorClient.tsx # Calculator with daily/monthly/yearly toggle
 ├── lib/
-│   ├── api.ts              # Server-only typed API client (all REST endpoints)
-│   └── utils.ts            # cn() class merging utility
-├── public/                 # Static assets (SVGs, favicon)
-├── .env.example            # Required environment variables
-├── components.json         # shadcn/ui configuration
-├── next.config.ts          # Security headers (CSP, X-Frame-Options, etc.)
-├── railway.json            # Railway deployment config (Nixpacks)
-└── tsconfig.json           # TypeScript strict mode
+│   ├── api.ts                  # Server-only typed API client (all REST endpoints)
+│   └── utils.ts                # cn() class merging utility
+├── public/                     # Static assets (SVGs, favicon)
+├── .env.example                # Required environment variables
+├── components.json             # shadcn/ui configuration
+├── next.config.ts              # Security headers (CSP, X-Frame-Options, etc.)
+├── railway.json                # Railway deployment config (Nixpacks + healthcheck)
+└── tsconfig.json               # TypeScript strict mode
 ```
 
 ## Design System
 
 The design language is locked in `../.claude/frontend-design-spec.md`. Key rules:
 
-- **Palette**: warm bone/ivory base (`--bg: #F2EDE8`), deep teal accent (`--accent: #107E72`)
+- **Palette**: warm bone/ivory base (`--bg: #F2EDE8`), teal accent (`--accent: #107E72`)
 - **No box-shadows** — depth via `border border-[--border]` only
 - **No colored top borders on cards** — uniform `1px solid var(--border)` on all sides
 - **Typography**: `font-orbitron` (Geist Mono) for all numbers/prices, `font-outfit` (Geist Sans) for all other text
-- **Design tokens**: defined in `app/globals.css` `@theme` block — accessible as Tailwind utilities (`bg-accent`, `text-muted`, `font-orbitron`) and as raw CSS vars (`var(--accent)`)
+- **Design tokens**: defined in `app/globals.css` `@theme` block — accessible as Tailwind utilities and as raw CSS vars (`var(--accent)`)
 
 ## Environment Variables
 
@@ -62,11 +97,11 @@ Copy `.env.example` to `.env.local` and fill in values:
 
 | Variable | Side | Purpose |
 |---|---|---|
-| `LLM_PRICING_API_BASE_URL` | Server | REST API base URL |
+| `LLM_PRICING_API_BASE_URL` | Server | REST API base URL (default: `http://localhost:8080`) |
 | `LLM_PRICING_API_KEY` | Server | Dev-tier API key for history/recommend endpoints |
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Client | Lemon Squeezy checkout URL (Developer plan) |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Client | Lemon Squeezy checkout URL (Pro plan) |
-| `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap |
+| `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap (default: `https://llmprice.dev`) |
 
 ## API Client (`lib/api.ts`)
 
@@ -82,6 +117,15 @@ Server-only module (`import 'server-only'` guard prevents accidental client-side
 | `getChanges(filter?)` | `GET /v1/changes` | Free |
 
 All fetches use `next: { revalidate: 300 }` (5-minute ISR). History uses 60s revalidation.
+
+## SEO
+
+- **Metadata**: Root layout defines `title.template: "%s — LLMPrice"`. Child pages export just the page-specific title.
+- **Open Graph**: Per-page `og:title` and `og:description`. Root layout includes `twitter` card metadata.
+- **OG Image**: Auto-generated via `app/opengraph-image.tsx` (1200x630 PNG).
+- **JSON-LD**: `Dataset` schema on `/models`, `Product + Offer` schema on `/models/[id]`.
+- **Sitemap**: `app/sitemap.ts` generates static routes + dynamic `/models/[id]` routes (capped at 1000).
+- **Robots**: `app/robots.ts` allows all crawlers, disallows `/api/`, references `/sitemap.xml`.
 
 ## Local Development
 
@@ -106,20 +150,26 @@ npm start
 
 ## Deployment (Railway)
 
-`railway.json` configures a Nixpacks build:
+`railway.json` configures a Nixpacks build with healthcheck:
 
 ```json
 {
   "build": { "builder": "NIXPACKS", "buildCommand": "npm run build" },
-  "deploy": { "startCommand": "npm start", "healthcheckPath": "/" }
+  "deploy": {
+    "startCommand": "npm start",
+    "healthcheckPath": "/api/health",
+    "healthcheckTimeout": 30,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
 }
 ```
 
-Set all env vars in the Railway service dashboard. `LLM_PRICING_API_KEY` must be a server-side secret — never use a `NEXT_PUBLIC_` prefix for it.
+Set all env vars in the Railway service dashboard (including `NODE_ENV=production`). `LLM_PRICING_API_KEY` must be a server-side secret — never use a `NEXT_PUBLIC_` prefix for it.
 
 ## Security
 
 - `LLM_PRICING_API_KEY` is server-only — enforced by `import 'server-only'` in `lib/api.ts`
-- CSP, `X-Content-Type-Options`, and `X-Frame-Options` set in `next.config.ts`; CSP allows Lemon Squeezy checkout
+- CSP, `X-Content-Type-Options`, and `X-Frame-Options` set in `next.config.ts`
 - All user inputs (calculator token counts, filter params) validated server-side before any price calculation
 - No dark mode — single fixed light theme per design spec

@@ -6,8 +6,14 @@ import { getModels, getCompare } from "@/lib/api"
 import CompareClient from "@/components/compare/CompareClient"
 
 export const metadata: Metadata = {
-  title: "Compare LLM Models | LLMPrice",
-  description: "Side-by-side LLM pricing comparison. Compare input/output token prices, context windows, and confidence across providers.",
+  title: "Compare Models",
+  description:
+    "Side-by-side LLM pricing comparison. Compare input/output token prices, context windows, and confidence across providers.",
+  openGraph: {
+    title: "Compare LLM Models",
+    description:
+      "Side-by-side comparison of LLM pricing, context windows, and confidence across providers.",
+  },
 }
 
 interface PageProps {
