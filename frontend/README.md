@@ -17,7 +17,7 @@ Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distin
 | Charts | Recharts |
 | Fonts | Geist Sans + Geist Mono via `geist` package |
 | Hero | Inline SVG architecture diagram (server component, zero client JS) |
-| Deployment | Railway (Nixpacks) |
+| Deployment | Vercel |
 
 ## Directory Structure
 
@@ -77,7 +77,7 @@ frontend/
 ├── .env.example                # Required environment variables
 ├── components.json             # shadcn/ui configuration
 ├── next.config.ts              # Security headers (CSP, X-Frame-Options, etc.)
-├── railway.json                # Railway deployment config (Nixpacks + healthcheck)
+├── vercel.json                 # Vercel deployment config (optional — only needed for custom headers beyond next.config.ts)
 └── tsconfig.json               # TypeScript strict mode
 ```
 
@@ -148,24 +148,23 @@ npm run build
 npm start
 ```
 
-## Deployment (Railway)
+## Deployment (Vercel)
 
-`railway.json` configures a Nixpacks build with healthcheck:
+Vercel auto-detects Next.js and requires no build configuration. Import the `frontend/` directory as the Vercel project root (set **Root Directory** to `frontend` in the project settings).
 
-```json
-{
-  "build": { "builder": "NIXPACKS", "buildCommand": "npm run build" },
-  "deploy": {
-    "startCommand": "npm start",
-    "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 30,
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
-  }
-}
-```
+**Environment variables** — set these in the Vercel dashboard under _Settings → Environment Variables_:
 
-Set all env vars in the Railway service dashboard (including `NODE_ENV=production`). `LLM_PRICING_API_KEY` must be a server-side secret — never use a `NEXT_PUBLIC_` prefix for it.
+| Variable | Environments | Notes |
+|---|---|---|
+| `LLM_PRICING_API_BASE_URL` | Production, Preview | REST API base URL |
+| `LLM_PRICING_API_KEY` | Production, Preview | Server-only — never expose to client |
+| `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Production, Preview | Lemon Squeezy checkout URL |
+| `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Production, Preview | Lemon Squeezy checkout URL |
+| `NEXT_PUBLIC_SITE_URL` | Production | Canonical URL (e.g. `https://llmprice.dev`) |
+
+`LLM_PRICING_API_KEY` must never be prefixed with `NEXT_PUBLIC_` — it is enforced as server-only by `import 'server-only'` in `lib/api.ts`.
+
+Vercel runs `npm run build` automatically on each push and serves the output via its global edge network. No `startCommand`, Nixpacks builder, or `railway.json` is needed.
 
 ## Security
 
