@@ -315,11 +315,19 @@ func TestStreamChanges_LiveEventDelivery(t *testing.T) {
 		}
 	}
 
-	// Publish the event now that the subscription is guaranteed to be set up.
+	// Publish the event. Retry until at least one subscriber acknowledges to
+	// close the race between ": ok" being flushed and rdb.Subscribe becoming
+	// active in Redis — go-redis sends SUBSCRIBE asynchronously after the flush.
 	const eventJSON = `{"model_id":2,"provider":"anthropic","event_id":200}`
 	pubRDB := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	defer pubRDB.Close()
-	_ = pubRDB.Publish(context.Background(), "price:changes", eventJSON).Err()
+	for i := 0; i < 20; i++ {
+		n, err := pubRDB.Publish(context.Background(), "price:changes", eventJSON).Result()
+		if err == nil && n > 0 {
+			break // at least one subscriber received the message
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 
 	// The event should arrive quickly; 2 s is a conservative upper bound.
 	body := readSSEBody(resp.Body, 2*time.Second)
