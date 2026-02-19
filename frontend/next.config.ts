@@ -10,8 +10,8 @@ import type { NextConfig } from "next"
 const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline';
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-  font-src 'self' https://fonts.gstatic.com;
+  style-src 'self' 'unsafe-inline';
+  font-src 'self';
   img-src 'self' data: blob: https:;
   media-src 'self' blob:;
   connect-src 'self' https://checkout.lemonsqueezy.com https://assets10.lottiefiles.com;
@@ -50,6 +50,8 @@ const securityHeaders = [
   },
 ]
 
+const API_BASE = process.env.LLM_PRICING_API_BASE_URL || "http://localhost:8080"
+
 const nextConfig: NextConfig = {
   async headers() {
     return [
@@ -57,6 +59,13 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+    ]
+  },
+  async rewrites() {
+    return [
+      { source: "/openapi.json",               destination: `${API_BASE}/openapi.json`               },
+      { source: "/llms.txt",                   destination: `${API_BASE}/llms.txt`                   },
+      { source: "/.well-known/ai-plugin.json", destination: `${API_BASE}/.well-known/ai-plugin.json` },
     ]
   },
   images: {

@@ -18,16 +18,34 @@ export default async function ComparePage({ searchParams }: PageProps) {
   const sp  = await searchParams
   const ids = sp.models ? sp.models.split(",").filter(Boolean) : []
 
-  const [allModels, compareData] = await Promise.all([
+  const [allModelsResult, compareResult] = await Promise.allSettled([
     getModels(),
     ids.length > 0 ? getCompare(ids) : Promise.resolve([]),
   ])
+  const allModels   = allModelsResult.status  === "fulfilled" ? allModelsResult.value  : []
+  const compareData = compareResult.status === "fulfilled" ? compareResult.value : []
+  const apiUnavailable = allModelsResult.status === "rejected"
 
   return (
     <main
       className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
       style={{ paddingTop: "32px", paddingBottom: "64px" }}
     >
+      {apiUnavailable && (
+        <div
+          className="font-outfit text-sm"
+          style={{
+            padding: "10px 14px",
+            marginBottom: "20px",
+            border: "1px solid var(--border)",
+            borderLeft: "3px solid var(--yellow)",
+            backgroundColor: "var(--yellowLt)",
+            color: "var(--muted)",
+          }}
+        >
+          ⚠ Pricing API is currently unavailable — data will appear once connectivity is restored.
+        </div>
+      )}
       <Suspense fallback={null}>
         <CompareClient
           allModels={allModels}

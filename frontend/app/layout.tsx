@@ -1,22 +1,9 @@
 import type { Metadata } from "next"
-import { Orbitron, Outfit } from "next/font/google"
+import { GeistSans } from "geist/font/sans"
+import { GeistMono } from "geist/font/mono"
 import Nav from "@/components/layout/Nav"
 import Footer from "@/components/layout/Footer"
 import "./globals.css"
-
-const orbitron = Orbitron({
-  variable: "--font-orbitron-var",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  display: "swap",
-})
-
-const outfit = Outfit({
-  variable: "--font-outfit-var",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  display: "swap",
-})
 
 export const metadata: Metadata = {
   title: {
@@ -43,11 +30,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${orbitron.variable} ${outfit.variable} antialiased flex min-h-screen flex-col`}>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased flex min-h-screen flex-col`}>
         <Nav />
-        <main className="flex-1">
+        <div className="flex-1">
           {children}
-        </main>
+        </div>
         <Footer />
       </body>
     </html>

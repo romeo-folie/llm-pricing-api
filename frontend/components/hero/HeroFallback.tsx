@@ -29,7 +29,8 @@ export default function HeroFallback({ className, style }: HeroFallbackProps) {
         justifyContent: "center",
         border: "1px solid var(--border)",
         backgroundColor: "var(--surfaceLo)",
-        borderRadius: "2px",
+
+
         ...style,
       }}
       aria-label="Isometric AI animation hero"

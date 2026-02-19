@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useState } from "react"
 import { cn } from "@/lib/utils"
 
 const NAV_LINKS = [
@@ -14,36 +15,34 @@ const NAV_LINKS = [
 
 export default function Nav() {
   const pathname = usePathname()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
     <header
       className="sticky top-0 z-50 w-full"
-      style={{ backgroundColor: "var(--surface)", borderBottom: "1px solid var(--border)" }}
+      style={{ backgroundColor: "var(--bg)" }}
     >
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div
+        className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8"
+        style={{ borderBottom: "1px solid var(--border)" }}
+      >
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-1 select-none group">
-          {/* Pulsing LIVE dot */}
+        <Link href="/" className="flex items-center gap-0.5 select-none">
           <span
-            className="animate-live mr-2 inline-block h-2 w-2 rounded-full"
-            style={{ backgroundColor: "var(--accent)" }}
-            aria-hidden="true"
-          />
-          <span
-            className="font-orbitron text-lg font-bold tracking-tight"
-            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
+            className="font-orbitron text-base font-bold"
+            style={{ color: "var(--ink)" }}
           >
             LLM
           </span>
           <span
-            className="font-outfit text-lg font-semibold"
+            className="font-outfit text-base font-semibold"
             style={{ color: "var(--accent)" }}
           >
             Price
           </span>
         </Link>
 
-        {/* Navigation links */}
+        {/* Navigation links — center */}
         <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
           {NAV_LINKS.map(({ href, label }) => {
             const isActive = pathname === href || pathname.startsWith(href + "/")
@@ -52,12 +51,12 @@ export default function Nav() {
                 key={href}
                 href={href}
                 className={cn(
-                  "relative px-3 py-1.5 text-sm font-medium transition-colors rounded-sm",
+                  "relative px-3 py-1.5 text-sm font-medium transition-colors",
                   "font-outfit",
                 )}
                 style={{
-                  color: isActive ? "var(--accent)" : "var(--muted)",
-                  borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                  color: isActive ? "var(--ink)" : "var(--muted)",
+                  fontWeight: isActive ? 600 : 500,
                 }}
                 aria-current={isActive ? "page" : undefined}
               >
@@ -67,15 +66,30 @@ export default function Nav() {
           })}
         </nav>
 
-        {/* Mobile menu button — accessible; full JS toggle deferred to a future task */}
+        {/* Right-side CTAs */}
+        <div className="hidden md:flex items-center gap-2">
+          <a
+            href={process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing"}
+            className="font-outfit text-sm font-semibold px-4 py-1.5"
+            style={{
+              backgroundColor: "var(--accent)",
+              color: "var(--surfaceHi)",
+              border: "1px solid var(--accentDk)",
+            }}
+          >
+            Get API Key
+          </a>
+        </div>
+
+        {/* Mobile menu button */}
         <button
           type="button"
-          className="md:hidden p-2 rounded-sm"
+          className="md:hidden p-2"
           style={{ color: "var(--muted)", border: "1px solid var(--border)" }}
-          aria-label="Open navigation menu"
-          aria-expanded="false"
+          aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={mobileOpen}
           aria-controls="mobile-nav"
-          disabled
+          onClick={() => setMobileOpen((o) => !o)}
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square"/>
@@ -83,13 +97,13 @@ export default function Nav() {
         </button>
       </div>
 
-      {/* Mobile nav — inert until hamburger toggle is implemented */}
+      {/* Mobile nav */}
       <nav
         id="mobile-nav"
         className="md:hidden border-t"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{ borderColor: "var(--border)", backgroundColor: "var(--bg)" }}
         aria-label="Mobile navigation"
-        hidden
+        hidden={!mobileOpen}
       >
         {NAV_LINKS.map(({ href, label }) => {
           const isActive = pathname === href || pathname.startsWith(href + "/")
@@ -104,6 +118,7 @@ export default function Nav() {
                 backgroundColor: isActive ? "var(--accentLt)" : "transparent",
               }}
               aria-current={isActive ? "page" : undefined}
+              onClick={() => setMobileOpen(false)}
             >
               {label}
             </Link>

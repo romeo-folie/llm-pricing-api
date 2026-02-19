@@ -21,16 +21,34 @@ export default async function ChangesPage({ searchParams }: PageProps) {
     since:    sp.since    || undefined,
   }
 
-  const [changes, providers] = await Promise.all([
+  const [changesResult, providersResult] = await Promise.allSettled([
     getChanges(filter),
     getProviders(),
   ])
+  const changes   = changesResult.status   === "fulfilled" ? changesResult.value   : []
+  const providers = providersResult.status === "fulfilled" ? providersResult.value : []
+  const apiUnavailable = changesResult.status === "rejected"
 
   return (
     <main
       className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
       style={{ paddingTop: "32px", paddingBottom: "64px" }}
     >
+      {apiUnavailable && (
+        <div
+          className="font-outfit text-sm"
+          style={{
+            padding: "10px 14px",
+            marginBottom: "20px",
+            border: "1px solid var(--border)",
+            borderLeft: "3px solid var(--yellow)",
+            backgroundColor: "var(--yellowLt)",
+            color: "var(--muted)",
+          }}
+        >
+          ⚠ Pricing API is currently unavailable — data will appear once connectivity is restored.
+        </div>
+      )}
       <Suspense fallback={null}>
         <ChangesFeed
           initialChanges={changes}

@@ -23,21 +23,10 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
     // Dynamically load @google/model-viewer from npm package dist.
     // Using the local package avoids the CSP `unsafe-inline` + CDN risk.
     let cancelled = false
-    let fallbackScript: HTMLScriptElement | null = null
     const script = document.createElement("script")
     script.type = "module"
-    // Note: Next.js serves node_modules via the bundler; model-viewer self-registers
-    // the custom element on import. We use next/script for client-only module loading
-    // in the component tree, but for dynamic post-LCP injection we append directly.
-    script.src = "/_next/static/chunks/model-viewer.js"
-    // Fallback: if the bundled path is unavailable, try the npm package path
-    script.onerror = () => {
-      if (cancelled) return
-      fallbackScript = document.createElement("script")
-      fallbackScript.type = "module"
-      fallbackScript.src = "/model-viewer.js"
-      document.head.appendChild(fallbackScript)
-    }
+    // model-viewer.js is copied to /public during install — served as a static asset.
+    script.src = "/model-viewer.js"
 
     script.onload = () => {
       if (cancelled || !container) return
@@ -45,7 +34,7 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
 
       const mv = document.createElement("model-viewer" as keyof HTMLElementTagNameMap)
       mv.setAttribute("src", "/hero.glb")
-      mv.setAttribute("alt", "Interactive isometric 3D scene: server racks with floating LLM price tokens")
+      mv.setAttribute("alt", "Interactive isometric 3D scene: hexagonal platform with server blocks, floating price cards, and data source nodes connected by flow lines")
       mv.setAttribute("poster", "/hero.webp")
       mv.setAttribute("auto-rotate", "")
       mv.setAttribute("camera-controls", "")
@@ -64,12 +53,9 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
 
     return () => {
       cancelled = true
-      // Cancel pending onload callback and remove the injected script tags
       script.onload = null
       script.onerror = null
       if (script.parentNode) script.parentNode.removeChild(script)
-      if (fallbackScript?.parentNode) fallbackScript.parentNode.removeChild(fallbackScript)
-      // Remove the model-viewer element if it was added
       const mv = container.querySelector("model-viewer")
       if (mv) mv.remove()
     }
@@ -81,22 +67,19 @@ function ModelViewerHero({ className, style }: HeroSceneProps) {
       className={className}
       style={{
         position: "relative",
-        border: "1px solid var(--border)",
-        backgroundColor: "var(--surfaceLo)",
-        borderRadius: "2px",
         overflow: "hidden",
-        minHeight: "360px",
+        minHeight: "420px",
         ...style,
       }}
     >
-      {/* WebP poster: loads immediately above fold; serves as the LCP image */}
+      {/* WebP poster: transparent-bg RGBA render floats on page background */}
       <Image
         src="/hero.webp"
-        alt="Isometric server rack scene with floating price tokens and data pipeline elements"
+        alt="Isometric scene with hexagonal platform, server blocks, floating price cards, and data source nodes"
         fill
         priority
         sizes="(max-width: 768px) 100vw, 50vw"
-        className="object-cover"
+        className="object-contain"
         style={{ zIndex: 1 }}
       />
 

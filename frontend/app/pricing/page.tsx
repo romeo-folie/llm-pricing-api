@@ -132,8 +132,14 @@ export default function PricingPage() {
 
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: "48px" }}>
+          <span
+            className="font-orbitron text-xs tracking-widest"
+            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+          >
+            [ PLANS &amp; PRICING ]
+          </span>
           <h1
-            className="font-orbitron text-3xl font-bold"
+            className="font-outfit text-3xl font-bold"
             style={{ color: "var(--ink)", marginBottom: "12px" }}
           >
             Plans & Pricing
@@ -196,8 +202,7 @@ export default function PricingPage() {
                 padding: "24px",
                 backgroundColor: "var(--surface)",
                 border: "1px solid var(--borderDk)",
-                borderTop:  tier.featured ? "4px solid var(--accent)" : "4px solid var(--borderDk)",
-                borderLeft: tier.featured ? "4px solid var(--accent)" : "4px solid var(--borderDk)",
+                borderTop:  tier.featured ? "2px solid var(--accent)" : "1px solid var(--borderDk)",
               }}
             >
               {tier.featured && (
@@ -209,13 +214,12 @@ export default function PricingPage() {
                     right: "12px",
                     padding: "2px 8px",
                     border: "1px solid var(--accent)",
-                    borderRadius: "2px",
                     color: "var(--accent)",
                     backgroundColor: "var(--accentLt)",
                     letterSpacing: "0.06em",
                   }}
                 >
-                  MOST POPULAR
+                  [ POPULAR ]
                 </div>
               )}
 
@@ -228,7 +232,7 @@ export default function PricingPage() {
                   letterSpacing: "0.1em",
                 }}
               >
-                {tier.rank}
+                [ {tier.rank} ]
               </div>
 
               {/* Tier name */}
@@ -264,7 +268,6 @@ export default function PricingPage() {
                   padding: "10px",
                   textAlign: "center",
                   border:           tier.featured ? "none" : "1px solid var(--border)",
-                  borderRadius:     "2px",
                   backgroundColor:  tier.featured ? "var(--accent)" : "var(--surfaceLo)",
                   color:            tier.featured ? "white" : "var(--text)",
                   textDecoration:   "none",
@@ -303,25 +306,27 @@ export default function PricingPage() {
         </div>
 
         {/* FAQ */}
-        <div style={{ maxWidth: "640px", margin: "0 auto" }}>
-          <h2
-            className="font-orbitron text-lg font-bold"
-            style={{ color: "var(--ink)", marginBottom: "24px", textAlign: "center" }}
-          >
-            FAQ
-          </h2>
-          <Accordion type="single" collapsible>
-            {FAQ.map((item, i) => (
-              <AccordionItem key={i} value={`faq-${i}`}>
-                <AccordionTrigger className="font-outfit text-sm" style={{ color: "var(--ink)" }}>
-                  {item.q}
-                </AccordionTrigger>
-                <AccordionContent className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
-                  {item.a}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "48px" }}>
+          <div style={{ maxWidth: "720px" }}>
+            <h2
+              className="font-outfit text-lg font-bold"
+              style={{ color: "var(--ink)", marginBottom: "16px" }}
+            >
+              FAQ
+            </h2>
+            <Accordion type="single" collapsible>
+              {FAQ.map((item, i) => (
+                <AccordionItem key={i} value={`faq-${i}`}>
+                  <AccordionTrigger className="font-outfit text-sm" style={{ color: "var(--ink)" }}>
+                    {item.q}
+                  </AccordionTrigger>
+                  <AccordionContent className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                    {item.a}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </div>
         </div>
 
       </div>

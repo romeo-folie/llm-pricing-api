@@ -77,7 +77,6 @@ export default async function ModelDetailPage({ params }: PageProps) {
             style={{
               padding: "2px 8px",
               border: "1px solid var(--blueLt)",
-              borderRadius: "2px",
               color: "var(--blue)",
               backgroundColor: "var(--blueLt)",
             }}
@@ -89,7 +88,6 @@ export default async function ModelDetailPage({ params }: PageProps) {
             style={{
               padding: "2px 8px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               color: "var(--muted)",
             }}
           >
@@ -157,7 +155,6 @@ export default async function ModelDetailPage({ params }: PageProps) {
             style={{
               padding: "8px 16px",
               border: "1px solid var(--accent)",
-              borderRadius: "2px",
               backgroundColor: "var(--accent)",
               color: "white",
               textDecoration: "none",
@@ -171,7 +168,6 @@ export default async function ModelDetailPage({ params }: PageProps) {
             style={{
               padding: "8px 16px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               color: "var(--muted)",
               textDecoration: "none",
             }}

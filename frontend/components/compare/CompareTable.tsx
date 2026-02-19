@@ -93,7 +93,8 @@ export default function CompareTable({ models, onRemove }: CompareTableProps) {
                       style={{
                         background: "none",
                         border: "1px solid var(--border)",
-                        borderRadius: "2px",
+
+
                         color: "var(--dim)",
                         cursor: "pointer",
                         padding: "1px 5px",

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { ArrowUpRight } from "lucide-react"
 import HeroScene from "@/components/hero/HeroScene"
 import { getModels, getProviders, getChanges } from "@/lib/api"
 
@@ -25,28 +26,24 @@ const FEATURES = [
     title: "Full Price History",
     description:
       "Every model, every change — timestamped and immutable. Not just a snapshot, the complete timeline.",
-    accent: false,
   },
   {
     icon: "⬡",
     title: "Multi-Source Reconciliation",
     description:
       "OpenRouter + LiteLLM + provider docs. 2-source agreement required before publishing. Flagged discrepancies logged.",
-    accent: false,
   },
   {
     icon: "⚡",
     title: "Agent-Optimized APIs",
     description:
       "/v1/context for clean system prompts, /v1/ask for NL queries, SSE stream for live deltas.",
-    accent: true,
   },
   {
     icon: "◉",
     title: "Real-Time Change Feed",
     description:
       "Price changes surfaced within 60 seconds. Trust metadata — confidence, source, age — on every record.",
-    accent: false,
   },
 ]
 
@@ -98,7 +95,7 @@ const TIER_SUMMARY = [
     highlight: true,
     cta: "Get API Key",
     href: process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing",
-    features: ["Everything in Free", "Price history", "⚡ Agent APIs (/context, /ask, SSE)", "Model recommendations"],
+    features: ["Everything in Free", "Price history", "Agent APIs (/context, /ask, SSE)", "Model recommendations"],
   },
   {
     rank: "ARCHITECT",
@@ -134,6 +131,16 @@ const TESTIMONIALS = [
   },
 ]
 
+const DATA_SOURCES = [
+  "OpenRouter",
+  "LiteLLM",
+  "OpenAI",
+  "Anthropic",
+  "Google",
+  "Mistral",
+  "Amazon",
+]
+
 // ─── SSR helpers ──────────────────────────────────────────────────────────────
 
 async function fetchLandingStats() {
@@ -160,8 +167,6 @@ async function fetchLandingStats() {
 export default async function Home() {
   const { modelCount, providerCount, lastChange } = await fetchLandingStats()
 
-  // Anchor to UTC so server and client produce identical strings (prevents hydration mismatch).
-  // Guard against malformed timestamps from the API returning "Invalid Date".
   const parsedDate = lastChange ? new Date(lastChange.changed_at) : null
   const lastChangeLabel =
     parsedDate && !isNaN(parsedDate.getTime())
@@ -175,36 +180,24 @@ export default async function Home() {
       : null
 
   return (
-    <>
+    <main>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section
-        aria-labelledby="hero-heading"
-        style={{
-          borderBottom: "1px solid var(--border)",
-          backgroundColor: "var(--surface)",
-        }}
-      >
-        <div className="max-w-6xl mx-auto px-6 py-16 lg:py-24">
+      <section aria-labelledby="hero-heading">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-6xl mx-auto px-6 py-20 lg:py-32">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: copy */}
             <div className="flex flex-col gap-6">
-              {/* eyebrow */}
-              <div className="flex items-center gap-2">
-                <span
-                  className="font-orbitron text-xs font-semibold tracking-widest px-2 py-1 rounded-sm"
-                  style={{
-                    backgroundColor: "var(--accentLt)",
-                    color: "var(--accentDk)",
-                    border: "1px solid var(--accent)",
-                  }}
-                >
-                  MULTI-SOURCE · RECONCILED
-                </span>
-              </div>
+              <span
+                className="font-orbitron text-xs tracking-widest"
+                style={{ color: "var(--dim)" }}
+              >
+                [ MULTI-SOURCE &middot; RECONCILED ]
+              </span>
 
               <h1
                 id="hero-heading"
-                className="font-orbitron text-4xl lg:text-5xl font-extrabold leading-tight"
+                className="font-outfit text-4xl lg:text-5xl font-extrabold leading-tight"
                 style={{ color: "var(--ink)" }}
               >
                 Reconciled LLM Pricing.{" "}
@@ -221,11 +214,11 @@ export default async function Home() {
                 single trusted API.
               </p>
 
-              {/* CTAs */}
+              {/* CTAs — sharp corners */}
               <div className="flex gap-3 flex-wrap">
                 <a
                   href="/models"
-                  className="font-outfit text-sm font-semibold px-6 py-3 rounded-sm"
+                  className="font-outfit text-sm font-semibold px-6 py-3"
                   style={{
                     backgroundColor: "var(--accent)",
                     color: "var(--surfaceHi)",
@@ -236,9 +229,8 @@ export default async function Home() {
                 </a>
                 <a
                   href="/pricing"
-                  className="font-outfit text-sm font-semibold px-6 py-3 rounded-sm"
+                  className="font-outfit text-sm font-semibold px-6 py-3"
                   style={{
-                    backgroundColor: "var(--surface)",
                     color: "var(--text)",
                     border: "1px solid var(--border)",
                   }}
@@ -249,7 +241,7 @@ export default async function Home() {
 
               {/* Stat strip */}
               <div
-                className="flex flex-wrap gap-6 pt-2"
+                className="flex flex-wrap gap-6 pt-4"
                 style={{ borderTop: "1px solid var(--border)" }}
               >
                 <div className="flex flex-col gap-0.5">
@@ -297,24 +289,51 @@ export default async function Home() {
               </div>
             </div>
 
-            {/* Right: hero scene — client component; poster WebP renders server-side via next/image */}
+            {/* Right: hero scene */}
             <div className="w-full">
-              <HeroScene style={{ minHeight: "360px" }} />
+              <HeroScene style={{ minHeight: "420px" }} />
             </div>
           </div>
+        </div>
+        </div>
+      </section>
+
+      {/* ── Data Sources Bar ───────────────────────────────────────────── */}
+      <section aria-label="Data sources">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-6xl mx-auto px-6 py-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+            {DATA_SOURCES.map((source) => (
+              <span
+                key={source}
+                className="font-outfit text-sm font-medium"
+                style={{ color: "var(--muted)" }}
+              >
+                {source}
+              </span>
+            ))}
+          </div>
+        </div>
         </div>
       </section>
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
-      <section aria-labelledby="features-heading" style={{ borderBottom: "1px solid var(--border)" }}>
+      <section aria-labelledby="features-heading">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-16">
           <div className="mb-10">
+            <span
+              className="font-orbitron text-xs tracking-widest"
+              style={{ color: "var(--dim)" }}
+            >
+              [ WHAT MAKES IT DIFFERENT ]
+            </span>
             <h2
               id="features-heading"
-              className="font-orbitron text-2xl font-bold mb-2"
+              className="font-outfit text-2xl font-bold mt-3 mb-2"
               style={{ color: "var(--ink)" }}
             >
-              What makes it different
+              Full history. Multiple sources. Zero guesswork.
             </h2>
             <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
               Most pricing tools give you a snapshot. We give you the full timeline with source attribution.
@@ -325,19 +344,24 @@ export default async function Home() {
             {FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="flex flex-col gap-3 p-5 rounded-sm"
+                className="relative flex flex-col gap-3 p-5 transition-colors"
                 style={{
-                  backgroundColor: f.accent ? "var(--accentLt)" : "var(--surface)",
-                  border: f.accent
-                    ? "1px solid var(--accent)"
-                    : "1px solid var(--border)",
-                  /* isometric depth treatment */
-                  borderLeft: f.accent ? "3px solid var(--accent)" : "3px solid var(--borderDk)",
+                  border: "1px solid var(--border)",
+                  borderTop: "2px solid var(--accent)",
                 }}
               >
+                {/* Arrow icon — top right */}
+                <span
+                  className="absolute top-3 right-3"
+                  style={{ color: "var(--dim)" }}
+                  aria-hidden="true"
+                >
+                  <ArrowUpRight size={16} />
+                </span>
+
                 <span
                   className="font-orbitron text-2xl"
-                  style={{ color: f.accent ? "var(--accent)" : "var(--accentDk)" }}
+                  style={{ color: "var(--accent)" }}
                   aria-hidden="true"
                 >
                   {f.icon}
@@ -358,33 +382,25 @@ export default async function Home() {
             ))}
           </div>
         </div>
+        </div>
       </section>
 
       {/* ── Agent callout ────────────────────────────────────────────────── */}
-      <section
-        aria-labelledby="agent-heading"
-        style={{
-          borderBottom: "1px solid var(--border)",
-          backgroundColor: "var(--surfaceLo)",
-        }}
-      >
+      <section aria-labelledby="agent-heading">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-16">
           <div className="flex flex-col lg:flex-row gap-12 items-start">
             {/* Left copy */}
             <div className="flex flex-col gap-4 lg:max-w-sm">
               <span
-                className="font-orbitron text-xs font-semibold tracking-widest px-2 py-1 rounded-sm w-fit"
-                style={{
-                  backgroundColor: "var(--accentLt)",
-                  color: "var(--accentDk)",
-                  border: "1px solid var(--accent)",
-                }}
+                className="font-orbitron text-xs tracking-widest"
+                style={{ color: "var(--dim)" }}
               >
-                ⚡ AGENT-OPTIMIZED
+                [ AGENT-OPTIMIZED ]
               </span>
               <h2
                 id="agent-heading"
-                className="font-orbitron text-2xl font-bold"
+                className="font-outfit text-2xl font-bold"
                 style={{ color: "var(--ink)" }}
               >
                 Built for LLM agents
@@ -396,7 +412,7 @@ export default async function Home() {
               </p>
               <a
                 href="/pricing"
-                className="font-outfit text-sm font-semibold px-5 py-2.5 rounded-sm w-fit"
+                className="font-outfit text-sm font-semibold px-5 py-2.5 w-fit"
                 style={{
                   backgroundColor: "var(--accent)",
                   color: "var(--surfaceHi)",
@@ -407,10 +423,10 @@ export default async function Home() {
               </a>
             </div>
 
-            {/* Semantic endpoint table */}
+            {/* Endpoint table — dashed border for architectural diagram feel */}
             <table
-              className="flex-1 rounded-sm overflow-hidden w-full"
-              style={{ border: "1px solid var(--border)", borderSpacing: 0 }}
+              className="flex-1 w-full"
+              style={{ border: "1px dashed var(--borderDk)", borderSpacing: 0 }}
             >
               <caption className="sr-only">Agent-optimized API endpoints</caption>
               <thead className="sr-only">
@@ -425,14 +441,14 @@ export default async function Home() {
                 {AGENT_ENDPOINTS.map((ep, i) => (
                   <tr
                     key={ep.path}
+                    className="transition-colors"
                     style={{
-                      borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                      backgroundColor: "var(--surface)",
+                      borderTop: i === 0 ? "none" : "1px dashed var(--border)",
                     }}
                   >
                     <td className="px-4 py-4 w-px whitespace-nowrap">
                       <span
-                        className="font-orbitron text-xs font-semibold px-1.5 py-0.5 rounded-sm"
+                        className="font-orbitron text-xs font-semibold px-1.5 py-0.5"
                         style={{
                           backgroundColor: "var(--accentLt)",
                           color: "var(--accentDk)",
@@ -459,7 +475,7 @@ export default async function Home() {
                     </td>
                     <td className="px-4 py-4 w-px whitespace-nowrap">
                       <span
-                        className="font-orbitron text-xs font-semibold px-1.5 py-0.5 rounded-sm"
+                        className="font-orbitron text-xs font-semibold px-1.5 py-0.5"
                         style={{
                           backgroundColor: "var(--blueLt)",
                           color: "var(--blue)",
@@ -474,19 +490,27 @@ export default async function Home() {
             </table>
           </div>
         </div>
+        </div>
       </section>
 
       {/* ── Pricing summary ──────────────────────────────────────────────── */}
-      <section aria-labelledby="pricing-heading" style={{ borderBottom: "1px solid var(--border)" }}>
+      <section aria-labelledby="pricing-heading">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-16">
           <div className="mb-10 flex items-end justify-between flex-wrap gap-4">
             <div>
+              <span
+                className="font-orbitron text-xs tracking-widest"
+                style={{ color: "var(--dim)" }}
+              >
+                [ SIMPLE PRICING ]
+              </span>
               <h2
                 id="pricing-heading"
-                className="font-orbitron text-2xl font-bold mb-2"
+                className="font-outfit text-2xl font-bold mt-3 mb-2"
                 style={{ color: "var(--ink)" }}
               >
-                Simple pricing
+                Start free. Upgrade when you need history.
               </h2>
               <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
                 Start free. Upgrade when you need price history and agent endpoints.
@@ -505,29 +529,23 @@ export default async function Home() {
             {TIER_SUMMARY.map((t) => (
               <div
                 key={t.rank}
-                className="flex flex-col gap-4 p-6 rounded-sm"
+                className="flex flex-col gap-4 p-6"
                 style={{
-                  backgroundColor: t.highlight ? "var(--surface)" : "var(--bg)",
-                  border: t.highlight
-                    ? "2px solid var(--accent)"
-                    : "1px solid var(--border)",
-                  borderLeft: t.highlight
-                    ? "4px solid var(--accent)"
-                    : "4px solid var(--borderDk)",
+                  border: "1px solid var(--border)",
+                  borderTop: t.highlight ? "2px solid var(--accent)" : "1px solid var(--border)",
                   position: "relative",
-                  // Extra top padding absorbs the POPULAR badge height so it never clips
                   paddingTop: t.highlight ? "2rem" : undefined,
                 }}
               >
                 {t.highlight && (
                   <span
-                    className="absolute top-0 left-4 -translate-y-1/2 font-orbitron text-xs font-bold px-2 py-0.5 rounded-sm"
+                    className="absolute top-0 left-4 -translate-y-1/2 font-orbitron text-xs font-bold px-2 py-0.5"
                     style={{
                       backgroundColor: "var(--accent)",
                       color: "var(--surfaceHi)",
                     }}
                   >
-                    POPULAR
+                    [ POPULAR ]
                   </span>
                 )}
 
@@ -536,10 +554,10 @@ export default async function Home() {
                     className="font-orbitron text-xs tracking-widest"
                     style={{ color: "var(--dim)" }}
                   >
-                    {t.rank}
+                    [ {t.rank} ]
                   </span>
                   <h3
-                    className="font-orbitron text-lg font-bold mt-0.5"
+                    className="font-outfit text-lg font-bold mt-0.5"
                     style={{ color: "var(--ink)" }}
                   >
                     {t.name}
@@ -583,13 +601,11 @@ export default async function Home() {
 
                 <a
                   href={t.href}
-                  className="font-outfit text-sm font-semibold px-4 py-2.5 rounded-sm text-center mt-auto"
+                  className="font-outfit text-sm font-semibold px-4 py-2.5 text-center mt-auto"
                   style={{
-                    backgroundColor: t.highlight ? "var(--accent)" : "var(--surface)",
+                    backgroundColor: t.highlight ? "var(--accent)" : "transparent",
                     color: t.highlight ? "var(--surfaceHi)" : "var(--text)",
-                    border: t.highlight
-                      ? "1px solid var(--accentDk)"
-                      : "1px solid var(--border)",
+                    border: t.highlight ? "1px solid var(--accentDk)" : "1px solid var(--border)",
                   }}
                 >
                   {t.cta}
@@ -598,29 +614,44 @@ export default async function Home() {
             ))}
           </div>
         </div>
+        </div>
       </section>
 
       {/* ── Testimonials ─────────────────────────────────────────────────── */}
-      <section aria-labelledby="testimonials-heading" style={{ borderBottom: "1px solid var(--border)" }}>
+      <section aria-labelledby="testimonials-heading">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-16">
+          <span
+            className="font-orbitron text-xs tracking-widest"
+            style={{ color: "var(--dim)" }}
+          >
+            [ WHAT DEVELOPERS SAY ]
+          </span>
           <h2
             id="testimonials-heading"
-            className="font-orbitron text-2xl font-bold mb-10"
+            className="font-outfit text-2xl font-bold mt-3 mb-10"
             style={{ color: "var(--ink)" }}
           >
-            What developers say
+            Trusted by AI engineers
           </h2>
           <div className="grid sm:grid-cols-3 gap-4">
             {TESTIMONIALS.map((t) => (
               <figure
                 key={t.author}
-                className="flex flex-col gap-4 p-6 rounded-sm"
+                className="relative flex flex-col gap-4 p-6"
                 style={{
-                  backgroundColor: "var(--surface)",
                   border: "1px solid var(--border)",
-                  borderLeft: "3px solid var(--borderDk)",
                 }}
               >
+                {/* Decorative quotation mark */}
+                <span
+                  className="font-outfit text-4xl font-bold leading-none absolute top-4 right-5"
+                  style={{ color: "var(--accentLt)" }}
+                  aria-hidden="true"
+                >
+                  &ldquo;
+                </span>
+
                 <blockquote>
                   <p
                     className="font-outfit text-base leading-relaxed"
@@ -647,14 +678,15 @@ export default async function Home() {
             ))}
           </div>
         </div>
+        </div>
       </section>
 
       {/* ── Final CTA ────────────────────────────────────────────────────── */}
-      <section aria-labelledby="cta-heading" style={{ backgroundColor: "var(--surfaceLo)" }}>
-        <div className="max-w-6xl mx-auto px-6 py-16 text-center flex flex-col items-center gap-6">
+      <section aria-labelledby="cta-heading">
+        <div className="max-w-6xl mx-auto px-6 py-24 text-center flex flex-col items-center gap-6">
           <h2
             id="cta-heading"
-            className="font-orbitron text-3xl font-extrabold"
+            className="font-outfit text-3xl font-extrabold"
             style={{ color: "var(--ink)" }}
           >
             Start tracking LLM prices today
@@ -669,7 +701,7 @@ export default async function Home() {
           <div className="flex gap-3 flex-wrap justify-center">
             <a
               href="/models"
-              className="font-outfit text-sm font-semibold px-8 py-3 rounded-sm"
+              className="font-outfit text-sm font-semibold px-8 py-3"
               style={{
                 backgroundColor: "var(--accent)",
                 color: "var(--surfaceHi)",
@@ -680,9 +712,8 @@ export default async function Home() {
             </a>
             <a
               href="/pricing"
-              className="font-outfit text-sm font-semibold px-8 py-3 rounded-sm"
+              className="font-outfit text-sm font-semibold px-8 py-3"
               style={{
-                backgroundColor: "var(--surface)",
                 color: "var(--text)",
                 border: "1px solid var(--border)",
               }}
@@ -692,6 +723,6 @@ export default async function Home() {
           </div>
         </div>
       </section>
-    </>
+    </main>
   )
 }

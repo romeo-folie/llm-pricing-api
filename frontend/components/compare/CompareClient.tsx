@@ -74,7 +74,13 @@ export default function CompareClient({
         }}
       >
         <div>
-          <h1 className="font-orbitron text-2xl font-bold" style={{ color: "var(--ink)" }}>
+          <span
+            className="font-orbitron text-xs tracking-widest"
+            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+          >
+            [ COMPARE ]
+          </span>
+          <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
             Compare Models
           </h1>
           <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
@@ -89,7 +95,6 @@ export default function CompareClient({
             style={{
               padding: "8px 16px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               backgroundColor: "var(--surface)",
               color: copied ? "var(--green)" : "var(--muted)",
               cursor: "pointer",
@@ -107,7 +112,6 @@ export default function CompareClient({
           padding: "16px",
           border: "1px solid var(--border)",
           backgroundColor: "var(--surfaceLo)",
-          borderRadius: "2px",
           marginBottom: "24px",
         }}
       >

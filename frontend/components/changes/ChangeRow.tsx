@@ -69,7 +69,8 @@ export default function ChangeRow({ change, isNew }: ChangeRowProps) {
             style={{
               padding: "1px 6px",
               border: `1px solid ${pvColor}`,
-              borderRadius: "2px",
+  
+
               color: pvColor,
               backgroundColor: pvBg,
             }}
@@ -125,7 +126,8 @@ export default function ChangeRow({ change, isNew }: ChangeRowProps) {
           style={{
             padding: "1px 6px",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+
+
             color: "var(--blue)",
             backgroundColor: "var(--blueLt)",
           }}

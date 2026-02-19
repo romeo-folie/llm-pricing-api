@@ -112,12 +112,20 @@ export default function ChangesFeed({
           marginBottom: "16px",
         }}
       >
-        <h1
-          className="font-orbitron text-2xl font-bold"
-          style={{ color: "var(--ink)" }}
-        >
-          Price Changes
-        </h1>
+        <div>
+          <span
+            className="font-orbitron text-xs tracking-widest"
+            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+          >
+            [ PRICE CHANGES ]
+          </span>
+          <h1
+            className="font-outfit text-2xl font-bold"
+            style={{ color: "var(--ink)" }}
+          >
+            Price Changes
+          </h1>
+        </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span
@@ -128,7 +136,6 @@ export default function ChangesFeed({
               gap: "5px",
               padding: "3px 8px",
               border: `1px solid ${liveColor}`,
-              borderRadius: "2px",
               color: liveColor,
               backgroundColor: polling && !pollFailed ? "var(--accentLt)" : "var(--surfaceLo)",
             }}
@@ -161,7 +168,6 @@ export default function ChangesFeed({
           padding: "12px",
           border: "1px solid var(--border)",
           backgroundColor: "var(--surfaceLo)",
-          borderRadius: "2px",
         }}
       >
         <select
@@ -171,7 +177,6 @@ export default function ChangesFeed({
           style={{
             padding: "6px 10px",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
             backgroundColor: "var(--surface)",
             color: "var(--text)",
           }}
@@ -190,7 +195,6 @@ export default function ChangesFeed({
           style={{
             padding: "6px 10px",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
             backgroundColor: "var(--surface)",
             color: "var(--text)",
           }}
@@ -203,7 +207,6 @@ export default function ChangesFeed({
             style={{
               padding: "6px 12px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               color: "var(--muted)",
               backgroundColor: "var(--surface)",
               cursor: "pointer",

@@ -36,9 +36,9 @@
   --color-purple:     #7C3AED;
   --color-purple-lt:  #EDE9FE;
 
-  /* Typography */
-  --font-orbitron: var(--font-orbitron-var), monospace;
-  --font-outfit:   var(--font-outfit-var), 'Space Mono', sans-serif;
+  /* Typography — Geist family (remapped from legacy token names) */
+  --font-orbitron: var(--font-geist-mono), monospace;
+  --font-outfit:   var(--font-geist-sans), sans-serif;
 }
 
 /* ─── Raw CSS custom props (for var(--bg) usage in arbitrary values) ─────── */
@@ -82,7 +82,7 @@ html {
 body {
   background-color: var(--bg);
   color: var(--text);
-  font-family: var(--font-outfit-var), 'Space Mono', sans-serif;
+  font-family: var(--font-geist-sans), sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -125,4 +125,26 @@ body {
 
 .animate-live {
   animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Vertical container rail lines (Greptile/OpenCode boxing) ───────────── */
+
+@media (min-width: 1312px) {
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background-color: var(--border);
+    z-index: 40;
+    pointer-events: none;
+  }
+  body::before {
+    left: calc(50% - 640px);
+  }
+  body::after {
+    right: calc(50% - 640px);
+  }
 }

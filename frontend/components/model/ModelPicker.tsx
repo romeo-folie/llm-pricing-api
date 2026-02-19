@@ -62,7 +62,8 @@ export default function ModelPicker({
                 gap: "4px",
                 padding: "2px 8px",
                 border: "1px solid var(--borderDk)",
-                borderRadius: "2px",
+
+
                 backgroundColor: "var(--surfaceLo)",
                 color: "var(--text)",
               }}
@@ -99,7 +100,6 @@ export default function ModelPicker({
         style={{
           padding: "8px 12px",
           border: "1px solid var(--border)",
-          borderRadius: "2px",
           backgroundColor: atMax ? "var(--surfaceLo)" : "var(--surface)",
           color: "var(--text)",
           outline: "none",
@@ -159,7 +159,8 @@ export default function ModelPicker({
                     color: "var(--muted)",
                     padding: "1px 6px",
                     border: "1px solid var(--border)",
-                    borderRadius: "2px",
+    
+
                   }}
                 >
                   {m.provider}

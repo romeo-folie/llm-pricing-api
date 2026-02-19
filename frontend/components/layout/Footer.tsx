@@ -25,12 +25,11 @@ export default function Footer() {
   return (
     <footer
       className="w-full mt-auto"
-      style={{
-        backgroundColor: "var(--surfaceLo)",
-        borderTop: "1px solid var(--borderDk)",
-      }}
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+      <div
+        className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10"
+        style={{ borderTop: "1px solid var(--borderDk)" }}
+      >
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="lg:col-span-1">
@@ -56,10 +55,10 @@ export default function Footer() {
           {/* Product */}
           <div>
             <h3
-              className="font-orbitron text-xs font-semibold uppercase tracking-widest mb-3"
+              className="font-orbitron text-xs tracking-widest mb-3"
               style={{ color: "var(--dim)" }}
             >
-              Product
+              [ PRODUCT ]
             </h3>
             <ul className="space-y-2">
               {PRODUCT_LINKS.map(({ href, label }) => (
@@ -75,10 +74,10 @@ export default function Footer() {
           {/* API */}
           <div>
             <h3
-              className="font-orbitron text-xs font-semibold uppercase tracking-widest mb-3"
+              className="font-orbitron text-xs tracking-widest mb-3"
               style={{ color: "var(--dim)" }}
             >
-              Developers
+              [ DEVELOPERS ]
             </h3>
             <ul className="space-y-2">
               {API_LINKS.map(({ href, label, external }) => (
@@ -98,10 +97,10 @@ export default function Footer() {
           {/* Discovery endpoints */}
           <div>
             <h3
-              className="font-orbitron text-xs font-semibold uppercase tracking-widest mb-3"
+              className="font-orbitron text-xs tracking-widest mb-3"
               style={{ color: "var(--dim)" }}
             >
-              Agent Discovery
+              [ DISCOVERY ]
             </h3>
             <ul className="space-y-2">
               {DISCOVERY_LINKS.map(({ href, label }) => (
@@ -121,10 +120,10 @@ export default function Footer() {
           style={{ borderTop: "1px solid var(--border)" }}
         >
           <p className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
-            © <CopyrightYear /> LLMPrice. All prices reconciled from multiple sources.
+            &copy; <CopyrightYear /> LLMPrice. All prices reconciled from multiple sources.
           </p>
           <p className="font-orbitron text-xs" style={{ color: "var(--dim)" }}>
-            p99 &lt;200ms · updated every 5m
+            p99 &lt;200ms &middot; updated every 5m
           </p>
         </div>
       </div>

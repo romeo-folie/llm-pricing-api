@@ -26,7 +26,13 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     min_context: sp.min_context ? Number(sp.min_context) : undefined,
   }
 
-  const [models, providers] = await Promise.all([getModels(filter), getProviders()])
+  const [modelsResult, providersResult] = await Promise.allSettled([
+    getModels(filter),
+    getProviders(),
+  ])
+  const models   = modelsResult.status   === "fulfilled" ? modelsResult.value   : []
+  const providers = providersResult.status === "fulfilled" ? providersResult.value : []
+  const apiUnavailable = modelsResult.status === "rejected"
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -49,16 +55,39 @@ export default async function ModelsPage({ searchParams }: PageProps) {
         className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
         style={{ paddingTop: "32px", paddingBottom: "64px" }}
       >
+        {/* API unavailable banner */}
+        {apiUnavailable && (
+          <div
+            className="font-outfit text-sm"
+            style={{
+              padding: "10px 14px",
+              marginBottom: "20px",
+              border: "1px solid var(--border)",
+              borderLeft: "3px solid var(--yellow)",
+              backgroundColor: "var(--yellowLt)",
+              color: "var(--muted)",
+            }}
+          >
+            ⚠ Pricing API is currently unavailable — data will appear once connectivity is restored.
+          </div>
+        )}
+
         {/* Header */}
         <div style={{ marginBottom: "24px" }}>
+          <span
+            className="font-orbitron text-xs tracking-widest"
+            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+          >
+            [ MODEL BROWSER ]
+          </span>
           <h1
-            className="font-orbitron text-2xl font-bold"
+            className="font-outfit text-2xl font-bold"
             style={{ color: "var(--ink)" }}
           >
             Model Browser
           </h1>
           <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
-            {models.length} models tracked · updated every 5 minutes
+            {apiUnavailable ? "API unavailable" : `${models.length} models tracked · updated every 5 minutes`}
           </p>
         </div>
 
@@ -73,7 +102,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             padding: "12px",
             border: "1px solid var(--border)",
             backgroundColor: "var(--surfaceLo)",
-            borderRadius: "2px",
           }}
         >
           {/* Provider */}
@@ -84,7 +112,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             style={{
               padding: "6px 10px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               backgroundColor: "var(--surface)",
               color: "var(--text)",
             }}
@@ -103,7 +130,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             style={{
               padding: "6px 10px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               backgroundColor: "var(--surface)",
               color: "var(--text)",
             }}
@@ -122,7 +148,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             style={{
               padding: "6px 10px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               backgroundColor: "var(--surface)",
               color: "var(--text)",
             }}
@@ -140,7 +165,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             style={{
               padding: "6px 16px",
               border: "1px solid var(--accent)",
-              borderRadius: "2px",
               backgroundColor: "var(--accent)",
               color: "white",
               cursor: "pointer",
@@ -156,7 +180,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
               style={{
                 padding: "6px 12px",
                 border: "1px solid var(--border)",
-                borderRadius: "2px",
                 color: "var(--muted)",
                 textDecoration: "none",
                 display: "inline-flex",
@@ -200,7 +223,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
               borderBottom: "1px solid var(--border)",
             }}
           >
-            No models match the current filters.
+            {apiUnavailable ? "No data available — API is unreachable." : "No models match the current filters."}
           </div>
         ) : (
           <div>

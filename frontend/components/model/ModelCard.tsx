@@ -63,16 +63,13 @@ export default function ModelCard({ model }: ModelCardProps) {
         padding: "12px 16px",
         backgroundColor: "var(--surface)",
         borderBottom: "1px solid var(--border)",
-        borderLeft: "3px solid transparent",
         cursor: "pointer",
-        transition: "border-left-color 0.12s, background-color 0.12s",
+        transition: "background-color 0.12s",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderLeftColor = "var(--accent)"
         e.currentTarget.style.backgroundColor  = "var(--surfaceLo)"
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderLeftColor = "transparent"
         e.currentTarget.style.backgroundColor  = "var(--surface)"
       }}
     >
@@ -98,7 +95,6 @@ export default function ModelCard({ model }: ModelCardProps) {
           gap: "4px",
           padding: "2px 6px",
           border: "1px solid var(--accent)",
-          borderRadius: "2px",
           color: "var(--accent)",
           backgroundColor: "var(--accentLt)",
           flexShrink: 0,

@@ -57,7 +57,8 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
           padding: "32px",
           color: "var(--muted)",
           border: "1px solid var(--border)",
-          borderRadius: "2px",
+
+
         }}
       >
         No price history available.
@@ -77,7 +78,8 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
               style={{
                 padding: "4px 10px",
                 border: "1px solid var(--border)",
-                borderRadius: "2px",
+      
+
                 backgroundColor: range === r.value ? "var(--accent)" : "var(--surface)",
                 color: range === r.value ? "white" : "var(--muted)",
                 cursor: "pointer",
@@ -94,7 +96,8 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
             padding: "32px",
             color: "var(--muted)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+  
+
           }}
         >
           No price history in this range.
@@ -115,7 +118,8 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
             style={{
               padding: "4px 10px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
+    
+
               backgroundColor: range === r.value ? "var(--accent)" : "var(--surface)",
               color: range === r.value ? "white" : "var(--muted)",
               cursor: "pointer",
@@ -146,9 +150,10 @@ export default function PriceHistoryChart({ history }: PriceHistoryChartProps) {
             contentStyle={{
               backgroundColor: "var(--surface)",
               border: "1px solid var(--borderDk)",
-              borderRadius: "2px",
+    
+
               fontSize: "12px",
-              fontFamily: "monospace",
+              fontFamily: "var(--font-geist-mono), monospace",
             }}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             formatter={(value: any, name: any) => [

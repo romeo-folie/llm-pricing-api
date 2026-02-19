@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 }
 
 export default async function CalculatorPage() {
-  const allModels = await getModels()
+  const allModels = await getModels().catch(() => [])
 
   return (
     <main

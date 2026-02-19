@@ -79,7 +79,13 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
   return (
     <div>
       <div style={{ marginBottom: "24px" }}>
-        <h1 className="font-orbitron text-2xl font-bold" style={{ color: "var(--ink)" }}>
+        <span
+          className="font-orbitron text-xs tracking-widest"
+          style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+        >
+          [ CALCULATOR ]
+        </span>
+        <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
           Cost Calculator
         </h1>
         <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
@@ -130,7 +136,6 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
             style={{
               padding: "8px 12px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               backgroundColor: "var(--surface)",
               color: "var(--text)",
               outline: "none",
@@ -154,7 +159,6 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
             style={{
               padding: "8px 12px",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
               backgroundColor: "var(--surface)",
               color: "var(--text)",
               outline: "none",
@@ -177,7 +181,6 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
                 style={{
                   padding: "6px 14px",
                   border: "1px solid var(--border)",
-                  borderRadius: "2px",
                   backgroundColor: period === p.value ? "var(--accent)" : "var(--surface)",
                   color: period === p.value ? "white" : "var(--muted)",
                   cursor: "pointer",
@@ -197,7 +200,6 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
           style={{
             padding: "12px 16px",
             border: "1px solid var(--red)",
-            borderRadius: "2px",
             color: "var(--red)",
             backgroundColor: "var(--redLt)",
             marginBottom: "16px",

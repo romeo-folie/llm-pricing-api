@@ -6,6 +6,14 @@
       "env": {
         "DISABLE_TELEMETRY": "true"
       }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--headed", "--user-data-dir", "/tmp/pw-epic-frontend"]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["chrome-devtools-mcp@latest"]
     }
   }
 }

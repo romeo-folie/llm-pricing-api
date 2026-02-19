@@ -24,7 +24,8 @@ function Badge({ label, color, bg }: { label: string; color: string; bg: string 
       style={{
         padding: "2px 8px",
         border: `1px solid ${color}`,
-        borderRadius: "2px",
+
+
         color,
         backgroundColor: bg,
       }}
@@ -107,7 +108,8 @@ export default function ModelDetailModal() {
           overflowY: "auto",
           backgroundColor: "var(--surface)",
           border: "1px solid var(--borderDk)",
-          borderRadius: "2px",
+  
+
           padding: "24px",
         }}
       >
@@ -157,7 +159,8 @@ export default function ModelDetailModal() {
                   style={{
                     padding: "12px",
                     border: "1px solid var(--border)",
-                    borderRadius: "2px",
+            
+
                     backgroundColor: "var(--surfaceLo)",
                   }}
                 >
@@ -177,7 +180,8 @@ export default function ModelDetailModal() {
                 padding: "12px",
                 border: "1px solid var(--border)",
                 backgroundColor: "var(--surfaceLo)",
-                borderRadius: "2px",
+        
+
               }}
             >
               <div>
@@ -232,7 +236,8 @@ export default function ModelDetailModal() {
                 style={{
                   padding: "8px 16px",
                   border: "1px solid var(--accent)",
-                  borderRadius: "2px",
+          
+
                   backgroundColor: "var(--accent)",
                   color: "white",
                   cursor: "pointer",
@@ -246,7 +251,8 @@ export default function ModelDetailModal() {
                 style={{
                   padding: "8px 16px",
                   border: "1px solid var(--border)",
-                  borderRadius: "2px",
+          
+
                   backgroundColor: "var(--surface)",
                   color: "var(--muted)",
                   textDecoration: "none",
