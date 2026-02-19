@@ -577,6 +577,28 @@ func newMiniredisClient(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 	return mr, rdb
 }
 
+func TestReconcile_PublishPriceError_DoesNotWriteToRedisBuffer(t *testing.T) {
+	_, rdb := newMiniredisClient(t)
+	s := newMockStore()
+	s.publishErr = errors.New("simulated DB write failure")
+	r := reconciler.NewWithStore(s)
+	r.SetRedisClient(rdb)
+
+	diffs := []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000005),
+		inputDiff("openai/gpt-4o", "litellm", 0.000005),
+	}
+	_ = r.Reconcile(context.Background(), diffs)
+
+	count, err := rdb.ZCard(context.Background(), "price:changes:buffer").Result()
+	if err != nil {
+		t.Fatalf("ZCARD: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected empty buffer when PublishPrice fails, got %d entries", count)
+	}
+}
+
 func TestPublishEvent_EventIDMonotonicallyIncreases(t *testing.T) {
 	mr, rdb := newMiniredisClient(t)
 	_ = mr

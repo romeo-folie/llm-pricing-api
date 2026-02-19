@@ -401,6 +401,11 @@ func (r *Reconciler) publish(
 	}
 
 	// Resolve source name and provider for event payloads (shared by webhooks and Pub/Sub).
+	// Skip the lookups entirely when no downstream consumer is active — both are DB
+	// round-trips and they are only needed to populate fan-out payloads.
+	if r.asynqClient == nil && r.redisClient == nil {
+		return
+	}
 	sourceName, err := r.store.LookupSourceName(ctx, sourceID)
 	if err != nil {
 		r.logger.Warn().Int("source_id", sourceID).Err(err).Msg("reconciler: LookupSourceName failed; using empty string in event payload")
