@@ -66,7 +66,7 @@ const TIERS: Tier[] = [
     price:    "$15",
     requests: "10,000 req/day",
     ctaLabel: "Get API Key",
-    ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV ?? "/pricing",
+    ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing",
     featured: true,
     features: [
       { label: "Everything in Free",                               included: true  },
@@ -85,7 +85,7 @@ const TIERS: Tier[] = [
     price:    "$50",
     requests: "Unlimited",
     ctaLabel: "Go Pro",
-    ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_PRO ?? "/pricing",
+    ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_PRO || "/pricing",
     featured: false,
     features: [
       { label: "Everything in Developer",                         included: true  },

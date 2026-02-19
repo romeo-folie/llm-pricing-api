@@ -160,16 +160,19 @@ async function fetchLandingStats() {
 export default async function Home() {
   const { modelCount, providerCount, lastChange } = await fetchLandingStats()
 
-  // Anchor to UTC so server and client produce identical strings (prevents hydration mismatch)
-  const lastChangeLabel = lastChange
-    ? new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "UTC",
-      }).format(new Date(lastChange.changed_at))
-    : null
+  // Anchor to UTC so server and client produce identical strings (prevents hydration mismatch).
+  // Guard against malformed timestamps from the API returning "Invalid Date".
+  const parsedDate = lastChange ? new Date(lastChange.changed_at) : null
+  const lastChangeLabel =
+    parsedDate && !isNaN(parsedDate.getTime())
+      ? new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "UTC",
+        }).format(parsedDate)
+      : null
 
   return (
     <>
@@ -407,7 +410,7 @@ export default async function Home() {
             {/* Semantic endpoint table */}
             <table
               className="flex-1 rounded-sm overflow-hidden w-full"
-              style={{ border: "1px solid var(--border)", borderCollapse: "collapse" }}
+              style={{ border: "1px solid var(--border)", borderSpacing: 0 }}
             >
               <caption className="sr-only">Agent-optimized API endpoints</caption>
               <thead className="sr-only">

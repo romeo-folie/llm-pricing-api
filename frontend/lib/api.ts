@@ -60,13 +60,13 @@ export interface ApiResponse<T> {
 
 // ─── Config ───────────────────────────────────────────────────────────────
 
-const BASE_URL = process.env.LLM_PRICING_API_BASE_URL ?? "http://localhost:8080"
+const BASE_URL = process.env.LLM_PRICING_API_BASE_URL || "http://localhost:8080"
 
 // Headers constructed lazily per-request so that a missing API_KEY at module
 // evaluation does not silently produce an empty bearer token that persists
 // for the lifetime of the module.
 function buildHeaders(extra?: HeadersInit): Record<string, string> {
-  const apiKey = process.env.LLM_PRICING_API_KEY ?? ""
+  const apiKey = process.env.LLM_PRICING_API_KEY || ""
   return {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${apiKey}`,
