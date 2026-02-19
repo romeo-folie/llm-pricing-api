@@ -36,7 +36,10 @@ type liteLLMEntry struct {
 	OutputCostPerToken *float64 `json:"output_cost_per_token"`
 	// MaxInputTokens is the input context window. Note: max_tokens is a legacy LiteLLM field
 	// that mirrors the *output* cap and must not be used for context window.
-	MaxInputTokens  *int   `json:"max_input_tokens"`
+	// Typed as any because the LiteLLM JSON contains a "sample_spec" entry where
+	// this field is a descriptive string instead of a number. Using *int would
+	// cause json.Decoder to fail on the entire map.
+	MaxInputTokens  any    `json:"max_input_tokens"`
 	LiteLLMProvider string `json:"litellm_provider"`
 	// Mode maps to the LiteLLM "mode" field (e.g. "chat", "embedding", "image_generation").
 	Mode string `json:"mode"`
@@ -109,14 +112,13 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 			}
 		}
 
-		// Deep-copy the *int pointer so that each ScrapedModel owns an
-		// independent integer — sharing the decoded pointer would allow
-		// a future in-place mutation of one model's ContextWindow to
-		// silently corrupt the JSON-decoded map entry.
+		// MaxInputTokens is typed as any because the LiteLLM JSON may
+		// contain strings (e.g. in the sample_spec entry). JSON numbers
+		// decode as float64 when the Go target is any.
 		var ctxWindow *int
-		if entry.MaxInputTokens != nil {
-			v := *entry.MaxInputTokens
-			ctxWindow = &v
+		if v, ok := entry.MaxInputTokens.(float64); ok && v > 0 {
+			i := int(v)
+			ctxWindow = &i
 		}
 
 		models = append(models, scraper.ScrapedModel{

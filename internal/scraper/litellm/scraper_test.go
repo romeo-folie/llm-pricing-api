@@ -301,6 +301,47 @@ func TestModalityFromMode_UnknownDefault(t *testing.T) {
 	}
 }
 
+func TestFetch_SampleSpecStringFieldsDoNotBreakDecode(t *testing.T) {
+	// The real LiteLLM JSON contains a "sample_spec" entry where
+	// max_input_tokens is a descriptive string, not a number.
+	// This must not cause the JSON decoder to fail.
+	const resp = `{
+		"sample_spec": {
+			"input_cost_per_token": 0.0,
+			"output_cost_per_token": 0.0,
+			"max_input_tokens": "max input tokens, if the provider specifies it",
+			"litellm_provider": "one of https://docs.litellm.ai/docs/providers",
+			"mode": "chat"
+		},
+		"gpt-4": {
+			"input_cost_per_token": 0.00003,
+			"output_cost_per_token": 0.00006,
+			"max_input_tokens": 8192,
+			"litellm_provider": "openai",
+			"mode": "chat"
+		}
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(resp))
+	}))
+	defer srv.Close()
+
+	models, err := newTestScraper(srv).Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// sample_spec is skipped (zero prices), only gpt-4 should appear
+	if len(models) != 1 {
+		t.Fatalf("want 1 model (gpt-4 only), got %d", len(models))
+	}
+	if models[0].Slug != "gpt-4" {
+		t.Errorf("want gpt-4, got %s", models[0].Slug)
+	}
+	if models[0].ContextWindow == nil || *models[0].ContextWindow != 8192 {
+		t.Errorf("want context_window=8192, got %v", models[0].ContextWindow)
+	}
+}
+
 func TestFetch_ModalityFromModeField(t *testing.T) {
 	const resp = `{
 		"text-embedding-ada-002": {
