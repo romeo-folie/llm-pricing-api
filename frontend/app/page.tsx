@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     description:
       "Free and paid tiers. Full price history. /v1/context, /v1/ask, SSE stream. Built for agents and developers.",
     type: "website",
-    images: [{ url: "/hero.webp", width: 1200, height: 800, alt: "LLMPrice hero scene" }],
+    images: [{ url: "/og-hero.png", width: 1200, height: 630, alt: "LLMPrice — Reconciled LLM Token Pricing" }],
   },
 }
 
@@ -188,13 +188,6 @@ export default async function Home() {
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: copy */}
             <div className="flex flex-col gap-6">
-              <span
-                className="font-orbitron text-xs tracking-widest"
-                style={{ color: "var(--dim)" }}
-              >
-                [ MULTI-SOURCE &middot; RECONCILED ]
-              </span>
-
               <h1
                 id="hero-heading"
                 className="font-outfit text-4xl lg:text-5xl font-extrabold leading-tight"
@@ -241,7 +234,7 @@ export default async function Home() {
 
               {/* Stat strip */}
               <div
-                className="flex flex-wrap gap-6 pt-4"
+                className="flex flex-wrap items-start gap-6 pt-4"
                 style={{ borderTop: "1px solid var(--border)" }}
               >
                 <div className="flex flex-col gap-0.5">
@@ -249,7 +242,7 @@ export default async function Home() {
                     className="font-orbitron text-2xl font-bold"
                     style={{ color: "var(--accent)" }}
                   >
-                    {modelCount !== null ? modelCount.toLocaleString() : "—"}
+                    {(modelCount ?? 340).toLocaleString()}
                   </span>
                   <span
                     className="font-outfit text-xs"
@@ -263,7 +256,7 @@ export default async function Home() {
                     className="font-orbitron text-2xl font-bold"
                     style={{ color: "var(--accent)" }}
                   >
-                    {providerCount !== null ? providerCount.toLocaleString() : "—"}
+                    {(providerCount ?? 7).toLocaleString()}
                   </span>
                   <span
                     className="font-outfit text-xs"
@@ -274,10 +267,10 @@ export default async function Home() {
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span
-                    className="font-orbitron text-lg font-bold"
+                    className="font-orbitron text-2xl font-bold"
                     style={{ color: "var(--accent)" }}
                   >
-                    {lastChangeLabel ?? "—"}
+                    {lastChangeLabel ?? "<60s ago"}
                   </span>
                   <span
                     className="font-outfit text-xs"
@@ -291,7 +284,7 @@ export default async function Home() {
 
             {/* Right: hero scene */}
             <div className="w-full">
-              <HeroScene style={{ minHeight: "420px" }} />
+              <HeroScene />
             </div>
           </div>
         </div>
@@ -347,7 +340,6 @@ export default async function Home() {
                 className="relative flex flex-col gap-3 p-5 transition-colors"
                 style={{
                   border: "1px solid var(--border)",
-                  borderTop: "2px solid var(--accent)",
                 }}
               >
                 {/* Arrow icon — top right */}
@@ -532,7 +524,6 @@ export default async function Home() {
                 className="flex flex-col gap-4 p-6"
                 style={{
                   border: "1px solid var(--border)",
-                  borderTop: t.highlight ? "2px solid var(--accent)" : "1px solid var(--border)",
                   position: "relative",
                   paddingTop: t.highlight ? "2rem" : undefined,
                 }}

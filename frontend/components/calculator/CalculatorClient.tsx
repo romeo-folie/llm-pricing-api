@@ -101,7 +101,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
           gap: "16px",
           padding: "20px",
           border: "1px solid var(--borderDk)",
-          borderTop: "3px solid var(--accent)",
+          borderTop: "1px solid var(--borderDk)",
           backgroundColor: "var(--surfaceLo)",
           marginBottom: "24px",
         }}
@@ -242,7 +242,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
                 style={{
                   padding: "16px",
                   border: "1px solid var(--border)",
-                  borderTop: isCheapest ? "3px solid var(--accent)" : "3px solid var(--border)",
+                  borderTop: isCheapest ? "1px solid var(--accent)" : "1px solid var(--border)",
                   backgroundColor: isCheapest ? "var(--accentLt)" : "var(--surfaceHi)",
                 }}
               >

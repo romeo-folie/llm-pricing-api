@@ -4,18 +4,16 @@ import type { NextConfig } from "next"
 // (Next.js injects inline <script> blocks for initial state). Removing it requires
 // nonce-based CSP via Next.js middleware (see:
 // https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy#nonce).
-// This is tracked as a follow-up hardening task. The CDN risk is mitigated by
-// removing all third-party script-src entries; @google/model-viewer is self-hosted
-// via the Next.js bundler at /_next/static/chunks/*.
+// This is tracked as a follow-up hardening task.
 const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline';
   style-src 'self' 'unsafe-inline';
   font-src 'self';
   img-src 'self' data: blob: https:;
-  media-src 'self' blob:;
-  connect-src 'self' https://checkout.lemonsqueezy.com https://assets10.lottiefiles.com;
-  worker-src 'self' blob:;
+  media-src 'self';
+  connect-src 'self' https://checkout.lemonsqueezy.com;
+  worker-src 'self';
   frame-src https://checkout.lemonsqueezy.com;
   object-src 'none';
   base-uri 'self';

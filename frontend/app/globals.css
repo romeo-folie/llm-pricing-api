@@ -20,9 +20,9 @@
   --color-ink:        #1E293B;
 
   /* Accent */
-  --color-accent:     #D97706;
-  --color-accent-lt:  #FEF3C7;
-  --color-accent-dk:  #92400E;
+  --color-accent:     #107E72;
+  --color-accent-lt:  #E0F5F2;
+  --color-accent-dk:  #0A524A;
 
   /* Semantic */
   --color-green:      #059669;
@@ -54,9 +54,9 @@
   --muted:       #78716C;
   --dim:         #A8A29E;
   --ink:         #1E293B;
-  --accent:      #D97706;
-  --accentLt:    #FEF3C7;
-  --accentDk:    #92400E;
+  --accent:      #107E72;
+  --accentLt:    #E0F5F2;
+  --accentDk:    #0A524A;
   --green:       #059669;
   --greenLt:     #D1FAE5;
   --red:         #DC2626;
@@ -114,6 +114,25 @@ body {
 }
 .footer-discovery-link:hover {
   color: var(--accent);
+}
+
+/* ─── Hero diagram animations ────────────────────────────────────────────── */
+
+@keyframes hero-breathe {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.6; }
+}
+
+@keyframes hero-dash {
+  to { stroke-dashoffset: -12; }
+}
+
+.hero-breathe {
+  animation: hero-breathe 4s ease-in-out infinite;
+}
+
+.hero-dash {
+  animation: hero-dash 1.2s linear infinite;
 }
 
 /* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */

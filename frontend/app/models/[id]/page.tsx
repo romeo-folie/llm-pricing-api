@@ -113,7 +113,7 @@ export default async function ModelDetailPage({ params }: PageProps) {
               style={{
                 padding: "16px",
                 border: "1px solid var(--border)",
-                borderTop: "3px solid var(--accent)",
+                borderTop: "1px solid var(--border)",
                 backgroundColor: "var(--surface)",
               }}
             >

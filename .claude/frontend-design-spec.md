@@ -28,9 +28,9 @@
 --ink:         #1E293B;   /* deep slate — headings + logo */
 
 /* Accent (single pop color) */
---accent:      #D97706;   /* amber-600 */
---accentLt:    #FEF3C7;   /* amber-100, tint backgrounds */
---accentDk:    #92400E;   /* amber-800, pressed/dark states */
+--accent:      #107E72;   /* deep teal */
+--accentLt:    #E0F5F2;   /* teal tint backgrounds */
+--accentDk:    #0A524A;   /* teal dark, pressed/dark states */
 
 /* Semantic */
 --green:       #059669;   /* confirmed / positive */
@@ -86,11 +86,10 @@ Isometric geometry is a **running theme**, not just a hero element:
 
 ## Hero Graphic
 
-- **Method**: Custom Blender MCP scene
-- **Blender MCP repo**: `github.com/ahujasid/blender-mcp`
-- **Config**: `.mcp.json` already present in project root (uses `uvx blender-mcp`)
-- **Scene brief**: Isometric perspective, server racks + floating price tokens + glowing data pipeline elements, neon glow lighting that complements the amber/warm palette, export as GLB + render WebP preview
-- **Fallback**: LottieFiles "Isometric AI Animation" (`lottiefiles.com/free-animation/isometric-ai-animation-ztUY20dte4`)
+- **Method**: Inline SVG architecture diagram (React server component, zero client JS)
+- **Content**: Provider sources (OpenAI, Anthropic, Google, Mistral) → Reconciliation Engine → API endpoints
+- **Animation**: CSS `@keyframes` + SVG `<animateMotion>` for pulsing flow dots, breathing glow, marching dashes
+- **No external assets**: entire diagram is code — no GLB, WebP, or third-party animation libraries
 
 ---
 

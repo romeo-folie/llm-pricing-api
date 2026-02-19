@@ -202,7 +202,7 @@ export default function PricingPage() {
                 padding: "24px",
                 backgroundColor: "var(--surface)",
                 border: "1px solid var(--borderDk)",
-                borderTop:  tier.featured ? "2px solid var(--accent)" : "1px solid var(--borderDk)",
+                borderTop: "1px solid var(--borderDk)",
               }}
             >
               {tier.featured && (

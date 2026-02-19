@@ -4,7 +4,7 @@ Next.js 16 (App Router + SSR) public-facing web interface for the LLM Token Pric
 
 ## Purpose
 
-Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distinctive, gamified, isometric-aesthetic developer tool. All pages are fully public (no auth). The frontend is the primary acquisition and conversion surface.
+Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distinctive editorial aesthetic. All pages are fully public (no auth). The frontend is the primary acquisition and conversion surface.
 
 ## Stack
 
@@ -15,8 +15,8 @@ Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distin
 | Styling | Tailwind CSS v4 + design tokens |
 | Components | shadcn/ui (stone base) |
 | Charts | Recharts (tasks #23, #26) |
-| Fonts | Orbitron (numbers/prices) + Outfit (body) via `next/font/google` |
-| Hero | Blender MCP → GLB / WebP (task #27) |
+| Fonts | Geist Sans + Geist Mono via `geist` package |
+| Hero | Inline SVG architecture diagram (server component, zero client JS) |
 | Deployment | Railway (Nixpacks) |
 
 ## Directory Structure
@@ -25,7 +25,7 @@ Surfaces reconciled LLM token pricing data from the Phase 2 REST API in a distin
 frontend/
 ├── app/
 │   ├── layout.tsx          # Root layout: fonts, Nav, Footer, metadata
-│   ├── page.tsx            # Landing page placeholder (full impl: task #29)
+│   ├── page.tsx            # Landing page with hero diagram + SSR stats
 │   ├── globals.css         # Tailwind v4 @theme block + all design tokens
 │   └── api/                # Next.js route handlers (proxy routes for client polling)
 ├── components/
@@ -34,13 +34,11 @@ frontend/
 │   │   └── Footer.tsx      # Footer with product, dev, and agent discovery links
 │   ├── ui/                 # shadcn/ui primitives (Button, Dialog, Badge, etc.)
 │   ├── model/              # Model browser, detail modal, price history chart (task #23)
-│   └── hero/               # HeroScene + HeroFallback (task #27)
+│   └── hero/               # HeroScene SVG architecture diagram
 ├── lib/
 │   ├── api.ts              # Server-only typed API client (all REST endpoints)
 │   └── utils.ts            # cn() class merging utility
-├── public/
-│   ├── hero.glb            # Blender-exported 3D scene (task #27)
-│   └── hero.webp           # Blender WebP render (task #27)
+├── public/                 # Static assets (SVGs, favicon)
 ├── .env.example            # Required environment variables
 ├── components.json         # shadcn/ui configuration
 ├── next.config.ts          # Security headers (CSP, X-Frame-Options, etc.)
@@ -52,11 +50,11 @@ frontend/
 
 The design language is locked in `../.claude/frontend-design-spec.md`. Key rules:
 
-- **Palette**: warm bone/ivory base (`--bg: #F2EDE8`), amber accent (`--accent: #D97706`)
+- **Palette**: warm bone/ivory base (`--bg: #F2EDE8`), deep teal accent (`--accent: #107E72`)
 - **No box-shadows** — depth via `border border-[--border]` only
-- **Typography**: `font-orbitron` for all numbers/prices, `font-outfit` for all other text
+- **No colored top borders on cards** — uniform `1px solid var(--border)` on all sides
+- **Typography**: `font-orbitron` (Geist Mono) for all numbers/prices, `font-outfit` (Geist Sans) for all other text
 - **Design tokens**: defined in `app/globals.css` `@theme` block — accessible as Tailwind utilities (`bg-accent`, `text-muted`, `font-orbitron`) and as raw CSS vars (`var(--accent)`)
-- **Isometric aesthetic**: running theme across hero, pricing cards, calculator, comparison table, charts
 
 ## Environment Variables
 
@@ -69,7 +67,6 @@ Copy `.env.example` to `.env.local` and fill in values:
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Client | Lemon Squeezy checkout URL (Developer plan) |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Client | Lemon Squeezy checkout URL (Pro plan) |
 | `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap |
-| `NEXT_PUBLIC_USE_LOTTIE_HERO` | Client | Force Lottie fallback hero (`true`/`false`) |
 
 ## API Client (`lib/api.ts`)
 
@@ -120,20 +117,9 @@ npm start
 
 Set all env vars in the Railway service dashboard. `LLM_PRICING_API_KEY` must be a server-side secret — never use a `NEXT_PUBLIC_` prefix for it.
 
-## Page Implementation Status
-
-| Route | Issue | Status |
-|---|---|---|
-| `/` | #29 | Placeholder (full implementation pending #27) |
-| `/models` | #23 | Pending completion of #24 |
-| `/compare` | #26 | Pending completion of #24 |
-| `/calculator` | #26 | Pending completion of #24 |
-| `/changes` | #25 | Pending completion of #24 |
-| `/pricing` | #28 | Pending completion of #24 |
-
 ## Security
 
 - `LLM_PRICING_API_KEY` is server-only — enforced by `import 'server-only'` in `lib/api.ts`
-- CSP, `X-Content-Type-Options`, and `X-Frame-Options` set in `next.config.ts`; CSP allows Google Fonts, unpkg CDN (model-viewer), and Lemon Squeezy checkout
+- CSP, `X-Content-Type-Options`, and `X-Frame-Options` set in `next.config.ts`; CSP allows Lemon Squeezy checkout
 - All user inputs (calculator token counts, filter params) validated server-side before any price calculation
 - No dark mode — single fixed light theme per design spec
