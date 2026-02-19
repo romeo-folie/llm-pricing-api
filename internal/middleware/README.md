@@ -60,7 +60,7 @@ All errors from this package use `Content-Type: application/problem+json`:
 
 ```json
 {
-  "type": "https://llmpricing.dev/errors/unauthorized",
+  "type": "https://llmrates.live/errors/unauthorized",
   "title": "Unauthorized",
   "status": 401,
   "detail": "..."
@@ -71,7 +71,7 @@ All errors from this package use `Content-Type: application/problem+json`:
 
 ```json
 {
-  "type": "https://llmpricing.dev/errors/forbidden",
+  "type": "https://llmrates.live/errors/forbidden",
   "title": "Forbidden",
   "status": 403,
   "detail": "this endpoint requires the developer tier or above",
@@ -123,7 +123,7 @@ When the limit is exceeded:
 
 ```json
 {
-  "type": "https://llmpricing.dev/errors/rate-limited",
+  "type": "https://llmrates.live/errors/rate-limited",
   "title": "Too Many Requests",
   "status": 429,
   "detail": "daily limit of 100 requests exceeded; resets at midnight UTC"

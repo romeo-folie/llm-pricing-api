@@ -101,7 +101,7 @@ Copy `.env.example` to `.env.local` and fill in values:
 | `LLM_PRICING_API_KEY` | Server | Dev-tier API key for history/recommend endpoints |
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Client | Lemon Squeezy checkout URL (Developer plan) |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Client | Lemon Squeezy checkout URL (Pro plan) |
-| `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap (default: `https://llmprice.dev`) |
+| `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap (default: `https://llmrates.live`) |
 
 ## API Client (`lib/api.ts`)
 
@@ -160,7 +160,7 @@ Vercel auto-detects Next.js and requires no build configuration. Import the `fro
 | `LLM_PRICING_API_KEY` | Production, Preview | Server-only — never expose to client |
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Production, Preview | Lemon Squeezy checkout URL |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Production, Preview | Lemon Squeezy checkout URL |
-| `NEXT_PUBLIC_SITE_URL` | Production | Canonical URL (e.g. `https://llmprice.dev`) |
+| `NEXT_PUBLIC_SITE_URL` | Production | Canonical URL (e.g. `https://llmrates.live`) |
 
 `LLM_PRICING_API_KEY` must never be prefixed with `NEXT_PUBLIC_` — it is enforced as server-only by `import 'server-only'` in `lib/api.ts`.
 

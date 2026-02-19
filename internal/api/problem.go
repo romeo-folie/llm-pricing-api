@@ -11,7 +11,7 @@ import (
 
 // problemTypeBase is the URI prefix used in all problem type URIs.
 // Using an absolute URI makes types globally unambiguous and dereferenceable.
-const problemTypeBase = "https://llmpricing.dev/problems/"
+const problemTypeBase = "https://llmrates.live/problems/"
 
 // ProblemDetail represents an RFC 7807 Problem Details object.
 // It can be extended with arbitrary key/value pairs via Extensions.

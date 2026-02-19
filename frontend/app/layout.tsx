@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   },
   description:
     "Reconciled, source-attributed LLM token pricing with full price history. Compare models, calculate costs, and track price changes in real time.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://llmprice.dev"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"),
   openGraph: {
     type: "website",
     siteName: "LLMPrice",

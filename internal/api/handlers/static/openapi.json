@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "description": "Reconciled, multi-source pricing data API for LLM models. Aggregates pricing from OpenRouter, LiteLLM, and provider docs, reconciles discrepancies, stores immutable price history, and serves it through a versioned REST API.",
     "contact": {
-      "url": "https://llmpricing.dev"
+      "url": "https://llmrates.live"
     },
     "license": {
       "name": "MIT"

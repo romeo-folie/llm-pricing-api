@@ -10,9 +10,9 @@ const PRODUCT_LINKS = [
 ] as const
 
 const API_LINKS: { href: string; label: string; external?: boolean }[] = [
-  { href: "https://docs.llmpricing.dev", label: "API Docs", external: true },
-  { href: "/pricing",                    label: "Plans"                     },
-  { href: "https://docs.llmpricing.dev/openapi", label: "OpenAPI Spec", external: true },
+  { href: "https://docs.llmrates.live", label: "API Docs", external: true },
+  { href: "/pricing",                   label: "Plans"                     },
+  { href: "https://docs.llmrates.live/openapi", label: "OpenAPI Spec", external: true },
 ]
 
 const DISCOVERY_LINKS = [

@@ -308,7 +308,7 @@ See [`DEPLOY.md`](DEPLOY.md) for the full Railway deployment runbook, including:
 - Generating a public domain
 - Running the load test (`hey -n 10000 -c 100`)
 
-The production deployment is at `https://llm-pricing-api-production.up.railway.app`.
+The production frontend is at `https://llmrates.live`. The Go API is hosted on Railway.
 
 ### Performance
 

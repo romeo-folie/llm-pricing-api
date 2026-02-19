@@ -119,7 +119,7 @@ export default function OGImage() {
             color: "#A8A29E",
           }}
         >
-          llmprice.dev
+          llmrates.live
         </div>
       </div>
     ),

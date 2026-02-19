@@ -46,7 +46,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     "@type": "Dataset",
     name: "LLM Token Pricing Database",
     description: "Reconciled pricing data for large language models across major providers.",
-    url: "https://llmprice.dev/models",
+    url: "https://llmrates.live/models",
     creator: { "@type": "Organization", name: "LLMPrice" },
     license: "https://creativecommons.org/licenses/by/4.0/",
   }

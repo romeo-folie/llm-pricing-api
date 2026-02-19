@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next"
 import { getModels } from "@/lib/api"
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmprice.dev"
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
