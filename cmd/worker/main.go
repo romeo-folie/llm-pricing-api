@@ -93,9 +93,23 @@ func main() {
 
 	mux := asynq.NewServeMux()
 
+	// Build a *redis.Client for Pub/Sub event publishing.  This client is
+	// separate from the asynq-managed connection pool so that Pub/Sub writes
+	// go through a dedicated connection and do not interfere with task queuing.
+	redisClient := func() *redis.Client {
+		opts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			// cfg.RedisURL may be a bare host:port; fall back to a default Options struct.
+			opts = &redis.Options{Addr: cfg.RedisURL}
+		}
+		return redis.NewClient(opts)
+	}()
+	defer redisClient.Close()
+
 	store := worker.NewPgxStore(db)
 	rec := reconciler.New(db)
 	rec.SetLogger(log)
+	rec.SetRedisClient(redisClient)
 	h := worker.NewHandlers(store, rec)
 	h.SetLogger(log)
 

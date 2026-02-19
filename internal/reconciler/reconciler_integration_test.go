@@ -4,12 +4,14 @@ package reconciler_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/models"
@@ -321,5 +323,100 @@ func TestIntegration_DuplicateReviewQueueInsert_IsIdempotent(t *testing.T) {
 		`SELECT COUNT(*) FROM review_queue WHERE model_id = $1`, fix.modelID)
 	if queueCount != 1 {
 		t.Errorf("expected exactly 1 review_queue row after two identical disagreeing Reconcile calls, got %d", queueCount)
+	}
+}
+
+// testRedis creates a Redis client from REDIS_URL. Skips the test if the
+// env var is absent or Redis is unreachable.
+func testRedis(t *testing.T) *redis.Client {
+	t.Helper()
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		t.Skip("REDIS_URL not set; skipping Redis integration test")
+	}
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		t.Skipf("invalid REDIS_URL: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		_ = rdb.Close()
+		t.Skipf("Redis not reachable: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+	return rdb
+}
+
+// TestIntegration_PublishEventEndToEnd verifies that a confirmed price change
+// produced by Reconcile() is written to the Redis replay buffer sorted set and
+// contains the expected model_id and price fields.
+func TestIntegration_PublishEventEndToEnd(t *testing.T) {
+	db := testDB(t)
+	rdb := testRedis(t)
+	fix := insertFixture(t, db)
+	ctx := context.Background()
+
+	// Clean up Redis buffer keys created by this test.
+	const bufferKey = "price:changes:buffer"
+	const seqKey = "price:changes:seq"
+	t.Cleanup(func() {
+		_ = rdb.Del(context.Background(), bufferKey, seqKey)
+	})
+
+	// Flush any pre-existing buffer entries to keep assertions clean.
+	_ = rdb.Del(ctx, bufferKey, seqKey)
+
+	diffs := []diff.PriceDiff{
+		{
+			ModelSlug: fix.slug,
+			Field:     models.PriceFieldInput,
+			OldValue:  0,
+			NewValue:  0.000009,
+			Source:    fix.srcA,
+		},
+		{
+			ModelSlug: fix.slug,
+			Field:     models.PriceFieldInput,
+			OldValue:  0,
+			NewValue:  0.000009,
+			Source:    fix.srcB,
+		},
+	}
+
+	r := reconciler.New(db)
+	r.SetRedisClient(rdb)
+
+	if err := r.Reconcile(ctx, diffs); err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Verify the event was written to the replay buffer.
+	members, err := rdb.ZRange(ctx, bufferKey, 0, -1).Result()
+	if err != nil {
+		t.Fatalf("ZRANGE %s: %v", bufferKey, err)
+	}
+	if len(members) == 0 {
+		t.Fatal("expected at least one event in the replay buffer after confirmed publish")
+	}
+
+	// Decode and verify the event payload.
+	var event struct {
+		ModelID       int     `json:"model_id"`
+		NewPriceInput float64 `json:"new_price_input"`
+		EventID       int64   `json:"event_id"`
+	}
+	if err := json.Unmarshal([]byte(members[0]), &event); err != nil {
+		t.Fatalf("unmarshal event JSON: %v", err)
+	}
+	if event.ModelID != fix.modelID {
+		t.Errorf("expected model_id=%d, got %d", fix.modelID, event.ModelID)
+	}
+	if event.NewPriceInput != 0.000009 {
+		t.Errorf("expected new_price_input=0.000009, got %g", event.NewPriceInput)
+	}
+	if event.EventID < 1 {
+		t.Errorf("expected event_id >= 1, got %d", event.EventID)
 	}
 }

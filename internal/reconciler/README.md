@@ -22,8 +22,10 @@ every confirmed change flows through the `Reconciler`. It enforces:
 ```
 internal/reconciler/
   reconciler.go       # Reconciler type, Reconcile method, multi- and single-source logic, webhook fan-out
+  event.go            # SSEEvent type and Redis Pub/Sub publishing (publishEvent)
   store.go            # Store interface + pgxStore (PostgreSQL-backed implementation)
-  reconciler_test.go  # Unit tests using an in-memory mockStore
+  reconciler_test.go  # Unit tests using an in-memory mockStore (includes Redis tests via miniredis)
+  reconciler_integration_test.go  # Integration tests requiring a live DB and Redis
   README.md           # This file
 ```
 
@@ -67,11 +69,16 @@ that persists across `Reconcile` calls, and an optional `*asynq.Client` for webh
 - `New(db *pgxpool.Pool) *Reconciler` — production use
 - `NewWithStore(s Store) *Reconciler` — test use (pass any `Store` implementation)
 
-**Setter:**
+**Setters:**
 ```go
 func (r *Reconciler) SetAsynqClient(c *asynq.Client)
 ```
 Attaches an asynq client to enable webhook fan-out after every confirmed price publish. Passing `nil` (the default) disables webhook delivery.
+
+```go
+func (r *Reconciler) SetRedisClient(c *redis.Client)
+```
+Attaches a Redis client to enable Pub/Sub publishing and replay buffer writes after every confirmed price publish. Passing `nil` (the default) disables event publishing.
 
 **Main method:**
 ```go
@@ -108,6 +115,51 @@ type pendingChange struct {
 }
 ```
 
+## Redis Pub/Sub & Replay Buffer
+
+Defined in `event.go`. When a Redis client is attached via `SetRedisClient`, every confirmed
+price publish is fanned out to a Redis Pub/Sub channel **and** persisted in a sorted-set replay
+buffer so that reconnecting SSE clients can catch up on missed events.
+
+### `SSEEvent` struct (`event.go`)
+
+```go
+type SSEEvent struct {
+    webhooks.Payload        // model_id, provider, old/new prices, confirmed_at, source
+    EventID         int64  `json:"event_id"` // monotonically increasing, generated via INCR
+}
+```
+
+### Redis keys
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `price:changes` | Pub/Sub channel | Real-time event delivery to active SSE subscribers |
+| `price:changes:seq` | String (counter) | INCR source for monotonic `event_id` values |
+| `price:changes:buffer` | Sorted set | Replay buffer; score = `event_id`; capped at 1,000 entries; 24h TTL |
+
+### Fire-and-forget semantics
+
+`publishEvent` is intentionally fire-and-forget. A Redis error (network blip, timeout, OOM) is
+logged as a `WARN` but **never** returned — the `PublishPrice` database write has already
+committed and must not be rolled back. SSE clients can replay from the buffer on reconnection;
+transient publish failures are self-healing within the next scraper cycle.
+
+### How to enable
+
+```go
+// Production (cmd/worker/main.go already does this):
+rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL})
+rec := reconciler.New(db)
+rec.SetRedisClient(rdb)
+
+// Testing: use miniredis
+mr, _ := miniredis.Run()
+rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+rec := reconciler.NewWithStore(mockStore)
+rec.SetRedisClient(rdb)
+```
+
 ## Dependencies
 
 | Dependency | Role |
@@ -115,8 +167,10 @@ type pendingChange struct {
 | `github.com/hibiken/asynq` | Task queue client used for webhook fan-out (optional) |
 | `github.com/jackc/pgx/v5/pgxpool` | PostgreSQL connection pool (production `pgxStore`) |
 | `github.com/jackc/pgx/v5` | `pgx.ErrNoRows` check in `LookupCurrentPrice` |
+| `github.com/redis/go-redis/v9` | Redis client for Pub/Sub publishing and replay buffer (optional) |
 | `llm-pricing-api/internal/diff` | `PriceDiff` type consumed by `Reconcile` |
 | `llm-pricing-api/internal/models` | `PriceField`, `Confidence` constants |
+| `llm-pricing-api/internal/webhooks` | `Payload` and `TaskPayload` types for event serialization |
 
 ## Usage
 
@@ -129,11 +183,17 @@ r := reconciler.New(db)
 asynqClient := asynq.NewClient(redisOpt)
 r.SetAsynqClient(asynqClient)
 
+// Optionally attach a Redis client to enable Pub/Sub event publishing.
+redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisURL})
+r.SetRedisClient(redisClient)
+
 err := r.Reconcile(ctx, diffs)
 
 // Testing: pass a mockStore implementing the Store interface
 r := reconciler.NewWithStore(myMockStore)
 // No asynq client → webhook fan-out is disabled in tests
+// No Redis client → Pub/Sub publishing is disabled in tests
+// (Use miniredis to test Pub/Sub behavior without a live Redis instance)
 ```
 
 ## Testing Notes
