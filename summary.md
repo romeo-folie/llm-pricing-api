@@ -10,15 +10,15 @@
 | # | Task | Status | GitHub |
 |---|------|--------|--------|
 | #24 | Project Scaffolding & Design System | **done** | [#24](https://github.com/romeo-folie/llm-pricing-api/issues/24) |
-| #27 | Hero Blender MCP Scene | **in-progress (Stream A done; Stream B needs Blender MCP)** | [#27](https://github.com/romeo-folie/llm-pricing-api/issues/27) |
+| #27 | Hero Blender MCP Scene | **done** | [#27](https://github.com/romeo-folie/llm-pricing-api/issues/27) |
 | #23 | Model Browser, Detail Modal & History | **done** | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
 | #25 | Price Change Feed | **done** | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
 | #26 | Compare Page & Cost Calculator | **done** | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
 | #28 | Pricing Page | **done** | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
-| #29 | Landing Page | open (blocked by #27 Stream B — needs hero.glb + hero.webp) | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
-| #30 | SEO, Metadata, Sitemap & Deployment | open (blocked by #23–#29) | [#30](https://github.com/romeo-folie/llm-pricing-api/issues/30) |
+| #29 | Landing Page | **done** | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
+| #30 | SEO, Metadata, Sitemap & Deployment | **open** | [#30](https://github.com/romeo-folie/llm-pricing-api/issues/30) |
 
-**Next action:** Complete **#27 Stream B** — Build Blender hero scene (hero.glb + hero.webp). Requires Blender running locally with blender-mcp addon connected. Then start #29 (Landing Page) which depends on those assets.
+**Next action:** Start **#30 (SEO, Metadata, Sitemap & Deployment)** — generateMetadata on all pages, JSON-LD schemas, sitemap.ts, robots.txt, OG images, Lighthouse audit, Railway deployment config.
 
 ---
 
@@ -60,7 +60,7 @@
 - **#26 closed**: Compare page (ModelPicker, CompareTable, best-value highlight, share URL) + cost calculator (server action calculateCost, daily/monthly/yearly toggle, URL state)
 - **#28 closed**: Static pricing page with 3 tier cards (Recruit/Engineer/Architect), rank progression strip, FAQ Accordion
 - All 4 Sonnet + 2 Opus code review passes completed; all findings fixed
-- **#27 Stream B pending**: Blender MCP scene (hero.glb + hero.webp) — needs Blender running locally
+- **#27 Stream B closed**: Blender MCP scene built (3 server racks + 5 gold coins + 3-point lighting). hero.webp (15KB, 1200×800, Cycles 128 samples) + hero.glb (93KB) in frontend/public/
 
 ---
 
@@ -105,4 +105,4 @@
 4. Run `npm run build --prefix frontend` — TypeScript must be error-free before committing.
 5. Run `/code-reviewer` (Sonnet) then `/code-reviewer` (Opus) — fix all findings before closing.
 6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
-7. Remaining order: **#27 Stream B** → **#29 (Landing)** → **#30 (SEO/deploy)**.
+7. Remaining order: **#30 (SEO/deploy)** — final task.
