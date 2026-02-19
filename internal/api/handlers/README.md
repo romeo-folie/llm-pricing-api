@@ -50,7 +50,7 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 
 `RegisterDiscovery(app *fiber.App, db *pgxpool.Pool)` wires the three public discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`) on the root Fiber app (no auth required).
 
-`RegisterSSE(v1 fiber.Router)` wires the SSE stream at `/v1/stream/changes` (Developer+ only).
+`RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (Developer+ only). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
 
 `RegisterPro(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client)` wires webhook CRUD (`POST /v1/webhooks`, `DELETE /v1/webhooks/:id`) gated behind the Pro tier.
 
@@ -59,6 +59,22 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 Every model response includes a `meta` field with `confirmed_at`, `source`, `confidence`, `age_hours`, and `change_velocity`. These are computed by `api.ComputeTrustMeta()` from the model's `price_history` rows, which are fetched for each model via `store.GetPriceHistory()`.
 
 List endpoints aggregate metadata by choosing the most recently confirmed model's meta as the envelope-level meta value.
+
+### SSE stream handler (`sse.go`)
+
+`SSEHandler` manages GET `/v1/stream/changes`. Key behaviours:
+
+- **Constructor**: `NewSSEHandler(rdb *redis.Client) (*SSEHandler, error)` — accepts an optional Redis client. When `rdb` is `nil` the handler operates in heartbeat-only mode (sends `": ok"` on connect, then `": heartbeat"` every 30 seconds). When `rdb` is non-nil, full Pub/Sub subscription, replay-buffer access, and per-key connection limiting are enabled.
+
+- **Query filters**: `?provider=<name>` filters events by provider (case-insensitive). `?models=<id1>,<id2>,...` filters events to only the listed model IDs.
+
+- **`Last-Event-ID` reconnection**: If the client sends a `Last-Event-ID` header the handler replays all events from the `price:changes:buffer` sorted set whose score is greater than the given ID, applying the same provider/model filters. Non-integer or negative values are rejected with 400 before any stream is opened.
+
+- **Per-key connection limit**: Each API key (identified by its SHA-256 hash stored in `c.Locals("key_hash")`) may hold at most 3 concurrent SSE connections. The count is tracked in Redis under `sse:conn:<key_hash>` with a 5-minute safety-net TTL. A fourth concurrent connection receives 429. The counter is decremented in a `defer` inside the writer goroutine to match the actual goroutine lifetime.
+
+- **OTel metrics**:
+  - `llm_pricing.sse.active_connections` (UpDownCounter) — live connection count.
+  - `llm_pricing.sse.events_emitted_total` (Counter) — events sent, labelled by `provider`.
 
 ### Error responses
 
@@ -90,7 +106,7 @@ import "llm-pricing-api/internal/api/handlers"
 // v1 is the existing fiber.Router with Auth, RateLimit, Cache middleware.
 handlers.RegisterFree(v1, db, redisClient)
 handlers.RegisterDev(v1, db, redisClient)
-if err := handlers.RegisterSSE(v1); err != nil {
+if err := handlers.RegisterSSE(v1, redisClient); err != nil {
     log.Fatal().Err(err).Msg("SSE handler setup failed")
 }
 handlers.RegisterPro(v1, db, redisClient)

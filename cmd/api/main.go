@@ -143,7 +143,7 @@ func main() {
 	handlers.RegisterFree(v1, db, redisClient)
 	handlers.RegisterDev(v1, db, redisClient)
 	handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, log)
-	if err := handlers.RegisterSSE(v1); err != nil {
+	if err := handlers.RegisterSSE(v1, redisClient); err != nil {
 		log.Fatal().Err(err).Msg("failed to register SSE handler")
 	}
 

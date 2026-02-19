@@ -3,48 +3,192 @@ package handlers
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+
+	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/middleware"
 )
 
-// SSEHandler holds the OTel UpDownCounter for active SSE connections.
+const (
+	// sseConnKeyPrefix is the Redis key prefix for per-API-key connection counts.
+	// Full key: sse:conn:{key_hash}
+	sseConnKeyPrefix = "sse:conn:"
+
+	// sseMaxConnsPerKey is the maximum concurrent SSE connections per API key.
+	sseMaxConnsPerKey = 3
+
+	// sseConnTTL is the safety-net TTL on the connection count key.
+	// Prevents count leaks if a server crash prevents the defer from running.
+	sseConnTTL = 5 * time.Minute
+
+	// ssePubSubChannel is the Redis Pub/Sub channel name for price-change events.
+	ssePubSubChannel = "price:changes"
+
+	// sseReplayBufferKey is the sorted-set key used for Last-Event-ID replay.
+	sseReplayBufferKey = "price:changes:buffer"
+
+	// sseHeartbeatInterval is how often the server sends a keep-alive comment.
+	sseHeartbeatInterval = 30 * time.Second
+)
+
+// SSEHandler holds dependencies for the SSE stream endpoint.
 type SSEHandler struct {
-	activeConns metric.Int64UpDownCounter
+	redisClient   *redis.Client
+	activeConns   metric.Int64UpDownCounter
+	eventsEmitted metric.Int64Counter
 }
 
-// NewSSEHandler creates an SSEHandler initialised with an OTel UpDownCounter.
-// The counter instrument name is "llm_pricing.sse.active_connections".
-func NewSSEHandler() (*SSEHandler, error) {
+// NewSSEHandler creates an SSEHandler with the given Redis client and registers
+// OTel instruments. rdb may be nil — connection limiting and Pub/Sub are disabled
+// (heartbeat-only mode) when no client is provided.
+func NewSSEHandler(rdb *redis.Client) (*SSEHandler, error) {
 	meter := otel.GetMeterProvider().Meter("llm-pricing-api")
-	counter, err := meter.Int64UpDownCounter(
+
+	activeConns, err := meter.Int64UpDownCounter(
 		"llm_pricing.sse.active_connections",
 		metric.WithDescription("Number of active SSE connections"),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create active_connections counter: %w", err)
 	}
-	return &SSEHandler{activeConns: counter}, nil
+
+	eventsEmitted, err := meter.Int64Counter(
+		"llm_pricing.sse.events_emitted_total",
+		metric.WithDescription("Total SSE events emitted, labelled by provider"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create events_emitted counter: %w", err)
+	}
+
+	return &SSEHandler{
+		redisClient:   rdb,
+		activeConns:   activeConns,
+		eventsEmitted: eventsEmitted,
+	}, nil
+}
+
+// sseFilters holds the parsed query-param filters for an SSE connection.
+type sseFilters struct {
+	provider string             // empty = no filter
+	modelIDs map[string]struct{} // empty = no filter; key = stringified model_id
+}
+
+// parseSSEFilters extracts ?provider= and ?models= from the request.
+func parseSSEFilters(c *fiber.Ctx) sseFilters {
+	f := sseFilters{}
+	if p := c.Query("provider"); p != "" {
+		f.provider = strings.ToLower(p)
+	}
+	if m := c.Query("models"); m != "" {
+		parts := strings.Split(m, ",")
+		f.modelIDs = make(map[string]struct{}, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				f.modelIDs[p] = struct{}{}
+			}
+		}
+	}
+	return f
+}
+
+// sseEventPayload is the minimal shape we need for filtering. It mirrors the
+// SSEEvent struct from the reconciler package without creating an import cycle.
+type sseEventPayload struct {
+	ModelID  int    `json:"model_id"`
+	Provider string `json:"provider"`
+	EventID  int64  `json:"event_id"`
+}
+
+// matchesFilter reports whether the raw JSON event payload passes the filters.
+// Returns (parsed payload, matched). If JSON is invalid, returns false.
+func matchesFilter(rawJSON string, f sseFilters) (sseEventPayload, bool) {
+	var ev sseEventPayload
+	if err := json.Unmarshal([]byte(rawJSON), &ev); err != nil {
+		return ev, false
+	}
+	if f.provider != "" && strings.ToLower(ev.Provider) != f.provider {
+		return ev, false
+	}
+	if len(f.modelIDs) > 0 {
+		if _, ok := f.modelIDs[strconv.Itoa(ev.ModelID)]; !ok {
+			return ev, false
+		}
+	}
+	return ev, true
+}
+
+// writeSSEEvent writes a single SSE event frame to w:
+//
+//	id: {event_id}
+//	data: {json_payload}
+//	(blank line)
+func writeSSEEvent(w *bufio.Writer, eventID int64, payload string) error {
+	if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", eventID, payload); err != nil {
+		return err
+	}
+	return w.Flush()
 }
 
 // StreamChanges implements GET /v1/stream/changes.
 //
-// This is a Phase 2 stub: it sets the correct SSE response headers, increments
-// the active-connection counter, sends a single keepalive SSE comment
-// (": ok\n\n"), then holds the connection open by sending a heartbeat comment
-// every 30 seconds until the underlying TCP connection is closed by the client
-// or the server signals shutdown via request context cancellation.
+// On connect:
+//  1. Parse ?provider= and ?models= filters.
+//  2. Validate Last-Event-ID header (must be int64 or absent).
+//  3. Enforce per-key connection limit (max 3 concurrent; 429 on 4th).
+//  4. Enter stream writer goroutine.
 //
-// Full reconnection logic (Last-Event-ID, real price-change events) is deferred
-// to Phase 4.
-//
-// The activeConns counter is incremented before SetBodyStreamWriter and
-// decremented inside the writer callback, so the metric correctly tracks the
-// lifetime of the stream goroutine rather than the handler function.
+// Inside the writer goroutine:
+//   - Replay missed events from the sorted-set buffer if Last-Event-ID is present.
+//   - Subscribe to Redis price:changes channel and stream filtered events.
+//   - Send 30-second heartbeat comments between events.
+//   - Decrement connection count on exit (defer).
 func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
+	// --- 1. Parse query filters ---
+	filters := parseSSEFilters(c)
+
+	// --- 2. Validate Last-Event-ID ---
+	var lastEventID int64
+	hasLastEventID := false
+	if leid := c.Get("Last-Event-ID"); leid != "" {
+		n, err := strconv.ParseInt(leid, 10, 64)
+		if err != nil || n < 0 {
+			return api.NewBadRequest("Last-Event-ID must be a non-negative integer")
+		}
+		lastEventID = n
+		hasLastEventID = true
+	}
+
+	// --- 3. Per-key connection limit ---
+	keyHash, _ := c.Locals(middleware.LocalKeyHash).(string)
+	if keyHash != "" && h.redisClient != nil {
+		connKey := sseConnKeyPrefix + keyHash
+		count, err := h.redisClient.Incr(c.Context(), connKey).Result()
+		if err != nil {
+			// Redis error — allow connection through rather than blocking all clients.
+			count = 1
+		} else {
+			// Refresh safety-net TTL on every connect.
+			_ = h.redisClient.Expire(c.Context(), connKey, sseConnTTL).Err()
+		}
+		if count > sseMaxConnsPerKey {
+			// Over limit — decrement and reject.
+			_ = h.redisClient.Decr(c.Context(), connKey).Err()
+			return api.NewTooManyRequests("maximum concurrent SSE connections per API key (3) exceeded")
+		}
+	}
+
+	// --- 4. Set SSE response headers ---
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
@@ -52,21 +196,21 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 
 	h.activeConns.Add(c.Context(), 1)
 
-	// Capture the request context before SetBodyStreamWriter so the writer
-	// goroutine can react to client disconnects and server shutdown.
-	// fasthttp may recycle c.Context() after the handler returns, so we must
-	// not access it from inside the writer callback.
+	// Capture request context before handing off to the writer goroutine.
+	// fasthttp may recycle c.Context() after the handler returns.
 	reqCtx := c.UserContext()
+	rdb := h.redisClient
 
 	c.Status(fiber.StatusOK)
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
-		// Decrement inside the writer callback so the counter tracks the actual
-		// goroutine lifetime, not the handler function return.
-		// context.Background() is used because the fasthttp ctx may be recycled
-		// after the handler returns.
+		// Cleanup on exit: decrement connection count and OTel gauge.
 		defer h.activeConns.Add(context.Background(), -1)
+		if keyHash != "" && rdb != nil {
+			connKey := sseConnKeyPrefix + keyHash
+			defer func() { _ = rdb.Decr(context.Background(), connKey).Err() }()
+		}
 
-		// Send initial keepalive comment so the client knows the stream is live.
+		// --- 5. Send initial keepalive ---
 		if _, err := fmt.Fprint(w, ": ok\n\n"); err != nil {
 			return
 		}
@@ -74,15 +218,65 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 			return
 		}
 
-		// Poll on a 30-second heartbeat. Use select so the loop exits cleanly
-		// when the request context is cancelled (client disconnect or graceful
-		// server shutdown), rather than blocking forever on the ticker.
-		ticker := time.NewTicker(30 * time.Second)
+		// --- 6. Replay missed events from buffer ---
+		if hasLastEventID && rdb != nil {
+			// Use exclusive lower bound "(lastEventID" to skip the already-seen event.
+			minScore := fmt.Sprintf("(%d", lastEventID)
+			members, err := rdb.ZRangeByScore(reqCtx, sseReplayBufferKey, &redis.ZRangeBy{
+				Min: minScore,
+				Max: "+inf",
+			}).Result()
+			if err == nil {
+				for _, member := range members {
+					ev, ok := matchesFilter(member, filters)
+					if !ok {
+						continue
+					}
+					if err := writeSSEEvent(w, ev.EventID, member); err != nil {
+						return
+					}
+					h.eventsEmitted.Add(context.Background(), 1,
+						metric.WithAttributes(attribute.String("provider", ev.Provider)))
+				}
+			}
+			// On replay error: log nothing (fire-and-forget), just enter live mode.
+		}
+
+		// --- 7. Subscribe and stream live events ---
+		if rdb == nil {
+			// No Redis — heartbeat-only mode.
+			h.heartbeatLoop(reqCtx, w)
+			return
+		}
+
+		sub := rdb.Subscribe(reqCtx, ssePubSubChannel)
+		defer func() { _ = sub.Close() }()
+
+		msgCh := sub.Channel()
+		ticker := time.NewTicker(sseHeartbeatInterval)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-reqCtx.Done():
 				return
+
+			case msg, ok := <-msgCh:
+				if !ok {
+					// Channel closed (Redis disconnected). Fall back to heartbeat loop.
+					h.heartbeatLoop(reqCtx, w)
+					return
+				}
+				ev, ok := matchesFilter(msg.Payload, filters)
+				if !ok {
+					continue
+				}
+				if err := writeSSEEvent(w, ev.EventID, msg.Payload); err != nil {
+					return
+				}
+				h.eventsEmitted.Add(context.Background(), 1,
+					metric.WithAttributes(attribute.String("provider", ev.Provider)))
+
 			case <-ticker.C:
 				if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
 					return
@@ -95,4 +289,24 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 	})
 
 	return nil
+}
+
+// heartbeatLoop sends 30-second heartbeat comments until the context is cancelled.
+// Used as a fallback when Redis is unavailable.
+func (h *SSEHandler) heartbeatLoop(ctx context.Context, w *bufio.Writer) {
+	ticker := time.NewTicker(sseHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			if err := w.Flush(); err != nil {
+				return
+			}
+		}
+	}
 }

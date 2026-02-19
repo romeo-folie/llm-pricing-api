@@ -78,13 +78,16 @@ func RegisterDiscovery(app *fiber.App, db *pgxpool.Pool) {
 }
 
 // RegisterSSE registers the SSE stream endpoint on the supplied v1 router.
-// The route is protected by the Developer-tier gate:
+// rdb is the Redis client used for Pub/Sub subscription, replay buffer access,
+// and per-key connection limiting. Passing nil disables these features (heartbeat only).
+//
+// Route registered:
 //
 //	GET /v1/stream/changes  — Server-Sent Events stream (Developer+ tier)
 //
-// Returns an error if the OTel UpDownCounter cannot be created.
-func RegisterSSE(v1 fiber.Router) error {
-	sse, err := NewSSEHandler()
+// Returns an error if the OTel instruments cannot be created.
+func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
+	sse, err := NewSSEHandler(rdb)
 	if err != nil {
 		return fmt.Errorf("create SSE handler: %w", err)
 	}
