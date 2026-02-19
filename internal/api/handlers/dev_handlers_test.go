@@ -3,7 +3,9 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -658,6 +660,169 @@ func TestGetContext_FreeTier_Returns403(t *testing.T) {
 
 	if resp.StatusCode != fiber.StatusForbidden {
 		t.Fatalf("expected 403 for free tier, got %d", resp.StatusCode)
+	}
+}
+
+// ===================================================================
+// GetContext enhanced tests (markdown format + metadata fields)
+// ===================================================================
+
+func TestGetContext_MarkdownFormat(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, limit int) ([]handlers.ContextModelRow, error) {
+			rows := make([]handlers.ContextModelRow, 3)
+			for i := range rows {
+				rows[i] = sampleContextRow(i + 1)
+			}
+			return rows, nil
+		},
+	}
+	app := newDevApp(store)
+
+	req := httptest.NewRequest("GET", "/v1/context?format=markdown", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", resp.StatusCode, body)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" || (ct != "text/markdown; charset=utf-8" && ct != "text/markdown") {
+		t.Errorf("expected Content-Type text/markdown, got %q", ct)
+	}
+
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr,"| Model |") {
+		t.Error("expected markdown table header '| Model |'")
+	}
+	if !strings.Contains(bodyStr,"| Provider |") {
+		t.Error("expected markdown table header '| Provider |'")
+	}
+	if !strings.Contains(bodyStr,"| Input $/1M |") {
+		t.Error("expected markdown table header '| Input $/1M |'")
+	}
+}
+
+func TestGetContext_MarkdownFormat_HasMetadataSummary(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return []handlers.ContextModelRow{sampleContextRow(1)}, nil
+		},
+	}
+	app := newDevApp(store)
+
+	req := httptest.NewRequest("GET", "/v1/context?format=markdown", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr,"> Models:") {
+		t.Errorf("expected metadata summary line '> Models:', got body: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr,"Estimated tokens:") {
+		t.Error("expected 'Estimated tokens:' in markdown header")
+	}
+}
+
+func TestGetContext_MetadataFields_TokenCount(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, limit int) ([]handlers.ContextModelRow, error) {
+			rows := make([]handlers.ContextModelRow, 5)
+			for i := range rows {
+				rows[i] = sampleContextRow(i + 1)
+			}
+			return rows, nil
+		},
+	}
+	app := newDevApp(store)
+
+	status, body := get(t, app, "/v1/context")
+
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Models     []json.RawMessage `json:"models"`
+			TokenCount int               `json:"token_count"`
+			ModelCount int               `json:"model_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.TokenCount <= 0 {
+		t.Errorf("expected token_count > 0, got %d", envelope.Data.TokenCount)
+	}
+	if envelope.Data.ModelCount != 5 {
+		t.Errorf("expected model_count=5, got %d", envelope.Data.ModelCount)
+	}
+}
+
+func TestGetContext_MetadataFields_ModelCount(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return []handlers.ContextModelRow{sampleContextRow(1), sampleContextRow(2)}, nil
+		},
+	}
+	app := newDevApp(store)
+
+	status, body := get(t, app, "/v1/context")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+
+	var envelope struct {
+		Data struct {
+			ModelCount int `json:"model_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.ModelCount != 2 {
+		t.Errorf("expected model_count=2, got %d", envelope.Data.ModelCount)
+	}
+}
+
+func TestGetContext_JSONFormatUnchanged(t *testing.T) {
+	// Verify existing JSON format is not broken by the new fields.
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, limit int) ([]handlers.ContextModelRow, error) {
+			return []handlers.ContextModelRow{sampleContextRow(1)}, nil
+		},
+	}
+	app := newDevApp(store)
+
+	status, body := get(t, app, "/v1/context")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	// JSON envelope is still present.
+	var envelope struct {
+		Data struct {
+			Models []struct {
+				ID int `json:"id"`
+			} `json:"models"`
+		} `json:"data"`
+		Meta json.RawMessage `json:"meta"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data.Models) != 1 {
+		t.Errorf("expected 1 model in JSON response, got %d", len(envelope.Data.Models))
 	}
 }
 

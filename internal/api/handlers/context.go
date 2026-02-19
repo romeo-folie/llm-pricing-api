@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -34,7 +36,9 @@ type contextModelItem struct {
 
 // contextResponse is the top-level payload for /v1/context.
 type contextResponse struct {
-	Models []contextModelItem `json:"models"`
+	Models     []contextModelItem `json:"models"`
+	TokenCount int                `json:"token_count"`
+	ModelCount int                `json:"model_count"`
 }
 
 // estimateTokens approximates the token count of a JSON byte slice using the
@@ -53,6 +57,9 @@ func estimateTokens(jsonBytes []byte) int {
 // If the serialised response would exceed 2 100 tokens (4-chars-per-token
 // approximation), the model list is trimmed — one model at a time — until it
 // fits, and a warning is logged.
+//
+// Optional query parameters:
+//   - format=markdown: return a plain-text markdown table instead of the JSON envelope.
 func (h *Handlers) GetContext(c *fiber.Ctx) error {
 	rows, err := h.store.ListModelsForContext(c.Context(), contextMaxModels)
 	if err != nil {
@@ -70,22 +77,68 @@ func (h *Handlers) GetContext(c *fiber.Ctx) error {
 	zeroMeta := api.TrustMeta{}
 	for len(items) > 0 {
 		fullEnvelope := api.Envelope{
-			Data: contextResponse{Models: items},
+			Data: contextResponse{
+				Models:     items,
+				TokenCount: 0, // placeholder during trim loop
+				ModelCount: len(items),
+			},
 			Meta: zeroMeta,
 		}
 		b, err := json.Marshal(fullEnvelope)
 		if err != nil {
 			return api.NewInternalError("failed to serialise context response")
 		}
-		if estimateTokens(b) <= contextMaxTokens {
+		toks := estimateTokens(b)
+		if toks <= contextMaxTokens {
 			break
 		}
 		log.Warn().
 			Int("models_before", len(items)).
-			Int("tokens", estimateTokens(b)).
+			Int("tokens", toks).
 			Msg("/v1/context response exceeds token budget; trimming model list")
 		items = items[:len(items)-1]
 	}
 
-	return api.OK(c, contextResponse{Models: items}, zeroMeta)
+	// Build the final response with accurate token count.
+	payload := contextResponse{
+		Models:     items,
+		ModelCount: len(items),
+	}
+
+	// If ?format=markdown is requested, return a plain-text markdown table.
+	if c.Query("format") == "markdown" {
+		md := buildContextMarkdown(items)
+		tokenCount := estimateTokens([]byte(md))
+		// Prepend metadata summary line.
+		header := fmt.Sprintf("> Models: %d | Estimated tokens: %d\n\n", payload.ModelCount, tokenCount)
+		c.Set(fiber.HeaderContentType, "text/markdown; charset=utf-8")
+		return c.SendString(header + md)
+	}
+
+	// Compute token count from the serialised JSON envelope.
+	b, err := json.Marshal(api.Envelope{Data: payload, Meta: zeroMeta})
+	if err != nil {
+		return api.NewInternalError("failed to serialise context response")
+	}
+	payload.TokenCount = estimateTokens(b)
+
+	return api.OK(c, payload, zeroMeta)
+}
+
+// buildContextMarkdown renders items as a GitHub-flavoured markdown table
+// suitable for inclusion in agent system prompts.
+func buildContextMarkdown(items []contextModelItem) string {
+	var sb strings.Builder
+	sb.WriteString("| Model | Provider | Input $/1M | Output $/1M | Confidence |\n")
+	sb.WriteString("|-------|----------|-----------|-------------|------------|\n")
+	for _, item := range items {
+		sb.WriteString(fmt.Sprintf("| %s | %s | %.4f | %.4f | %s |\n",
+			item.Slug,
+			item.Provider,
+			item.PriceInput*1_000_000,
+			item.PriceOutput*1_000_000,
+			item.Confidence,
+		))
+	}
+	return sb.String()
 }

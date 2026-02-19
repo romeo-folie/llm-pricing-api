@@ -11,17 +11,19 @@ import (
 // taskModalityMap maps ?task= hint values to modality filter values.
 // Unrecognised tasks produce an empty string (no modality filter applied).
 var taskModalityMap = map[string]string{
-	"summarisation": "text",
-	"summarization": "text",
-	"text":          "text",
+	"summarisation":  "text",
+	"summarization":  "text",
+	"text":           "text",
 	"classification": "text",
-	"generation":    "text",
-	"vision":        "multimodal",
-	"multimodal":    "multimodal",
-	"image":         "image",
-	"audio":         "audio",
-	"embedding":     "embedding",
-	"embeddings":    "embedding",
+	"generation":     "text",
+	"coding":         "text",
+	"code":           "text",
+	"vision":         "multimodal",
+	"multimodal":     "multimodal",
+	"image":          "image",
+	"audio":          "audio",
+	"embedding":      "embedding",
+	"embeddings":     "embedding",
 }
 
 // Recommend handles GET /v1/recommend.
@@ -73,7 +75,7 @@ func (h *Handlers) Recommend(c *fiber.Ctx) error {
 	// interface clean and the mapping logic testable without a DB.
 	targetModality := taskModalityMap[task]
 	if targetModality != "" {
-		filtered := models[:0]
+		filtered := make([]ModelRow, 0, len(models))
 		for _, m := range models {
 			if m.Modality == targetModality {
 				filtered = append(filtered, m)

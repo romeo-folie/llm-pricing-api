@@ -141,7 +141,9 @@ func main() {
 
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
-	handlers.RegisterDev(v1, db, redisClient)
+	if err := handlers.RegisterDev(v1, db, redisClient); err != nil {
+		log.Fatal().Err(err).Msg("failed to register dev handlers")
+	}
 	handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, log)
 	if err := handlers.RegisterSSE(v1, redisClient); err != nil {
 		log.Fatal().Err(err).Msg("failed to register SSE handler")
