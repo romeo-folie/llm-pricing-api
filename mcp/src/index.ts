@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ApiClient } from "./api-client.js";
 import { createServer } from "./server.js";
 
-const DEFAULT_BASE_URL = "https://api.llmrates.com";
+const DEFAULT_BASE_URL = "https://api.llmrates.live";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
