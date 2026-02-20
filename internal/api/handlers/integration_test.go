@@ -179,13 +179,15 @@ func setupTestApp(t *testing.T) *fiber.App {
 	)
 
 	handlers.RegisterFree(v1, db, rdb)
-	handlers.RegisterDev(v1, db, rdb)
+	if err := handlers.RegisterDev(v1, db, rdb); err != nil {
+		t.Fatalf("register dev handlers: %v", err)
+	}
 	log := zerolog.Nop()
 	// Pass "" as webhookSecretKey: the handler skips AES-256-GCM when no
 	// 32-byte key is configured and stores secrets as plaintext. Intentional
 	// for tests — never use an empty key in production.
 	handlers.RegisterPro(v1, db, rdb, "", log)
-	if err := handlers.RegisterSSE(v1); err != nil {
+	if err := handlers.RegisterSSE(v1, rdb); err != nil {
 		t.Fatalf("register SSE: %v", err)
 	}
 	handlers.RegisterDiscovery(app, db)
@@ -874,4 +876,281 @@ func TestIntegrationContextTokenBudget_ResponseWithin2100Tokens(t *testing.T) {
 			approxTokens, len(body))
 	}
 	t.Logf("/v1/context: %d bytes, ~%d tokens", len(body), approxTokens)
+}
+
+// -----------------------------------------------------------------------
+// 11. /v1/ask integration tests
+// -----------------------------------------------------------------------
+
+// TestIntegrationAsk_PriceIntent_Returns200WithIntent verifies that a price-intent
+// NL query returns 200 with the correct intent field.
+func TestIntegrationAsk_PriceIntent_Returns200WithIntent(t *testing.T) {
+	app := setupTestApp(t)
+
+	status, body := apiPost(t, app, "/v1/ask", devAuth, map[string]string{
+		"query": "What is the price of gpt-4o?",
+	})
+
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Intent              string         `json:"intent"`
+			InferredParams      map[string]any `json:"inferred_params"`
+			PlainEnglishSummary string         `json:"plain_english_summary"`
+			Meta                struct {
+				QueryTimeMs int64  `json:"query_time_ms"`
+				Parser      string `json:"parser"`
+			} `json:"meta"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.Intent != "price" {
+		t.Errorf("expected intent 'price', got %q", envelope.Data.Intent)
+	}
+	if envelope.Data.PlainEnglishSummary == "" {
+		t.Error("plain_english_summary must not be empty")
+	}
+	if envelope.Data.Meta.Parser == "" {
+		t.Error("meta.parser must not be empty")
+	}
+}
+
+// TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels verifies that a
+// recommend-intent query returns ranked_models from the DB.
+func TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels(t *testing.T) {
+	app := setupTestApp(t)
+
+	status, body := apiPost(t, app, "/v1/ask", devAuth, map[string]string{
+		"query": "Recommend the cheapest model for text summarization",
+	})
+
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Intent       string            `json:"intent"`
+			RankedModels []json.RawMessage `json:"ranked_models"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.Intent != "recommend" {
+		t.Errorf("expected intent 'recommend', got %q", envelope.Data.Intent)
+	}
+	// The seed data contains 6 text-modality models (GPT-4o Mini, GPT-4 Turbo,
+	// Claude 3.5 Sonnet, Claude 3 Haiku, Gemini 1.5 Pro, Gemini 1.5 Flash).
+	// "summarization" maps to the text modality via taskModalityMap, so at
+	// least one ranked model must be returned.
+	if len(envelope.Data.RankedModels) == 0 {
+		t.Errorf("expected non-empty ranked_models for summarization query; body: %s", body)
+	}
+}
+
+// TestIntegrationAsk_FreeKey_Returns403 verifies that /v1/ask enforces Developer+ tier.
+func TestIntegrationAsk_FreeKey_Returns403(t *testing.T) {
+	app := setupTestApp(t)
+
+	status, body := apiPost(t, app, "/v1/ask", freeAuth, map[string]string{
+		"query": "What is the price of gpt-4o?",
+	})
+
+	assertTierGating403(t, status, body, middleware.TierDeveloper)
+}
+
+// TestIntegrationAsk_EmptyQuery_Returns400 verifies validation for empty query.
+func TestIntegrationAsk_EmptyQuery_Returns400(t *testing.T) {
+	app := setupTestApp(t)
+
+	status, body := apiPost(t, app, "/v1/ask", devAuth, map[string]string{
+		"query": "",
+	})
+
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", status, body)
+	}
+	assertProblemJSON(t, body, 400)
+}
+
+// -----------------------------------------------------------------------
+// 12. /v1/context?format=markdown integration tests
+// -----------------------------------------------------------------------
+
+// TestIntegrationContextMarkdown_Returns200WithMarkdownContentType verifies
+// that ?format=markdown returns text/markdown content.
+func TestIntegrationContextMarkdown_Returns200WithMarkdownContentType(t *testing.T) {
+	app := setupTestApp(t)
+
+	req := httptest.NewRequest("GET", "/v1/context?format=markdown", nil)
+	req.Header.Set("Authorization", devAuth)
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", resp.StatusCode, body)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/markdown") {
+		t.Errorf("expected text/markdown Content-Type, got %q", ct)
+	}
+}
+
+// TestIntegrationContextMarkdown_ContainsMarkdownTable verifies that the
+// markdown response contains the expected table structure and header.
+func TestIntegrationContextMarkdown_ContainsMarkdownTable(t *testing.T) {
+	app := setupTestApp(t)
+
+	req := httptest.NewRequest("GET", "/v1/context?format=markdown", nil)
+	req.Header.Set("Authorization", devAuth)
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	text := string(body)
+	// The markdown response always starts with a metadata summary line.
+	if !strings.Contains(text, "Models:") {
+		t.Errorf("expected 'Models:' header in markdown response, got: %s", text[:intMin(len(text), 200)])
+	}
+	// The table must have a header row with known columns.
+	if !strings.Contains(text, "| Model |") && !strings.Contains(text, "|Model|") {
+		t.Errorf("expected markdown table with 'Model' column header, got: %s", text[:intMin(len(text), 500)])
+	}
+}
+
+// -----------------------------------------------------------------------
+// 13. Discovery endpoint integration tests
+// -----------------------------------------------------------------------
+
+// TestIntegrationDiscovery_OpenAPI_Returns200WithCorrectContentType verifies
+// that /openapi.json is accessible without auth and has correct content type.
+func TestIntegrationDiscovery_OpenAPI_Returns200WithCorrectContentType(t *testing.T) {
+	app := setupTestApp(t)
+
+	req := httptest.NewRequest("GET", "/openapi.json", nil)
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", resp.StatusCode, body)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("expected application/json, got %q", ct)
+	}
+	// Must be valid JSON with openapi version.
+	var doc map[string]any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("openapi.json is not valid JSON: %v", err)
+	}
+	if v, _ := doc["openapi"].(string); !strings.HasPrefix(v, "3.1") {
+		t.Errorf("expected openapi 3.1.x, got %q", v)
+	}
+}
+
+// TestIntegrationDiscovery_AIPlugin_Returns200WithRequiredFields verifies
+// that /.well-known/ai-plugin.json is accessible without auth and has required fields.
+func TestIntegrationDiscovery_AIPlugin_Returns200WithRequiredFields(t *testing.T) {
+	app := setupTestApp(t)
+
+	req := httptest.NewRequest("GET", "/.well-known/ai-plugin.json", nil)
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", resp.StatusCode, body)
+	}
+
+	var manifest struct {
+		NameForHuman string `json:"name_for_human"`
+		NameForModel string `json:"name_for_model"`
+		Description  string `json:"description_for_model"`
+		API          struct {
+			URL string `json:"url"`
+		} `json:"api"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("invalid JSON: %v; body: %s", err, body)
+	}
+	if manifest.NameForHuman != "LLM Rates" {
+		t.Errorf("name_for_human: expected 'LLM Rates', got %q", manifest.NameForHuman)
+	}
+	if manifest.NameForModel != "llmrates" {
+		t.Errorf("name_for_model: expected 'llmrates', got %q", manifest.NameForModel)
+	}
+	if manifest.Description == "" {
+		t.Error("description_for_model must not be empty")
+	}
+	if manifest.API.URL != "/openapi.json" {
+		t.Errorf("api.url: expected '/openapi.json', got %q", manifest.API.URL)
+	}
+}
+
+// TestIntegrationDiscovery_LLMsTxt_Returns200WithAuthInstructions verifies
+// that /llms.txt is accessible without auth and contains auth instructions.
+func TestIntegrationDiscovery_LLMsTxt_Returns200WithAuthInstructions(t *testing.T) {
+	app := setupTestApp(t)
+
+	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", resp.StatusCode, body)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("expected text/plain Content-Type, got %q", ct)
+	}
+
+	text := string(body)
+	// Must contain auth instructions.
+	if !strings.Contains(text, "Authorization") {
+		t.Error("llms.txt must contain auth instructions (Authorization header)")
+	}
+	// Must mention /v1/ask endpoint.
+	if !strings.Contains(text, "/v1/ask") {
+		t.Error("llms.txt must mention /v1/ask endpoint")
+	}
+	// Must contain curl example.
+	if !strings.Contains(text, "curl") {
+		t.Error("llms.txt must contain curl example commands")
+	}
+}
+
+// intMin returns the smaller of a and b.
+// Go 1.24 provides a built-in min() for ordered types, but we name this
+// intMin to avoid any conflict with the built-in in the test package scope.
+func intMin(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

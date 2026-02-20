@@ -1,0 +1,41 @@
+{
+  "name": "@llmrates/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for LLM Rates — real-time LLM pricing data",
+  "main": "dist/index.js",
+  "bin": {
+    "llmrates-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["mcp", "llm", "pricing", "ai"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romeo-folie/llm-pricing-api.git"
+  },
+  "homepage": "https://llmrates.com",
+  "publishConfig": {
+    "access": "public"
+  }
+}

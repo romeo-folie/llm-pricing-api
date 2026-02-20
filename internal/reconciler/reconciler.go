@@ -12,6 +12,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/diff"
@@ -49,7 +50,8 @@ type Reconciler struct {
 	store       Store
 	pending     map[string]*pendingChange // key: slug+":"+field+":"+source
 	mu          sync.Mutex
-	asynqClient *asynq.Client // optional; nil = webhook delivery disabled
+	asynqClient *asynq.Client  // optional; nil = webhook delivery disabled
+	redisClient *redis.Client  // optional; nil = Pub/Sub publishing disabled
 	logger      zerolog.Logger
 }
 
@@ -73,6 +75,13 @@ func NewWithStore(s Store) *Reconciler {
 // webhook delivery (the default).
 func (r *Reconciler) SetAsynqClient(c *asynq.Client) {
 	r.asynqClient = c
+}
+
+// SetRedisClient attaches a Redis client to the Reconciler so that confirmed
+// price changes are published to the price:changes Pub/Sub channel and stored
+// in the replay buffer. Calling with nil disables event publishing (the default).
+func (r *Reconciler) SetRedisClient(c *redis.Client) {
+	r.redisClient = c
 }
 
 // SetLogger configures the zerolog.Logger used by the Reconciler and its
@@ -345,8 +354,9 @@ func (r *Reconciler) processSingleSource(
 // publish writes a confirmed price event to the database.
 // It reads the current price row first so the unchanged field value is preserved
 // in the price_history snapshot (both columns are NOT NULL).
-// After a successful write, if an asynq client is configured, it fans out
-// webhook delivery tasks to all active registrations.
+// After a successful write, it resolves source name and provider, then:
+//   - fans out webhook delivery tasks (if asynq client is configured and webhooks are registered)
+//   - publishes to Redis Pub/Sub and the replay buffer (if a Redis client is configured)
 func (r *Reconciler) publish(
 	ctx context.Context,
 	modelID, sourceID int,
@@ -390,44 +400,49 @@ func (r *Reconciler) publish(
 		return
 	}
 
-	if r.asynqClient != nil && len(activeWebhooks) > 0 {
-		r.enqueueWebhooks(ctx, modelID, sourceID, currInput, currOutput, input, output, activeWebhooks)
+	// Resolve source name and provider for event payloads (shared by webhooks and Pub/Sub).
+	// Skip the lookups entirely when no downstream consumer is active — both are DB
+	// round-trips and they are only needed to populate fan-out payloads.
+	if r.asynqClient == nil && r.redisClient == nil {
+		return
 	}
-}
-
-// enqueueWebhooks fans out a webhook:deliver task to every active webhook registration.
-// activeWebhooks is pre-fetched once per reconciliation cycle by Reconcile() to
-// avoid an N+1 query pattern. Errors are logged but never returned — a delivery
-// failure must not abort reconciliation.
-func (r *Reconciler) enqueueWebhooks(
-	ctx context.Context,
-	modelID, sourceID int,
-	oldInput, oldOutput float64,
-	newInput, newOutput float64,
-	activeWebhooks []WebhookRow,
-) {
-
 	sourceName, err := r.store.LookupSourceName(ctx, sourceID)
 	if err != nil {
-		r.logger.Warn().Int("source_id", sourceID).Err(err).Msg("reconciler: LookupSourceName failed; using empty string in webhook payload")
+		r.logger.Warn().Int("source_id", sourceID).Err(err).Msg("reconciler: LookupSourceName failed; using empty string in event payload")
 	}
-
 	provider, err := r.store.LookupModelProvider(ctx, modelID)
 	if err != nil {
-		r.logger.Warn().Int("model_id", modelID).Err(err).Msg("reconciler: LookupModelProvider failed; using empty string in webhook payload")
+		r.logger.Warn().Int("model_id", modelID).Err(err).Msg("reconciler: LookupModelProvider failed; using empty string in event payload")
 	}
 
 	event := webhooks.Payload{
 		ModelID:        modelID,
 		Provider:       provider,
-		OldPriceInput:  oldInput,
-		OldPriceOutput: oldOutput,
-		NewPriceInput:  newInput,
-		NewPriceOutput: newOutput,
+		OldPriceInput:  currInput,
+		OldPriceOutput: currOutput,
+		NewPriceInput:  input,
+		NewPriceOutput: output,
 		ConfirmedAt:    time.Now().UTC(),
 		Source:         sourceName,
 	}
 
+	if r.asynqClient != nil && len(activeWebhooks) > 0 {
+		r.enqueueWebhooksWithEvent(ctx, event, activeWebhooks)
+	}
+
+	r.publishEvent(ctx, SSEEvent{Payload: event})
+}
+
+// enqueueWebhooksWithEvent fans out a webhook:deliver task to every active webhook registration.
+// It accepts the pre-built webhooks.Payload to avoid redundant store lookups.
+// activeWebhooks is pre-fetched once per reconciliation cycle by Reconcile() to
+// avoid an N+1 query pattern. Errors are logged but never returned — a delivery
+// failure must not abort reconciliation.
+func (r *Reconciler) enqueueWebhooksWithEvent(
+	ctx context.Context,
+	event webhooks.Payload,
+	activeWebhooks []WebhookRow,
+) {
 	for _, wh := range activeWebhooks {
 		task, err := newWebhookDeliverTask(webhooks.TaskPayload{
 			WebhookID: wh.ID,

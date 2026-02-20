@@ -173,6 +173,7 @@ func TestGetOpenAPI_ContainsAllV1Paths(t *testing.T) {
 		"/v1/webhooks",
 		"/v1/webhooks/{id}",
 		"/v1/context",
+		"/v1/ask",
 		"/v1/stream/changes",
 	}
 
@@ -321,8 +322,8 @@ func TestGetLLMsTxt_ContentType(t *testing.T) {
 	}
 }
 
-// TestGetLLMsTxt_Format verifies each line follows the expected format:
-// {provider}/{slug}: input=${price}/1M output=${price}/1M
+// TestGetLLMsTxt_Format verifies each pricing line (lines after the static header)
+// follows the expected format: {provider}/{slug}: input=${price}/1M output=${price}/1M
 func TestGetLLMsTxt_Format(t *testing.T) {
 	store := &mockStore{
 		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
@@ -343,14 +344,22 @@ func TestGetLLMsTxt_Format(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 
-	text := strings.TrimSpace(string(body))
-	lines := strings.Split(text, "\n")
+	text := string(body)
 
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d: %q", len(lines), text)
+	// The response now includes a static header section followed by price lines.
+	// Price lines contain "input=$" and "output=$" — filter to just those.
+	var priceLines []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "input=$") && strings.Contains(line, "output=$") {
+			priceLines = append(priceLines, line)
+		}
 	}
 
-	for _, line := range lines {
+	if len(priceLines) != 2 {
+		t.Fatalf("expected 2 price lines, got %d: %q", len(priceLines), text)
+	}
+
+	for _, line := range priceLines {
 		if !strings.Contains(line, "input=$") {
 			t.Errorf("line %q missing 'input=$'", line)
 		}
@@ -461,3 +470,156 @@ func TestGetLLMsTxt_PriceConversion(t *testing.T) {
 		t.Errorf("expected 'output=$10.0000/1M' in output, got:\n%s", text)
 	}
 }
+
+// --- Updated AI plugin manifest tests ----------------------------------
+
+// TestGetAIPlugin_ContainsNameForHuman verifies the name_for_human field is "LLM Rates".
+func TestGetAIPlugin_ContainsNameForHuman(t *testing.T) {
+	app := newDiscoveryApp(&mockStore{})
+
+	req := httptest.NewRequest("GET", "/.well-known/ai-plugin.json", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var manifest map[string]any
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	nameForHuman, ok := manifest["name_for_human"].(string)
+	if !ok || nameForHuman != "LLM Rates" {
+		t.Errorf("name_for_human: expected 'LLM Rates', got %v", manifest["name_for_human"])
+	}
+}
+
+// TestGetAIPlugin_NameForModelIsLlmrates verifies name_for_model is "llmrates".
+func TestGetAIPlugin_NameForModelIsLlmrates(t *testing.T) {
+	app := newDiscoveryApp(&mockStore{})
+
+	req := httptest.NewRequest("GET", "/.well-known/ai-plugin.json", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var manifest map[string]any
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	name, _ := manifest["name_for_model"].(string)
+	if name != "llmrates" {
+		t.Errorf("name_for_model: expected 'llmrates', got %q", name)
+	}
+}
+
+// TestGetAIPlugin_DescriptionMentionsPhase4 verifies description_for_model
+// mentions Phase 4 capabilities (/v1/ask, /v1/context, /v1/stream/changes).
+func TestGetAIPlugin_DescriptionMentionsPhase4(t *testing.T) {
+	app := newDiscoveryApp(&mockStore{})
+
+	req := httptest.NewRequest("GET", "/.well-known/ai-plugin.json", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var manifest map[string]any
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	desc, _ := manifest["description_for_model"].(string)
+	if !strings.Contains(desc, "/v1/ask") {
+		t.Errorf("description_for_model should mention /v1/ask, got: %q", desc)
+	}
+	if !strings.Contains(desc, "/v1/context") {
+		t.Errorf("description_for_model should mention /v1/context, got: %q", desc)
+	}
+}
+
+// TestGetLLMsTxt_ContainsAuthInstructions verifies that /llms.txt includes
+// auth instructions and mentions Phase 4 endpoints.
+func TestGetLLMsTxt_ContainsAuthInstructions(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return sampleContextModels(), nil
+		},
+	}
+	app := newDiscoveryApp(store)
+
+	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+
+	if !strings.Contains(text, "Authorization") {
+		t.Error("llms.txt must contain 'Authorization' auth instructions")
+	}
+	if !strings.Contains(text, "/v1/ask") {
+		t.Error("llms.txt must mention /v1/ask endpoint")
+	}
+	if !strings.Contains(text, "curl") {
+		t.Error("llms.txt must contain curl examples")
+	}
+}
+
+// TestGetOpenAPI_AskResponseHasIntent verifies that the AskResponse schema
+// in the OpenAPI spec has an "intent" field instead of the stale "answer" field.
+func TestGetOpenAPI_AskResponseHasIntent(t *testing.T) {
+	app := newDiscoveryApp(&mockStore{})
+
+	req := httptest.NewRequest("GET", "/openapi.json", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]any `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	askResp, ok := doc.Components.Schemas["AskResponse"]
+	if !ok {
+		t.Fatal("AskResponse schema must be present in components/schemas")
+	}
+	if _, ok := askResp.Properties["intent"]; !ok {
+		t.Error("AskResponse schema must have 'intent' field")
+	}
+	if _, ok := askResp.Properties["plain_english_summary"]; !ok {
+		t.Error("AskResponse schema must have 'plain_english_summary' field")
+	}
+	if _, ok := askResp.Properties["answer"]; ok {
+		t.Error("AskResponse schema must NOT have stale 'answer' field")
+	}
+}
+

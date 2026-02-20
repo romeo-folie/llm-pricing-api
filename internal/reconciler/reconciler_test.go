@@ -2,9 +2,14 @@ package reconciler_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 
 	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/models"
@@ -553,5 +558,174 @@ func TestReconcile_OutputField_PublishesCorrectField(t *testing.T) {
 	}
 	if pub.input != 0.000005 {
 		t.Errorf("expected input=0.000005 (from current prices), got %g", pub.input)
+	}
+}
+
+// ----- Redis Pub/Sub tests -----
+
+// newMiniredisClient starts a miniredis server and returns a *redis.Client
+// pointing to it. The server is shut down when the test ends.
+func newMiniredisClient(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	return mr, rdb
+}
+
+func TestReconcile_PublishPriceError_DoesNotWriteToRedisBuffer(t *testing.T) {
+	_, rdb := newMiniredisClient(t)
+	s := newMockStore()
+	s.publishErr = errors.New("simulated DB write failure")
+	r := reconciler.NewWithStore(s)
+	r.SetRedisClient(rdb)
+
+	diffs := []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000005),
+		inputDiff("openai/gpt-4o", "litellm", 0.000005),
+	}
+	_ = r.Reconcile(context.Background(), diffs)
+
+	count, err := rdb.ZCard(context.Background(), "price:changes:buffer").Result()
+	if err != nil {
+		t.Fatalf("ZCARD: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected empty buffer when PublishPrice fails, got %d entries", count)
+	}
+}
+
+func TestPublishEvent_EventIDMonotonicallyIncreases(t *testing.T) {
+	mr, rdb := newMiniredisClient(t)
+	_ = mr
+
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	r.SetRedisClient(rdb)
+
+	ctx := context.Background()
+
+	// Two 2-source agreement diffs for different models to trigger two publishes.
+	diffs1 := []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000005),
+		inputDiff("openai/gpt-4o", "litellm", 0.000005),
+	}
+	diffs2 := []diff.PriceDiff{
+		inputDiff("anthropic/claude-3-5-sonnet", "openrouter", 0.000003),
+		inputDiff("anthropic/claude-3-5-sonnet", "litellm", 0.000003),
+	}
+
+	if err := r.Reconcile(ctx, diffs1); err != nil {
+		t.Fatalf("Reconcile 1: %v", err)
+	}
+	if err := r.Reconcile(ctx, diffs2); err != nil {
+		t.Fatalf("Reconcile 2: %v", err)
+	}
+
+	// The sorted set should have 2 members; scores should be 1 and 2 (monotonically increasing).
+	members, err := rdb.ZRangeWithScores(ctx, "price:changes:buffer", 0, -1).Result()
+	if err != nil {
+		t.Fatalf("ZRANGE: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members in buffer, got %d", len(members))
+	}
+
+	firstScore := int64(members[0].Score)
+	secondScore := int64(members[1].Score)
+	if secondScore != firstScore+1 {
+		t.Errorf("event IDs should increase by 1: first=%d second=%d", firstScore, secondScore)
+	}
+}
+
+func TestPublishEvent_BufferTrimmedAt1000(t *testing.T) {
+	mr, rdb := newMiniredisClient(t)
+	_ = mr
+
+	ctx := context.Background()
+
+	// Pre-populate buffer with 1000 entries directly via ZADD.
+	const bufferKey = "price:changes:buffer"
+	for i := 1; i <= 1000; i++ {
+		payload := `{"event_id":` + strconv.Itoa(i) + `}`
+		if err := rdb.ZAdd(ctx, bufferKey, redis.Z{Score: float64(i), Member: payload}).Err(); err != nil {
+			t.Fatalf("pre-populate ZADD %d: %v", i, err)
+		}
+	}
+
+	// Pre-set the sequence counter to 1000 so the next INCR yields 1001.
+	if err := rdb.Set(ctx, "price:changes:seq", 1000, 0).Err(); err != nil {
+		t.Fatalf("SET seq: %v", err)
+	}
+
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	r.SetRedisClient(rdb)
+
+	// Trigger one more publish — should trim the oldest entry.
+	diffs := []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000005),
+		inputDiff("openai/gpt-4o", "litellm", 0.000005),
+	}
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	count, err := rdb.ZCard(ctx, bufferKey).Result()
+	if err != nil {
+		t.Fatalf("ZCARD: %v", err)
+	}
+	if count != 1000 {
+		t.Errorf("expected buffer capped at 1000 members after trim, got %d", count)
+	}
+}
+
+func TestReconcile_PublishesEventOnConfirmedWrite(t *testing.T) {
+	mr, rdb := newMiniredisClient(t)
+	_ = mr
+
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	r.SetRedisClient(rdb)
+
+	diffs := []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000007),
+		inputDiff("openai/gpt-4o", "litellm", 0.000007),
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	ctx := context.Background()
+	members, err := rdb.ZRange(ctx, "price:changes:buffer", 0, -1).Result()
+	if err != nil {
+		t.Fatalf("ZRANGE: %v", err)
+	}
+	if len(members) == 0 {
+		t.Fatal("expected at least one event in the replay buffer after confirmed publish")
+	}
+
+	// Parse the event and verify model_id and price fields.
+	var event struct {
+		ModelID       int     `json:"model_id"`
+		NewPriceInput float64 `json:"new_price_input"`
+		EventID       int64   `json:"event_id"`
+	}
+	if err := json.Unmarshal([]byte(members[0]), &event); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+	if event.ModelID != 10 {
+		t.Errorf("expected model_id=10, got %d", event.ModelID)
+	}
+	if event.NewPriceInput != 0.000007 {
+		t.Errorf("expected new_price_input=0.000007, got %g", event.NewPriceInput)
+	}
+	if event.EventID < 1 {
+		t.Errorf("expected event_id >= 1, got %d", event.EventID)
 	}
 }

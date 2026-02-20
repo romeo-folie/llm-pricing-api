@@ -51,16 +51,26 @@ func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 //
 // Routes registered:
 //
-//	GET /v1/models/:id/history
-//	GET /v1/recommend
-//	GET /v1/context
-func RegisterDev(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
+//	GET  /v1/models/:id/history
+//	GET  /v1/recommend
+//	GET  /v1/context
+//	POST /v1/ask
+//
+// Returns an error if the /v1/ask OTel instruments cannot be created.
+func RegisterDev(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) error {
 	store := NewPgxStore(db)
 	h := New(store)
 
 	v1.Get("/models/:id/history", middleware.RequireTier(middleware.TierDeveloper), h.GetModelHistory)
 	v1.Get("/recommend", middleware.RequireTier(middleware.TierDeveloper), h.Recommend)
 	v1.Get("/context", middleware.RequireTier(middleware.TierDeveloper), h.GetContext)
+
+	ask, err := NewAskHandler(store)
+	if err != nil {
+		return fmt.Errorf("create ask handler: %w", err)
+	}
+	v1.Post("/ask", middleware.RequireTier(middleware.TierDeveloper), ask.Ask)
+	return nil
 }
 
 // RegisterDiscovery registers the public discovery endpoints on the root Fiber
@@ -78,13 +88,16 @@ func RegisterDiscovery(app *fiber.App, db *pgxpool.Pool) {
 }
 
 // RegisterSSE registers the SSE stream endpoint on the supplied v1 router.
-// The route is protected by the Developer-tier gate:
+// rdb is the Redis client used for Pub/Sub subscription, replay buffer access,
+// and per-key connection limiting. Passing nil disables these features (heartbeat only).
+//
+// Route registered:
 //
 //	GET /v1/stream/changes  — Server-Sent Events stream (Developer+ tier)
 //
-// Returns an error if the OTel UpDownCounter cannot be created.
-func RegisterSSE(v1 fiber.Router) error {
-	sse, err := NewSSEHandler()
+// Returns an error if the OTel instruments cannot be created.
+func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
+	sse, err := NewSSEHandler(rdb)
 	if err != nil {
 		return fmt.Errorf("create SSE handler: %w", err)
 	}

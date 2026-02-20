@@ -282,26 +282,57 @@
         },
         "required": ["query"]
       },
+      "AskMeta": {
+        "type": "object",
+        "description": "Per-request metadata for /v1/ask responses.",
+        "properties": {
+          "query_time_ms": {
+            "type": "integer",
+            "description": "Total handler latency in milliseconds, including any DB round-trip."
+          },
+          "parser": {
+            "type": "string",
+            "description": "Parser version used to classify the query (e.g. 'rule-v1')."
+          }
+        },
+        "required": ["query_time_ms", "parser"]
+      },
       "AskResponse": {
         "type": "object",
         "properties": {
-          "answer": {
+          "intent": {
             "type": "string",
-            "description": "Structured natural language answer."
+            "enum": ["price", "compare", "history", "recommend"],
+            "description": "Classified intent of the natural language query."
           },
           "inferred_params": {
             "type": "object",
-            "description": "Parameters inferred from the query.",
+            "description": "Parameters inferred from the query (e.g. model name, price constraint, context window).",
             "additionalProperties": true
           },
           "models": {
             "type": "array",
+            "description": "Matched models (present for price and compare intents).",
             "items": {
               "$ref": "#/components/schemas/ModelResponse"
             }
+          },
+          "ranked_models": {
+            "type": "array",
+            "description": "Ranked model recommendations (present for recommend intent).",
+            "items": {
+              "$ref": "#/components/schemas/ModelResponse"
+            }
+          },
+          "plain_english_summary": {
+            "type": "string",
+            "description": "Human-readable summary of the query result, including suggested follow-up API calls."
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AskMeta"
           }
         },
-        "required": ["answer"]
+        "required": ["intent", "inferred_params", "plain_english_summary", "meta"]
       },
       "ProblemDetail": {
         "type": "object",
@@ -458,6 +489,7 @@
                   "type": "object",
                   "properties": {
                     "schema_version": { "type": "string" },
+                    "name_for_human": { "type": "string" },
                     "name_for_model": { "type": "string" },
                     "description_for_model": { "type": "string" },
                     "api": {
@@ -880,22 +912,55 @@
       "get": {
         "operationId": "getContext",
         "summary": "Pricing snapshot for agent context",
-        "description": "Returns a compact (~2k token) pricing snapshot suitable for inclusion in agent system prompts. Requires Developer tier or above.",
+        "description": "Returns a compact (~2k token) pricing snapshot suitable for inclusion in agent system prompts. Requires Developer tier or above. Use ?format=markdown to receive a GitHub-flavoured markdown table instead of JSON.",
         "tags": ["agent"],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Optional output format. Pass 'markdown' to receive a plain-text markdown table (Content-Type: text/markdown) instead of the default JSON envelope.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["markdown"]
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Context snapshot.",
+            "description": "Context snapshot. Returns JSON by default; returns text/markdown when ?format=markdown is set.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/ContextModelRow" }
+                      "type": "object",
+                      "properties": {
+                        "models": {
+                          "type": "array",
+                          "items": { "$ref": "#/components/schemas/ContextModelRow" }
+                        },
+                        "token_count": {
+                          "type": "integer",
+                          "description": "Approximate token count of this response (4-chars-per-token heuristic)."
+                        },
+                        "model_count": {
+                          "type": "integer",
+                          "description": "Number of models included in this snapshot."
+                        }
+                      },
+                      "required": ["models", "token_count", "model_count"]
                     },
                     "meta": { "$ref": "#/components/schemas/TrustMeta" }
                   }
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "type": "string",
+                  "description": "GitHub-flavoured markdown table of all models. Returned when ?format=markdown is set. Begins with a summary header line (> Models: N | Estimated tokens: N) followed by the table.",
+                  "example": "> Models: 10 | Estimated tokens: 350\n\n| Model | Provider | Input $/1M | Output $/1M | Confidence |\n|-------|----------|-----------|-------------|------------|\n| gpt-4o | openai | 2.5000 | 10.0000 | high |\n"
                 }
               }
             }
@@ -925,7 +990,7 @@
         },
         "responses": {
           "200": {
-            "description": "Structured answer with inferred parameters.",
+            "description": "Structured answer with inferred parameters and optional model results.",
             "content": {
               "application/json": {
                 "schema": {
@@ -939,7 +1004,7 @@
             }
           },
           "400": {
-            "description": "Invalid or missing query.",
+            "description": "Invalid or missing query, or query does not match any supported intent.",
             "content": {
               "application/problem+json": {
                 "schema": { "$ref": "#/components/schemas/ProblemDetail" }
@@ -963,24 +1028,47 @@
           {
             "name": "Last-Event-ID",
             "in": "header",
-            "description": "Resume stream from this event ID (for reconnection).",
+            "description": "Resume stream from this event ID (non-negative integer). Replays all missed events from the buffer whose ID is greater than this value.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Filter events by provider name (case-insensitive, e.g. 'openai').",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "models",
+            "in": "query",
+            "description": "Comma-separated list of model IDs to filter events (e.g. '1,2,5').",
+            "required": false,
             "schema": { "type": "string" }
           }
         ],
         "responses": {
           "200": {
-            "description": "SSE stream (text/event-stream). Connection is held open until client disconnects.",
+            "description": "SSE stream (text/event-stream). Connection is held open until client disconnects. Each event is a JSON object. Example event:\ndata: {\"model_id\":1,\"model_slug\":\"gpt-4o\",\"provider\":\"openai\",\"old_input\":2.5e-6,\"old_output\":1.0e-5,\"new_input\":2.0e-6,\"new_output\":8.0e-6,\"confirmed_at\":\"2025-01-01T00:00:00Z\",\"source\":\"openrouter\"}",
             "content": {
               "text/event-stream": {
                 "schema": {
                   "type": "string",
-                  "example": ": ok\n\n"
+                  "example": "id: 42\ndata: {\"model_id\":1,\"model_slug\":\"gpt-4o\",\"provider\":\"openai\",\"old_input\":2.5e-6,\"old_output\":1.0e-5,\"new_input\":2.0e-6,\"new_output\":8.0e-6,\"confirmed_at\":\"2025-01-01T00:00:00Z\",\"source\":\"openrouter\"}\n\n"
                 }
               }
             }
           },
+          "400": {
+            "description": "Invalid Last-Event-ID (not a non-negative integer).",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetail" }
+              }
+            }
+          },
           "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
         }
       }
     }

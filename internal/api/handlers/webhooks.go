@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"time"
 
@@ -155,10 +156,41 @@ func resolveWebhookKey(hexKey string, log zerolog.Logger) ([]byte, error) {
 	return key, nil
 }
 
+// isWebhookURLSafe resolves the hostname of webhookURL and returns an error if
+// any resolved address is a loopback, private, link-local, or unspecified IP.
+// This prevents SSRF attacks via DNS rebinding or direct private-IP targets.
+// Fails closed: if DNS resolution fails entirely, the URL is rejected.
+func isWebhookURLSafe(ctx context.Context, rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL")
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return fmt.Errorf("missing hostname")
+	}
+	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return fmt.Errorf("could not resolve hostname %q", host)
+	}
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("webhook URL resolves to a private or loopback address")
+		}
+	}
+	return nil
+}
+
 // WebhookHandler handles POST /v1/webhooks and DELETE /v1/webhooks/:id.
 type WebhookHandler struct {
-	store     WebhookStore
-	secretKey []byte // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
+	store        WebhookStore
+	secretKey    []byte                               // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
+	urlValidator func(context.Context, string) error  // nil → uses isWebhookURLSafe; overridden in tests
 }
 
 // WebhookHandlerExport is a test-visible alias that exposes the Store field so
@@ -168,19 +200,23 @@ type WebhookHandler struct {
 // WARNING: This shim does not set a secretKey, so webhook secrets are stored
 // and used as plaintext. It is intended solely for unit tests that do not
 // need end-to-end encryption. Never use in production code paths.
+//
+// Set UrlValidator to a custom func to override SSRF DNS checks in tests.
+// A nil UrlValidator uses the real isWebhookURLSafe (DNS resolution required).
 type WebhookHandlerExport struct {
-	Store WebhookStore
+	Store        WebhookStore
+	UrlValidator func(context.Context, string) error
 }
 
 // Create delegates to the internal WebhookHandler.Create.
 func (e *WebhookHandlerExport) Create(c *fiber.Ctx) error {
-	h := &WebhookHandler{store: e.Store}
+	h := &WebhookHandler{store: e.Store, urlValidator: e.UrlValidator}
 	return h.Create(c)
 }
 
 // Delete delegates to the internal WebhookHandler.Delete.
 func (e *WebhookHandlerExport) Delete(c *fiber.Ctx) error {
-	h := &WebhookHandler{store: e.Store}
+	h := &WebhookHandler{store: e.Store, urlValidator: e.UrlValidator}
 	return h.Delete(c)
 }
 
@@ -203,8 +239,15 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return api.NewBadRequest(fmt.Sprintf("invalid url: %s", err.Error()))
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return api.NewBadRequest("url scheme must be http or https")
+	if parsed.Scheme != "https" {
+		return api.NewBadRequest("url scheme must be https")
+	}
+	validator := h.urlValidator
+	if validator == nil {
+		validator = isWebhookURLSafe
+	}
+	if err := validator(c.Context(), body.URL); err != nil {
+		return api.NewBadRequest(fmt.Sprintf("url rejected: %s", err.Error()))
 	}
 
 	apiKeyHash, _ := c.Locals(middleware.LocalKeyHash).(string)

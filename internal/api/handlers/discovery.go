@@ -49,11 +49,16 @@ func (h *DiscoveryHandler) GetOpenAPI(c *fiber.Ctx) error {
 // Returns the AI plugin manifest for agent discovery with no authentication.
 func (h *DiscoveryHandler) GetAIPlugin(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"schema_version": "v1",
-		"name_for_model": "llm_pricing",
-		"description_for_model": "Access current and historical LLM token pricing from multiple" +
-			" providers. Query prices by provider, modality, or model ID." +
-			" Compare costs and track price changes over time.",
+		"schema_version":  "v1",
+		"name_for_human":  "LLM Rates",
+		"name_for_model":  "llmrates",
+		"description_for_model": "Access current and historical LLM token pricing from multiple providers." +
+			" Use POST /v1/ask for natural language pricing queries (e.g. 'cheapest model for summarization')." +
+			" Use GET /v1/context for a compact pricing snapshot suitable for system prompts (~2k tokens)." +
+			" Stream real-time price changes via GET /v1/stream/changes (SSE)." +
+			" Compare costs, track price changes over time, and filter by provider, modality, or context window." +
+			" All endpoints require a Bearer API key." +
+			" Developer tier required for /v1/ask, /v1/context, and /v1/stream/changes.",
 		"api": fiber.Map{
 			"type": "openapi",
 			"url":  "/openapi.json",
@@ -61,9 +66,70 @@ func (h *DiscoveryHandler) GetAIPlugin(c *fiber.Ctx) error {
 	})
 }
 
+// llmsTxtHeader is the static header prepended to every /llms.txt response.
+// It describes the API, authentication requirements, available endpoints,
+// and example requests so that agents can bootstrap context without prior knowledge.
+//
+// The base URL is intentionally hardcoded to the production address — /llms.txt
+// is agent-facing documentation that describes the public API, not the current
+// deployment. Staging and local environments serve the same content so agents
+// always reference the canonical production endpoint.
+const llmsTxtHeader = `# LLM Rates — Pricing API
+
+Base URL: https://api.llmrates.live
+
+## Authentication
+
+All endpoints require an API key as a Bearer token:
+  Authorization: Bearer <your-api-key>
+
+Tiers: Free (100 req/day), Developer ($15/mo, 10k req/day), Pro ($50/mo, unlimited + webhooks)
+
+## Endpoints
+
+GET  /v1/models                  List all models with pricing (Free)
+GET  /v1/models/:id              Get single model (Free)
+GET  /v1/models/:id/history      Price history with ?from= ?to= (Developer+)
+GET  /v1/compare?models=id1,id2  Compare up to 5 models (Free)
+GET  /v1/recommend               Ranked models by ?task= ?context_size= ?max_price_input= (Developer+)
+GET  /v1/providers               List providers (Free)
+GET  /v1/changes                 Recent price changes with ?since= ?provider= (Free)
+GET  /v1/context                 ~2k token pricing snapshot for agent system prompts (Developer+)
+     ?format=markdown            Returns markdown table instead of JSON
+POST /v1/ask                     Natural language query → structured response (Developer+)
+GET  /v1/stream/changes          SSE stream of real-time price changes (Developer+)
+     ?provider=name              Filter by provider
+     ?models=id1,id2             Filter by model IDs
+POST /v1/webhooks                Register webhook for price changes (Pro)
+
+## Example Requests
+
+# List all OpenAI models
+curl -H "Authorization: Bearer $KEY" https://api.llmrates.live/v1/models?provider=openai
+
+# Natural language query
+curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"query":"cheapest model for summarization under $5"}' \
+  https://api.llmrates.live/v1/ask
+
+# Get pricing snapshot for agent context (JSON)
+curl -H "Authorization: Bearer $KEY" https://api.llmrates.live/v1/context
+
+# Get pricing snapshot as markdown table
+curl -H "Authorization: Bearer $KEY" https://api.llmrates.live/v1/context?format=markdown
+
+# Stream price changes
+curl -H "Authorization: Bearer $KEY" -H "Accept: text/event-stream" \
+  https://api.llmrates.live/v1/stream/changes
+
+## Current Pricing
+
+`
+
 // GetLLMsTxt serves GET /llms.txt.
-// Returns a plain-text listing of all current model prices, one per line, in
-// the format:
+// Returns a plain-text document containing a static header describing the API
+// (authentication, all endpoints, and example requests) followed by a dynamic
+// listing of all current model prices, one per line, in the format:
 //
 //	{provider}/{slug}: input=${price_input}/1M output=${price_output}/1M
 //
@@ -76,6 +142,7 @@ func (h *DiscoveryHandler) GetLLMsTxt(c *fiber.Ctx) error {
 	}
 
 	var sb strings.Builder
+	sb.WriteString(llmsTxtHeader)
 	for _, m := range models {
 		// Prices stored as cost-per-token; convert to per-million-token for display.
 		fmt.Fprintf(&sb, "%s/%s: input=$%.4f/1M output=$%.4f/1M\n",
