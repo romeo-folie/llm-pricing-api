@@ -104,21 +104,25 @@ func (h *Handlers) ListModels(c *fiber.Ctx) error {
 }
 
 // GetModel handles GET /v1/models/:id.
-// Returns 400 if :id is not a valid integer.
+// Accepts either a positive integer ID or a URL slug.
 // Returns 404 if the model does not exist.
 func (h *Handlers) GetModel(c *fiber.Ctx) error {
 	idStr := c.Params("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil || id <= 0 {
-		return api.NewBadRequest("model id must be a positive integer")
+
+	var model ModelRow
+	var err error
+
+	if id, intErr := strconv.Atoi(idStr); intErr == nil && id > 0 {
+		model, err = h.store.GetModel(c.Context(), id)
+	} else {
+		model, err = h.store.GetModelBySlug(c.Context(), idStr)
 	}
 
-	model, err := h.store.GetModel(c.Context(), id)
 	if err != nil {
 		if err == ErrNotFound {
 			return api.NewNotFound("model not found")
 		}
-		log.Error().Err(err).Int("model_id", id).Msg("get model failed")
+		log.Error().Err(err).Str("model_id", idStr).Msg("get model failed")
 		return api.NewInternalError("failed to get model")
 	}
 

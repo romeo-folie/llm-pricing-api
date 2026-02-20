@@ -7,14 +7,20 @@ import { getModels, getProviders, getChanges } from "@/lib/api"
 
 export const metadata: Metadata = {
   title: {
-    absolute: "LLMRates — Compare AI Model Pricing | LLM Token Cost Tracker",
+    absolute: "LLMRates — LLM Token Pricing Tracker | Compare GPT, Claude, Gemini Costs",
   },
   description:
-    "Compare AI model pricing across OpenAI, Anthropic, Google, and Mistral. Reconciled LLM token costs with full price history, real-time change feed, and agent-optimized APIs. Free tier available.",
+    "Track and compare AI model pricing across OpenAI, Anthropic, Google, xAI, and Mistral. " +
+    "Reconciled token costs with full price history, real-time change feed, and agent-optimized APIs. " +
+    "See how much GPT-4o, Claude 3.5, Gemini, Grok cost per 1M tokens.",
+  keywords:
+    "llm pricing, ai model cost, gpt-4o pricing, claude 3.5 pricing, gemini pricing, grok pricing, " +
+    "token cost comparison, ai api price tracker, openai pricing, anthropic pricing, " +
+    "llm cost calculator, compare ai models, price per 1000 tokens",
   openGraph: {
     title: "LLMRates — Compare AI Model Pricing & Track Cost Changes",
     description:
-      "Compare GPT, Claude, Gemini, and Mistral pricing side by side. Full price history, real-time changes, and agent-native APIs.",
+      "Compare GPT-4o, Claude 3.5, Gemini, and Grok pricing side by side. Full price history, real-time changes, and agent-native APIs.",
     type: "website",
   },
 }

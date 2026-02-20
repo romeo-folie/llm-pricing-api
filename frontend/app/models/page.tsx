@@ -10,14 +10,20 @@ import Pagination from "@/components/ui/Pagination"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
-  title: "AI Model Pricing Browser — GPT, Claude, Gemini & More",
+  title: "AI Model Pricing — GPT-4o, Claude, Gemini, Grok Token Costs | LLMRates",
   description:
-    "Browse and compare pricing for 200+ AI models including GPT-4, Claude, Gemini, and Mistral. Filter by provider, modality, and context window. Updated every 5 minutes.",
+    "Browse token pricing for 300+ AI models: GPT-4o, Claude 3.5, Gemini 1.5, Grok, Mistral, and more. " +
+    "Compare input/output costs per 1M tokens, filter by provider and context window. " +
+    "Reconciled from multiple sources and updated every 5 minutes.",
+  keywords:
+    "ai model pricing, llm pricing, gpt-4o price, claude pricing, gemini pricing, grok pricing, " +
+    "mistral pricing, openai token cost, anthropic api price, llm api cost comparison, " +
+    "cost per 1000 tokens, cheapest llm, ai api pricing 2025",
   alternates: { canonical: "/models" },
   openGraph: {
     title: "AI Model Pricing Browser — Compare LLM Token Costs",
     description:
-      "Browse reconciled pricing for 200+ AI models. Filter by provider, modality, and context window.",
+      "Browse reconciled pricing for 300+ AI models. Compare GPT-4o, Claude 3.5, Gemini, Grok token costs.",
   },
 }
 

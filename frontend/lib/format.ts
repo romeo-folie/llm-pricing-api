@@ -38,6 +38,41 @@ export function formatSourceName(source: string): string {
   return map[source] ?? source
 }
 
+/**
+ * Format a provider identifier (as stored in the DB, e.g. "openai", "x-ai")
+ * into a human-readable display name for use in headings and metadata.
+ */
+export function formatProviderName(slug: string): string {
+  const known: Record<string, string> = {
+    openai:          "OpenAI",
+    anthropic:       "Anthropic",
+    google:          "Google",
+    "x-ai":          "xAI",
+    xai:             "xAI",
+    mistralai:       "Mistral AI",
+    mistral:         "Mistral AI",
+    cohere:          "Cohere",
+    meta:            "Meta",
+    "meta-llama":    "Meta Llama",
+    amazon:          "Amazon",
+    azure:           "Azure",
+    groq:            "Groq",
+    together:        "Together AI",
+    togetherai:      "Together AI",
+    perplexity:      "Perplexity",
+    deepseek:        "DeepSeek",
+    "01-ai":         "01.AI",
+    huggingface:     "Hugging Face",
+    ollama:          "Ollama",
+  }
+  if (known[slug]) return known[slug]
+  // Fallback: capitalise each word
+  return slug
+    .split(/[-_\s]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ")
+}
+
 /** Format an ISO timestamp as a relative time string. */
 export function formatRelative(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()

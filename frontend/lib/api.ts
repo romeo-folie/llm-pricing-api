@@ -1,4 +1,5 @@
 import "server-only"
+import { cache } from "react"
 
 // ─── Types (frontend-facing) ─────────────────────────────────────────────────
 // These types are what components consume. The API layer transforms raw backend
@@ -122,8 +123,8 @@ function toModel(raw: RawModel): Model {
     provider: raw.provider,
     modality: raw.modality,
     context_window: raw.context_window ?? 0,
-    input_price_per_m: raw.price_input * PER_MILLION,
-    output_price_per_m: raw.price_output * PER_MILLION,
+    input_price_per_m:  (raw.price_input  ?? 0) * PER_MILLION,
+    output_price_per_m: (raw.price_output ?? 0) * PER_MILLION,
     updated_at: raw.meta.confirmed_at ?? "",
     underlying_provider: raw.underlying_provider ?? null,
     trust: raw.meta,
@@ -250,11 +251,38 @@ export async function getModels(filter?: ModelsFilter): Promise<Model[]> {
   if (filter?.provider) params.set("provider", filter.provider)
   if (filter?.modality) params.set("modality", filter.modality)
   if (filter?.min_context) params.set("min_context", String(filter.min_context))
-  // Request max page size to get all models in one call
   params.set("per_page", "200")
-  const qs = `?${params.toString()}`
-  const res = await apiFetch<RawEnvelope<RawModel[]>>(`/v1/models${qs}`)
-  return res.data.map(toModel)
+
+  // Paginate through all pages so that models beyond the first 200 are
+  // included in the compare picker. The backend caps per_page at 200, so we
+  // loop until X-Total-Count is satisfied.
+  const all: Model[] = []
+  let page = 1
+  let total = Infinity
+
+  while (all.length < total) {
+    params.set("page", String(page))
+    const { body, headers } = await apiFetchWithHeaders<RawEnvelope<RawModel[]>>(
+      `/v1/models?${params.toString()}`,
+    )
+    const batch = body.data.map(toModel)
+
+    if (page === 1) {
+      // Only narrow `total` when the header is present and parseable.
+      // If the header is absent or invalid we keep total = Infinity and rely
+      // on the batch.length === 0 exit condition + the page-50 hard cap.
+      const raw    = headers.get("X-Total-Count")
+      const parsed = raw !== null ? parseInt(raw, 10) : NaN
+      if (!isNaN(parsed) && parsed > 0) total = parsed
+    }
+
+    all.push(...batch)
+    // Hard cap: never exceed 50 pages (10 000 models) regardless of header.
+    if (batch.length === 0 || all.length >= total || page >= 50) break
+    page++
+  }
+
+  return all
 }
 
 /** Paginated variant — returns a page of models + total count from X-Total-Count header. */
@@ -278,12 +306,15 @@ export async function getModelsPaginated(
   }
 }
 
-export async function getModel(id: string): Promise<Model> {
+// React.cache() deduplicates calls with the same argument within the same
+// server request (shared cache scope covers generateMetadata + page component),
+// preventing two upstream API calls per page render.
+export const getModel = cache(async (id: string): Promise<Model> => {
   const res = await apiFetch<RawEnvelope<RawModel>>(
     `/v1/models/${encodeURIComponent(id)}`,
   )
   return toModel(res.data)
-}
+})
 
 export async function getModelHistory(
   id: string,
@@ -301,10 +332,10 @@ export async function getModelHistory(
   return res.data.map(toHistoryEntry)
 }
 
-export async function getProviders(): Promise<Provider[]> {
+export const getProviders = cache(async (): Promise<Provider[]> => {
   const res = await apiFetch<RawEnvelope<RawProvider[]>>("/v1/providers")
   return res.data.map(toProvider)
-}
+})
 
 export interface CompareFilter {
   models: string[]

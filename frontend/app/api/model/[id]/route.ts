@@ -14,7 +14,8 @@ export async function GET(
     // Fetch model and history independently — history is Dev+ tier gated and
     // may return 403 on Free-tier keys. The modal should still work without it.
     const model = await getModel(id)
-    const history = await getModelHistory(id, from, to).catch(() => [])
+    // Use numeric model.id for the history endpoint (integer-only backend route)
+    const history = await getModelHistory(model.id, from, to).catch(() => [])
     return NextResponse.json({ model, history })
   } catch (e) {
     const msg    = e instanceof Error ? e.message : "Unknown error"

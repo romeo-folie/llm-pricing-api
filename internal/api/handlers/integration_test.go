@@ -710,7 +710,53 @@ func TestIntegrationTrustMetadata_ListResponse_MetaPresent(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 8. RFC 7807 error tests
+// 8. Slug-based model lookup tests
+// -----------------------------------------------------------------------
+
+// TestIntegrationGetModel_BySlug_Returns200 verifies that the handler accepts
+// a URL slug (e.g. "openai/gpt-4o") in place of an integer ID.
+func TestIntegrationGetModel_BySlug_Returns200(t *testing.T) {
+	app := setupTestApp(t)
+
+	// openai/gpt-4o is model ID 1 in the seed data.
+	status, body := apiGet(t, app, "/v1/models/openai%2Fgpt-4o", devAuth)
+
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.Slug != "openai/gpt-4o" {
+		t.Errorf("expected slug 'openai/gpt-4o', got %q", envelope.Data.Slug)
+	}
+	if envelope.Data.Name == "" {
+		t.Error("model name must not be empty")
+	}
+}
+
+// TestIntegrationGetModel_BySlug_NotFound_Returns404 verifies that an unknown
+// slug returns 404 with an RFC 7807 body.
+func TestIntegrationGetModel_BySlug_NotFound_Returns404(t *testing.T) {
+	app := setupTestApp(t)
+
+	status, body := apiGet(t, app, "/v1/models/unknown%2Fslug", devAuth)
+
+	if status != fiber.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s", status, body)
+	}
+	assertProblemJSON(t, body, 404)
+}
+
+// -----------------------------------------------------------------------
+// 10. RFC 7807 error tests
 // -----------------------------------------------------------------------
 
 func TestIntegrationRFC7807_AllErrorResponsesHaveProblemContentType(t *testing.T) {
@@ -725,8 +771,9 @@ func TestIntegrationRFC7807_AllErrorResponsesHaveProblemContentType(t *testing.T
 	}{
 		{"no auth header", "GET", "/v1/models", "", 401},
 		{"invalid key", "GET", "/v1/models", "Bearer bad-key", 401},
-		{"invalid model id", "GET", "/v1/models/0", devAuth, 400},
-		{"model not found", "GET", "/v1/models/99999", devAuth, 404},
+		{"model id zero routes to slug not found", "GET", "/v1/models/0", devAuth, 404},
+		{"model not found by integer id", "GET", "/v1/models/99999", devAuth, 404},
+		{"model not found by slug", "GET", "/v1/models/unknown/slug", devAuth, 404},
 		{"too many compare ids", "GET", "/v1/compare?models=1,2,3,4,5,6", devAuth, 400},
 		{"free tier on dev endpoint", "GET", "/v1/models/1/history", freeAuth, 403},
 	}
@@ -783,7 +830,7 @@ func assertProblemJSON(t *testing.T, body []byte, expectedStatus int) {
 }
 
 // -----------------------------------------------------------------------
-// 9. Webhook tests
+// 11. Webhook tests
 // -----------------------------------------------------------------------
 
 func TestIntegrationWebhooks_ProKey_Create_Returns201(t *testing.T) {
@@ -857,7 +904,7 @@ func TestIntegrationWebhooks_FreeKey_Create_Returns403(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 10. Context token budget test
+// 12. Context token budget test
 // -----------------------------------------------------------------------
 
 func TestIntegrationContextTokenBudget_ResponseWithin2100Tokens(t *testing.T) {
@@ -879,7 +926,7 @@ func TestIntegrationContextTokenBudget_ResponseWithin2100Tokens(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 11. /v1/ask integration tests
+// 13. /v1/ask integration tests
 // -----------------------------------------------------------------------
 
 // TestIntegrationAsk_PriceIntent_Returns200WithIntent verifies that a price-intent
@@ -980,7 +1027,7 @@ func TestIntegrationAsk_EmptyQuery_Returns400(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 12. /v1/context?format=markdown integration tests
+// 14. /v1/context?format=markdown integration tests
 // -----------------------------------------------------------------------
 
 // TestIntegrationContextMarkdown_Returns200WithMarkdownContentType verifies
@@ -1033,7 +1080,7 @@ func TestIntegrationContextMarkdown_ContainsMarkdownTable(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 13. Discovery endpoint integration tests
+// 15. Discovery endpoint integration tests
 // -----------------------------------------------------------------------
 
 // TestIntegrationDiscovery_OpenAPI_Returns200WithCorrectContentType verifies

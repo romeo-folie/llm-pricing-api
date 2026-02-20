@@ -37,7 +37,7 @@ export default function ModelCard({ model }: ModelCardProps) {
 
   function openModal() {
     const params = new URLSearchParams(searchParams.toString())
-    params.set("model", model.id)
+    params.set("model", model.slug)
     router.push(`?${params.toString()}`, { scroll: false })
   }
 

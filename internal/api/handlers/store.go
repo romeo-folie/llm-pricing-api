@@ -33,6 +33,10 @@ type Store interface {
 	// Returns ErrNotFound when no row matches.
 	GetModel(ctx context.Context, id int) (ModelRow, error)
 
+	// GetModelBySlug returns a single model by its URL slug.
+	// Returns ErrNotFound when no row matches.
+	GetModelBySlug(ctx context.Context, slug string) (ModelRow, error)
+
 	// ListProviders returns all distinct providers with their model counts.
 	ListProviders(ctx context.Context) ([]ProviderRow, error)
 
@@ -419,6 +423,53 @@ func (s *pgxStore) GetModel(ctx context.Context, id int) (ModelRow, error) {
 	history, err := s.GetPriceHistory(ctx, r.ID)
 	if err != nil {
 		return ModelRow{}, fmt.Errorf("get model history %d: %w", id, err)
+	}
+	r.Meta = api.ComputeTrustMeta(history)
+	return r, nil
+}
+
+// GetModelBySlug returns a single model by its URL slug.
+func (s *pgxStore) GetModelBySlug(ctx context.Context, slug string) (ModelRow, error) {
+	sql := `
+		SELECT
+			m.id,
+			m.provider,
+			m.name,
+			m.slug,
+			m.modality,
+			m.context_window,
+			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
+			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
+			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			COALESCE(src.name, '')                        AS source,
+			p.underlying_provider
+		FROM models m
+		LEFT JOIN LATERAL (
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id, underlying_provider
+			FROM prices
+			WHERE model_id = m.id
+			ORDER BY confirmed_at DESC
+			LIMIT 1
+		) p ON true
+		LEFT JOIN sources src ON src.id = p.source_id
+		WHERE m.slug = $1
+	`
+	var r ModelRow
+	err := s.db.QueryRow(ctx, sql, slug).Scan(
+		&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
+		&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
+		&r.ConfirmedAt, &r.Source, &r.UnderlyingProvider,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ModelRow{}, ErrNotFound
+		}
+		return ModelRow{}, fmt.Errorf("get model by slug %q: %w", slug, err)
+	}
+
+	history, err := s.GetPriceHistory(ctx, r.ID)
+	if err != nil {
+		return ModelRow{}, fmt.Errorf("get model history for slug %q: %w", slug, err)
 	}
 	r.Meta = api.ComputeTrustMeta(history)
 	return r, nil

@@ -1,37 +1,106 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { getModel, getModelHistory } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
+import { formatPrice, formatContext, formatSourceName } from "@/lib/format"
+import PriceHistoryChart from "@/components/model/PriceHistoryChart"
 
 export const dynamic = "force-dynamic"
-import PriceHistoryChart from "@/components/model/PriceHistoryChart"
-import { formatPrice, formatContext, formatSourceName } from "@/lib/format"
 
 interface PageProps {
-  params: Promise<{ id: string }>
+  params: Promise<{ slug: string }>
 }
 
+// ─── SEO keyword generation ───────────────────────────────────────────────────
+// Builds title, description, and keyword list for a model page, covering the
+// full range of search intents: per-token, per-1k, per-million, "how much does
+// X cost", provider+model combos, and comparison prompts.
+
+function buildModelSeo(model: {
+  name: string
+  provider: string
+  slug: string
+  input_price_per_m: number
+  output_price_per_m: number
+}) {
+  const inputFmt  = formatPrice(model.input_price_per_m)
+  const outputFmt = formatPrice(model.output_price_per_m)
+  // Cost per 1 000 tokens — the unit developers most commonly search for
+  const inputPer1k  = (model.input_price_per_m  / 1000).toFixed(6).replace(/\.?0+$/, "")
+  const outputPer1k = (model.output_price_per_m / 1000).toFixed(6).replace(/\.?0+$/, "")
+
+  const title = `${model.name} Pricing — ${inputFmt}/1M input tokens | LLMRates`
+
+  const description =
+    `${model.name} API pricing: ${inputFmt} per 1M input tokens, ` +
+    `${outputFmt} per 1M output tokens ($${inputPer1k}/1k input, $${outputPer1k}/1k output). ` +
+    `Compare ${model.provider} model costs, view full price history, and track real-time price changes.`
+
+  const keywords = [
+    `${model.name} pricing`,
+    `${model.name} api price`,
+    `${model.name} cost`,
+    `${model.name} cost per token`,
+    `${model.name} cost per 1000 tokens`,
+    `${model.name} price per million tokens`,
+    `${model.name} api cost`,
+    `${model.name} token price`,
+    `how much does ${model.name} cost`,
+    `${model.name} api pricing`,
+    `${model.provider} ${model.name} pricing`,
+    `${model.provider} ${model.name} cost`,
+    `${model.name} input output price`,
+  ].join(", ")
+
+  return { title, description, keywords }
+}
+
+// ─── Metadata ─────────────────────────────────────────────────────────────────
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { id } = await params
-  const model = await getModel(id).catch(() => null)
+  const { slug } = await params
+  // Numeric IDs get a redirect in the page component; return minimal metadata here
+  if (/^\d+$/.test(slug)) return { title: "Model", robots: { index: false, follow: true } }
+  const model = await getModel(slug).catch(() => null)
   if (!model) return { title: "Model Not Found" }
-  const desc = `${model.name} API pricing by ${model.provider}: $${model.input_price_per_m}/1M input tokens, $${model.output_price_per_m}/1M output tokens. View price history, compare costs, and track changes.`
+
+  const { title, description, keywords } = buildModelSeo(model)
+
   return {
-    title: `${model.name} Pricing — API Cost per Token`,
-    description: desc,
-    alternates: { canonical: `/models/${id}` },
+    title,
+    description,
+    keywords,
+    alternates: { canonical: `/models/${model.slug}` },
     openGraph: {
       title: `${model.name} API Pricing — Token Cost & Price History`,
-      description: desc,
+      description,
     },
   }
 }
 
+// ─── Page ──────────────────────────────────────────────────────────────────────
+
 export default async function ModelDetailPage({ params }: PageProps) {
-  const { id } = await params
-  const model = await getModel(id).catch(() => null)
+  const { slug } = await params
+
+  // Legacy numeric-ID URLs (e.g. /models/42) → 308 permanent redirect to slug.
+  // Only getModel() is wrapped; permanentRedirect() throws a Next.js internal
+  // error that must propagate unmodified.
+  if (/^\d+$/.test(slug)) {
+    let model: Awaited<ReturnType<typeof getModel>> | null = null
+    try {
+      model = await getModel(slug)
+    } catch {
+      notFound()
+    }
+    permanentRedirect(`/models/${model!.slug}`)
+  }
+
+  const model = await getModel(slug).catch(() => null)
   if (!model) notFound()
-  const history = await getModelHistory(id).catch(() => [])
+
+  // Use numeric model.id for the history endpoint (integer-only backend route)
+  const history = await getModelHistory(model.id).catch(() => [])
 
   const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 
@@ -66,7 +135,7 @@ export default async function ModelDetailPage({ params }: PageProps) {
         "@type": "ListItem",
         position: 2,
         name: model.name,
-        item: `${SITE_URL}/models/${id}`,
+        item: `${SITE_URL}/models/${model.slug}`,
       },
     ],
   }
@@ -98,17 +167,19 @@ export default async function ModelDetailPage({ params }: PageProps) {
           {model.name}
         </h1>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "24px" }}>
-          <span
+          <a
+            href={`/providers/${encodeURIComponent(model.provider)}`}
             className="font-outfit text-xs"
             style={{
               padding: "2px 8px",
               border: "1px solid var(--blueLt)",
               color: "var(--blue)",
               backgroundColor: "var(--blueLt)",
+              textDecoration: "none",
             }}
           >
             {model.provider}
-          </span>
+          </a>
           <span
             className="font-outfit text-xs"
             style={{

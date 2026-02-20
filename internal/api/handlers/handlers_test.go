@@ -25,6 +25,7 @@ import (
 type mockStore struct {
 	listModels            func(ctx context.Context, filter handlers.ListModelsFilter) ([]handlers.ModelRow, int, error)
 	getModel              func(ctx context.Context, id int) (handlers.ModelRow, error)
+	getModelBySlug        func(ctx context.Context, slug string) (handlers.ModelRow, error)
 	listProviders         func(ctx context.Context) ([]handlers.ProviderRow, error)
 	compareModels         func(ctx context.Context, ids []int) ([]handlers.ModelRow, error)
 	listChanges           func(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, int, error)
@@ -47,6 +48,13 @@ func (m *mockStore) ListModels(ctx context.Context, filter handlers.ListModelsFi
 func (m *mockStore) GetModel(ctx context.Context, id int) (handlers.ModelRow, error) {
 	if m.getModel != nil {
 		return m.getModel(ctx, id)
+	}
+	return handlers.ModelRow{}, handlers.ErrNotFound
+}
+
+func (m *mockStore) GetModelBySlug(ctx context.Context, slug string) (handlers.ModelRow, error) {
+	if m.getModelBySlug != nil {
+		return m.getModelBySlug(ctx, slug)
 	}
 	return handlers.ModelRow{}, handlers.ErrNotFound
 }
@@ -423,21 +431,96 @@ func TestGetModel_NotFound_Returns404(t *testing.T) {
 	}
 }
 
-func TestGetModel_InvalidID_Returns400(t *testing.T) {
+// Since the slug-routing change, non-integer and zero params are treated as
+// slug lookups — not rejected with 400. The following tests reflect the new
+// behaviour and the slug tests below cover success/not-found paths.
+
+func TestGetModel_NonIntegerParam_RoutesToSlugLookup(t *testing.T) {
+	// "abc" is not a positive integer → GetModelBySlug("abc") is called.
+	// Default mock returns ErrNotFound → expect 404, not 400.
 	app := newApp(&mockStore{})
 
 	status, _ := get(t, app, "/v1/models/abc")
-	if status != fiber.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", status)
+	if status != fiber.StatusNotFound {
+		t.Fatalf("expected 404 (slug not found), got %d", status)
 	}
 }
 
-func TestGetModel_ZeroID_Returns400(t *testing.T) {
+func TestGetModel_ZeroParam_RoutesToSlugLookup(t *testing.T) {
+	// "0" parses as integer 0, which is not > 0, so falls through to slug lookup.
+	// Default mock returns ErrNotFound → expect 404, not 400.
 	app := newApp(&mockStore{})
 
 	status, _ := get(t, app, "/v1/models/0")
-	if status != fiber.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", status)
+	if status != fiber.StatusNotFound {
+		t.Fatalf("expected 404 (slug not found), got %d", status)
+	}
+}
+
+func TestGetModel_BySlug_OK(t *testing.T) {
+	const slug = "gpt-4o"
+	store := &mockStore{
+		getModelBySlug: func(_ context.Context, s string) (handlers.ModelRow, error) {
+			if s == slug {
+				m := sampleModel(42)
+				m.Slug = slug
+				return m, nil
+			}
+			return handlers.ModelRow{}, handlers.ErrNotFound
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/models/"+slug)
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Slug string `json:"slug"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.Slug != slug {
+		t.Errorf("expected slug=%q, got %q", slug, envelope.Data.Slug)
+	}
+}
+
+func TestGetModel_BySlug_NotFound(t *testing.T) {
+	app := newApp(&mockStore{})
+
+	status, _ := get(t, app, "/v1/models/nonexistent-model")
+	if status != fiber.StatusNotFound {
+		t.Fatalf("expected 404, got %d", status)
+	}
+}
+
+func TestGetModel_IntegerIDTakesPriorityOverSlug(t *testing.T) {
+	// A positive integer param must call GetModel (integer), not GetModelBySlug.
+	slugCalled := false
+	store := &mockStore{
+		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
+			if id == 7 {
+				return sampleModel(7), nil
+			}
+			return handlers.ModelRow{}, handlers.ErrNotFound
+		},
+		getModelBySlug: func(_ context.Context, _ string) (handlers.ModelRow, error) {
+			slugCalled = true
+			return handlers.ModelRow{}, handlers.ErrNotFound
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/models/7")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	if slugCalled {
+		t.Error("GetModelBySlug should not have been called for a positive integer param")
 	}
 }
 
@@ -1097,7 +1180,9 @@ func TestGetChangesSummary_EmptyResult_NullSafeArrays(t *testing.T) {
 func TestErrorShape_RFC7807(t *testing.T) {
 	app := newApp(&mockStore{})
 
-	status, body := get(t, app, "/v1/models/abc")
+	// Invalid query param on a free-tier endpoint is a guaranteed 400 that
+	// exercises the RFC 7807 error-shape path without depending on slug routing.
+	status, body := get(t, app, "/v1/models?min_context=abc")
 	if status != fiber.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", status)
 	}
