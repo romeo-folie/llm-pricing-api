@@ -74,6 +74,9 @@ func TestStreamChanges_Status200(t *testing.T) {
 	if err != nil && !isTimeoutError(err) {
 		t.Fatalf("app.Test: %v", err)
 	}
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if resp != nil && resp.StatusCode != fiber.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
@@ -94,6 +97,7 @@ func TestStreamChanges_ContentTypeHeader(t *testing.T) {
 		// streaming responses in test mode; skip gracefully.
 		t.Skip("response not available (stream timeout)")
 	}
+	defer resp.Body.Close()
 
 	ct := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "text/event-stream") {
@@ -114,6 +118,7 @@ func TestStreamChanges_SSEHeaders(t *testing.T) {
 	if resp == nil {
 		t.Skip("response not available (stream timeout)")
 	}
+	defer resp.Body.Close()
 
 	wantHeaders := map[string]string{
 		"Cache-Control":     "no-cache",
@@ -146,6 +151,7 @@ func TestStreamChanges_InvalidLastEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Errorf("expected 400, got %d", resp.StatusCode)
 	}
@@ -161,6 +167,7 @@ func TestStreamChanges_NegativeLastEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Errorf("expected 400, got %d", resp.StatusCode)
 	}
@@ -182,6 +189,7 @@ func TestStreamChanges_ConnectionLimit_FourthReturns429(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusTooManyRequests {
 		t.Errorf("expected 429, got %d", resp.StatusCode)
 	}

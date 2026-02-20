@@ -45,13 +45,13 @@ func (m *mockWebhookStore) DeleteWebhook(ctx context.Context, id, apiKeyHash str
 
 // noopURLValidator bypasses SSRF DNS checks in unit tests that focus on
 // request handling rather than URL validation behaviour.
-var noopURLValidator = func(string) error { return nil }
+var noopURLValidator = func(_ context.Context, _ string) error { return nil }
 
 // newWebhookApp creates a minimal Fiber app wired with the webhook routes and
 // the given WebhookStore, pre-seeded with the tier/key_hash locals.
 // urlValidator is injected into the handler; pass noopURLValidator for tests
 // that do not need DNS resolution, or nil to use the real isWebhookURLSafe.
-func newWebhookApp(store handlers.WebhookStore, tier, keyHash string, urlValidator func(string) error) *fiber.App {
+func newWebhookApp(store handlers.WebhookStore, tier, keyHash string, urlValidator func(context.Context, string) error) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 
 	// Inject locals directly (simulates auth middleware in tests).

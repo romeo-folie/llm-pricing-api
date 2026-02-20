@@ -222,9 +222,11 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 		if hasLastEventID && rdb != nil {
 			// Use exclusive lower bound "(lastEventID" to skip the already-seen event.
 			minScore := fmt.Sprintf("(%d", lastEventID)
-			members, err := rdb.ZRangeByScore(reqCtx, sseReplayBufferKey, &redis.ZRangeBy{
-				Min: minScore,
-				Max: "+inf",
+			members, err := rdb.ZRangeArgs(reqCtx, redis.ZRangeArgs{
+				Key:     sseReplayBufferKey,
+				Start:   minScore,
+				Stop:    "+inf",
+				ByScore: true,
 			}).Result()
 			if err == nil {
 				for _, member := range members {

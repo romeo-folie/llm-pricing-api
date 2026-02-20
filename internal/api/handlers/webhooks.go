@@ -160,7 +160,7 @@ func resolveWebhookKey(hexKey string, log zerolog.Logger) ([]byte, error) {
 // any resolved address is a loopback, private, link-local, or unspecified IP.
 // This prevents SSRF attacks via DNS rebinding or direct private-IP targets.
 // Fails closed: if DNS resolution fails entirely, the URL is rejected.
-func isWebhookURLSafe(rawURL string) error {
+func isWebhookURLSafe(ctx context.Context, rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL")
@@ -169,7 +169,7 @@ func isWebhookURLSafe(rawURL string) error {
 	if host == "" {
 		return fmt.Errorf("missing hostname")
 	}
-	addrs, err := net.LookupHost(host)
+	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 	if err != nil || len(addrs) == 0 {
 		return fmt.Errorf("could not resolve hostname %q", host)
 	}
@@ -189,8 +189,8 @@ func isWebhookURLSafe(rawURL string) error {
 // WebhookHandler handles POST /v1/webhooks and DELETE /v1/webhooks/:id.
 type WebhookHandler struct {
 	store        WebhookStore
-	secretKey    []byte              // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
-	urlValidator func(string) error  // nil → uses isWebhookURLSafe; overridden in tests
+	secretKey    []byte                               // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
+	urlValidator func(context.Context, string) error  // nil → uses isWebhookURLSafe; overridden in tests
 }
 
 // WebhookHandlerExport is a test-visible alias that exposes the Store field so
@@ -205,7 +205,7 @@ type WebhookHandler struct {
 // A nil UrlValidator uses the real isWebhookURLSafe (DNS resolution required).
 type WebhookHandlerExport struct {
 	Store        WebhookStore
-	UrlValidator func(string) error
+	UrlValidator func(context.Context, string) error
 }
 
 // Create delegates to the internal WebhookHandler.Create.
@@ -246,7 +246,7 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	if validator == nil {
 		validator = isWebhookURLSafe
 	}
-	if err := validator(body.URL); err != nil {
+	if err := validator(c.Context(), body.URL); err != nil {
 		return api.NewBadRequest(fmt.Sprintf("url rejected: %s", err.Error()))
 	}
 

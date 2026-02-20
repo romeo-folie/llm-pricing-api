@@ -673,7 +673,6 @@ func (s *pgxStore) GetModelHistory(ctx context.Context, modelID int, filter Hist
 	if filter.To != nil {
 		where += fmt.Sprintf(" AND ph.confirmed_at <= $%d", argIdx)
 		args = append(args, *filter.To)
-		argIdx++
 	}
 
 	sql := fmt.Sprintf(`
@@ -767,7 +766,6 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 	if filter.MaxPriceInput != nil {
 		where += fmt.Sprintf(" AND COALESCE(p.input_cost_per_token, 0)::float8 <= $%d", argIdx)
 		args = append(args, *filter.MaxPriceInput)
-		argIdx++
 	}
 
 	sql := fmt.Sprintf(`

@@ -132,13 +132,13 @@ func buildContextMarkdown(items []contextModelItem) string {
 	sb.WriteString("| Model | Provider | Input $/1M | Output $/1M | Confidence |\n")
 	sb.WriteString("|-------|----------|-----------|-------------|------------|\n")
 	for _, item := range items {
-		sb.WriteString(fmt.Sprintf("| %s | %s | %.4f | %.4f | %s |\n",
+		fmt.Fprintf(&sb, "| %s | %s | %.4f | %.4f | %s |\n",
 			item.Slug,
 			item.Provider,
 			item.PriceInput*1_000_000,
 			item.PriceOutput*1_000_000,
 			item.Confidence,
-		))
+		)
 	}
 	return sb.String()
 }
