@@ -15,12 +15,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params
   const model = await getModel(id).catch(() => null)
   if (!model) return { title: "Model Not Found" }
-  const desc = `Current and historical pricing for ${model.name} by ${model.provider}. Input: ${formatPrice(model.input_price_per_m)}/1M tokens, Output: ${formatPrice(model.output_price_per_m)}/1M tokens.`
+  const desc = `${model.name} API pricing by ${model.provider}: $${model.input_price_per_m}/1M input tokens, $${model.output_price_per_m}/1M output tokens. View price history, compare costs, and track changes.`
   return {
-    title: `${model.name} Pricing`,
+    title: `${model.name} Pricing — API Cost per Token`,
     description: desc,
+    alternates: { canonical: `/models/${id}` },
     openGraph: {
-      title: `${model.name} — LLM Token Pricing`,
+      title: `${model.name} API Pricing — Token Cost & Price History`,
       description: desc,
     },
   }
@@ -31,6 +32,8 @@ export default async function ModelDetailPage({ params }: PageProps) {
   const model = await getModel(id).catch(() => null)
   if (!model) notFound()
   const history = await getModelHistory(id).catch(() => [])
+
+  const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -49,11 +52,34 @@ export default async function ModelDetailPage({ params }: PageProps) {
     },
   }
 
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Models",
+        item: `${SITE_URL}/models`,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: model.name,
+        item: `${SITE_URL}/models/${id}`,
+      },
+    ],
+  }
+
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbJsonLd) }}
       />
 
       <main

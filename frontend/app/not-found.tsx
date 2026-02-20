@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 
 export const metadata: Metadata = {
   title: "404 — Page Not Found | LLMRates",
+  robots: { index: false, follow: true },
 }
 
 export default function NotFound() {

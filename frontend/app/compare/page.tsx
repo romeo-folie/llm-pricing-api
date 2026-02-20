@@ -7,13 +7,14 @@ import CompareClient from "@/components/compare/CompareClient"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
-  title: "Compare Models",
+  title: "Compare AI Model Pricing — Side-by-Side LLM Cost Comparison",
   description:
-    "Side-by-side LLM pricing comparison. Compare input/output token prices, context windows, and confidence across providers.",
+    "Compare GPT-4, Claude, Gemini, and Mistral pricing side by side. See input/output token costs, context windows, and confidence scores across AI providers.",
+  alternates: { canonical: "/compare" },
   openGraph: {
-    title: "Compare LLM Models",
+    title: "Compare AI Model Pricing — LLM Cost Comparison Tool",
     description:
-      "Side-by-side comparison of LLM pricing, context windows, and confidence across providers.",
+      "Side-by-side AI model pricing comparison. Compare token costs, context windows, and confidence across providers.",
   },
 }
 
