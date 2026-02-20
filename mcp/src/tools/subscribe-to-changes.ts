@@ -3,23 +3,40 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ApiClient, ApiError } from "../api-client.js";
 import { formatMcpError, validationError } from "../errors.js";
 
-/** Returns true for RFC 1918, loopback, and link-local addresses. Fails closed on resolution errors. */
+/** Returns true for RFC 1918, loopback, and link-local addresses (IPv4 and IPv6). Fails closed on resolution errors. */
 async function isPrivateOrLoopback(hostname: string): Promise<boolean> {
+  const isPrivateV4 = (ip: string): boolean => {
+    const parts = ip.split(".").map(Number);
+    return (
+      parts[0] === 127 || // 127.0.0.0/8 — full loopback range
+      parts[0] === 10 || // 10.0.0.0/8
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || // 172.16.0.0/12
+      (parts[0] === 192 && parts[1] === 168) || // 192.168.0.0/16
+      ip.startsWith("169.254.") // 169.254.0.0/16 link-local
+    );
+  };
+  const isPrivateV6 = (ip: string): boolean => {
+    const lower = ip.toLowerCase();
+    return (
+      lower === "::1" || // IPv6 loopback
+      lower.startsWith("fc") || // fc00::/7 ULA
+      lower.startsWith("fd") || // fd00::/8 ULA
+      lower.startsWith("fe80:") // fe80::/10 link-local
+    );
+  };
   try {
     const resolver = new Resolver();
-    const addresses = await resolver.resolve4(hostname);
-    return addresses.some((ip) => {
-      const parts = ip.split(".").map(Number);
-      return (
-        ip === "127.0.0.1" ||
-        parts[0] === 10 ||
-        (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-        (parts[0] === 192 && parts[1] === 168) ||
-        ip.startsWith("169.254.")
-      );
-    });
+    const [v4Result, v6Result] = await Promise.allSettled([
+      resolver.resolve4(hostname),
+      resolver.resolve6(hostname),
+    ]);
+    const v4addrs = v4Result.status === "fulfilled" ? v4Result.value : [];
+    const v6addrs = v6Result.status === "fulfilled" ? v6Result.value : [];
+    // Fail closed: unresolvable on both protocols is rejected
+    if (v4addrs.length === 0 && v6addrs.length === 0) return true;
+    return v4addrs.some(isPrivateV4) || v6addrs.some(isPrivateV6);
   } catch {
-    return true; // fail closed: unresolvable or NXDOMAIN hosts are rejected
+    return true; // fail closed
   }
 }
 

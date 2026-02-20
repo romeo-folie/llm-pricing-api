@@ -14,6 +14,10 @@ async function main(): Promise<void> {
   const portArg =
     args.find((a) => a.startsWith("--port="))?.split("=")[1] ?? "3001";
   const port = parseInt(portArg, 10);
+  if (transportArg === "http" && (isNaN(port) || port < 1 || port > 65535)) {
+    console.error(`Invalid port: "${portArg}". Must be an integer between 1 and 65535.`);
+    process.exit(1);
+  }
 
   const apiKey = process.env.LLMRATES_API_KEY;
   if (!apiKey) {
@@ -44,7 +48,7 @@ async function main(): Promise<void> {
       const httpServer = createHttpServer((req, res) => {
         transport.handleRequest(req, res).catch((err) => {
           console.error("HTTP request error:", err instanceof Error ? err.message : err);
-          res.writeHead(500).end();
+          if (!res.headersSent) res.writeHead(500).end();
         });
       });
       httpServer.listen(port, () => {
