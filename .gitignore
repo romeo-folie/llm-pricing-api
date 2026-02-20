@@ -35,3 +35,6 @@ Thumbs.db
 .claude/epics/
 .vercel
 .env*.local
+
+# Worktree context bootstrap — session-specific, never committed
+summary.md

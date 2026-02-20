@@ -219,6 +219,18 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
 
 3. **Keep `summary.md` current.** After each issue is closed, update the status table row for that issue (`done`) and set the new **Next action** line to the next open task. The file must always reflect ground truth — a stale summary defeats its purpose.
 
+4. **`summary.md` is never committed.** It is a session-specific context file, not source code. It is listed in `.gitignore` (`summary.md`). Never stage or commit it.
+
+5. **Copy gitignored runtime files from the main worktree.** A fresh `git worktree add` produces a clean checkout — gitignored files (`.env`, any `.env.*` variants, local config, etc.) are not copied automatically. After the worktree is created and before running any server or tests, copy them over:
+
+   ```bash
+   # From the main repo root — adjust the source path to wherever your secrets live
+   cp .env ../epic-<name>/.env
+   # Repeat for any other gitignored runtime files the code depends on
+   ```
+
+   If the worktree build or tests fail with missing environment variables, this is almost always the cause. Check `.env.example` for the full list of required keys.
+
 ### Issue Traceability
 
 All commits and pull requests **must** reference the GitHub Issue they implement. Keep implementation in sync with CCPM issues at all times.
@@ -287,7 +299,8 @@ Before creating any commit, the following must all pass:
 
 1. **All tests green**: `go test ./...` exits with zero failures.
 2. **Build succeeds**: `go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors. Always build into `bin/` — never `go build ./...` as it drops binaries into the project root.
-3. **Code review clean**: `/code-reviewer` returns no actionable findings (see Code Review Gate above).
+3. **Lint clean**: `golangci-lint run ./...` returns no errors. Install once with `brew install golangci-lint`; config is in `.golangci.yml`.
+4. **Code review clean**: `/code-reviewer` returns no actionable findings (see Code Review Gate above).
 
 Do not commit if any of the above fail.
 
