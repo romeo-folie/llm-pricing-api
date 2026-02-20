@@ -197,11 +197,30 @@ func parseLogLevel(s string) zerolog.Level {
 
 // requestLogger returns a Fiber middleware that logs each completed request
 // with zerolog, injecting OTel trace_id and span_id when a span is active.
+//
+// Because Fiber's ErrorHandler runs after all middleware has unwound,
+// c.Response().StatusCode() still returns the default 200 when an error is
+// being returned. We therefore derive the status from the error itself.
 func requestLogger(base zerolog.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
 		duration := time.Since(start)
+
+		// Derive the real status code: when an error is present the
+		// ErrorHandler has not yet written the response, so read the
+		// intended status directly from the error type.
+		status := c.Response().StatusCode()
+		if err != nil {
+			switch e := err.(type) {
+			case *api.ProblemDetail:
+				status = e.Status
+			case *fiber.Error:
+				status = e.Code
+			default:
+				status = fiber.StatusInternalServerError
+			}
+		}
 
 		l := logger.FromContext(c.Context(), base)
 		event := l.Info()
@@ -211,7 +230,7 @@ func requestLogger(base zerolog.Logger) fiber.Handler {
 		event.
 			Str("method", c.Method()).
 			Str("path", c.Path()).
-			Int("status", c.Response().StatusCode()).
+			Int("status", status).
 			Dur("latency_ms", duration).
 			Msg("request")
 
