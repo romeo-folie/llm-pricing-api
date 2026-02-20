@@ -8,7 +8,7 @@ import PriceHistoryChart from "@/components/model/PriceHistoryChart"
 export const dynamic = "force-dynamic"
 
 interface PageProps {
-  params: Promise<{ slug: string }>
+  params: Promise<{ slug: string[] }>
 }
 
 // ─── SEO keyword generation ───────────────────────────────────────────────────
@@ -58,7 +58,8 @@ function buildModelSeo(model: {
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = await params
+  const { slug: slugParts } = await params
+  const slug = slugParts.join("/")
   // Numeric IDs get a redirect in the page component; return minimal metadata here
   if (/^\d+$/.test(slug)) return { title: "Model", robots: { index: false, follow: true } }
   const model = await getModel(slug).catch(() => null)
@@ -81,7 +82,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function ModelDetailPage({ params }: PageProps) {
-  const { slug } = await params
+  const { slug: slugParts } = await params
+  const slug = slugParts.join("/")
 
   // Legacy numeric-ID URLs (e.g. /models/42) → 308 permanent redirect to slug.
   // Only getModel() is wrapped; permanentRedirect() throws a Next.js internal

@@ -245,7 +245,7 @@ export default function ModelDetailModal() {
                 Add to Compare
               </button>
               <a
-                href={`/models/${encodeURIComponent(data.model.slug)}`}
+                href={`/models/${data.model.slug}`}
                 className="font-outfit text-sm"
                 style={{
                   padding: "8px 16px",

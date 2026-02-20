@@ -63,7 +63,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const models = allModels.slice(0, 1000)
 
     modelRoutes = models.map((model) => ({
-      url: `${SITE_URL}/models/${encodeURIComponent(model.slug)}`,
+      url: `${SITE_URL}/models/${model.slug}`,
       lastModified: model.updated_at ? new Date(model.updated_at) : undefined,
       changeFrequency: "daily" as const,
       priority: 0.6,
@@ -77,7 +77,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         const a = topModels[i]
         const b = topModels[j]
         compareRoutes.push({
-          url: `${SITE_URL}/compare/${encodeURIComponent(a.slug)}-vs-${encodeURIComponent(b.slug)}`,
+          url: `${SITE_URL}/compare/${a.slug}-vs-${b.slug}`,
           lastModified: now,
           changeFrequency: "daily" as const,
           priority: 0.65,

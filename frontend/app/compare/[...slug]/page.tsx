@@ -8,7 +8,7 @@ import type { Model } from "@/lib/api"
 export const dynamic = "force-dynamic"
 
 interface PageProps {
-  params: Promise<{ slug: string }>
+  params: Promise<{ slug: string[] }>
 }
 
 // ─── Slug parsing ──────────────────────────────────────────────────────────────
@@ -56,7 +56,8 @@ function buildCompareSeo(a: Model, b: Model) {
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = await params
+  const { slug: slugParts } = await params
+  const slug = slugParts.join("/")
   const slugs = parseSlugs(slug)
   if (!slugs) return { title: "Compare Models" }
 
@@ -79,7 +80,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function CompareStaticPage({ params }: PageProps) {
-  const { slug } = await params
+  const { slug: slugParts } = await params
+  const slug = slugParts.join("/")
   const slugs = parseSlugs(slug)
   if (!slugs) notFound()
 
