@@ -463,6 +463,59 @@ The system has six layers, built in this order:
 
 When reading `.docx` files, use the Read tool directly (it supports binary/image reading) rather than falling back to a Python extraction script. Only use a Python-based extraction approach if the Read tool fails to return usable content.
 
+## Post-Deploy Debugging
+
+When a deployment fails, check all three hosting platforms in parallel. Use `/debug-deploy` to run all checks automatically, or run them manually:
+
+### Vercel (Frontend)
+
+```bash
+# List recent deployments — look for "● Error" status
+vercel ls
+
+# Inspect a specific failed deployment
+vercel inspect <deployment-url>
+
+# Try reproducing locally
+cd frontend && npm run build
+```
+
+Common issues: Turbopack panics (use `--webpack` flag), missing env vars, dependency resolution failures.
+
+### Railway (Go API + Worker)
+
+```bash
+# Check build logs for each service
+# Use the Railway MCP tools: get-logs with service="llm-pricing-api" or "llm-pricing-worker"
+# Or via CLI:
+railway logs --build --service llm-pricing-api
+railway logs --build --service llm-pricing-worker
+
+# Check deploy (runtime) logs
+railway logs --service llm-pricing-api
+railway logs --service llm-pricing-worker
+```
+
+Common issues: Go build failures, missing migrations, health check timeouts, env var misconfiguration.
+
+### GitHub Actions (CI)
+
+```bash
+# List recent runs
+gh run list --limit 5
+
+# View a failed run's logs
+gh run view <run-id> --log-failed
+```
+
+Common issues: Lint failures, test failures, build failures.
+
+### Triage Order
+
+1. **GitHub Actions first** — if CI failed, the code itself is broken. Fix before investigating platform issues.
+2. **Railway second** — API/worker builds use the Go toolchain directly; failures here are usually missing deps or env vars.
+3. **Vercel last** — frontend builds are isolated; Turbopack bugs or Next.js version issues are the usual suspects.
+
 ## Build & Run Commands
 
 ```bash
