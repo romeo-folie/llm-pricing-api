@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 
 	"llm-pricing-api/internal/api"
 )
@@ -117,6 +118,7 @@ func (h *Handlers) GetModel(c *fiber.Ctx) error {
 		if err == ErrNotFound {
 			return api.NewNotFound("model not found")
 		}
+		log.Error().Err(err).Int("model_id", id).Msg("get model failed")
 		return api.NewInternalError("failed to get model")
 	}
 

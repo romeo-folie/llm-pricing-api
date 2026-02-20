@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"llm-pricing-api/internal/scraper"
 )
@@ -98,7 +99,7 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 		buf := make([]byte, 512)
 		n, _ := resp.Body.Read(buf)
 		_, _ = io.Copy(io.Discard, resp.Body)
-		slog.Warn("huggingface: unexpected status", "status", resp.StatusCode, "body_excerpt", string(buf[:n]))
+		log.Warn().Int("status", resp.StatusCode).Str("body_excerpt", string(buf[:n])).Msg("huggingface: unexpected status")
 		return nil, fmt.Errorf("huggingface: unexpected status %d", resp.StatusCode)
 	}
 
@@ -113,19 +114,19 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 	for _, m := range raw {
 		// Defensive re-check: API filter should guarantee text-generation, but validate locally.
 		if m.PipelineTag != "text-generation" {
-			slog.Debug("huggingface: skipping model with unexpected pipeline_tag", "id", m.ID, "tag", m.PipelineTag)
+			log.Debug().Str("id", m.ID).Str("tag", m.PipelineTag).Msg("huggingface: skipping model with unexpected pipeline_tag")
 			continue
 		}
 
 		for hfProviderID, entry := range m.InferenceProviderMapping {
 			if entry.Status != "live" {
-				slog.Debug("huggingface: skipping non-live provider", "id", m.ID, "provider", hfProviderID, "status", entry.Status)
+				log.Debug().Str("id", m.ID).Str("provider", hfProviderID).Str("status", entry.Status).Msg("huggingface: skipping non-live provider")
 				continue
 			}
 
 			const epsilon = 1e-12
 			if entry.Pricing.Input <= epsilon || entry.Pricing.Output <= epsilon {
-				slog.Debug("huggingface: skipping model with zero or missing prices", "id", m.ID, "provider", hfProviderID)
+				log.Debug().Str("id", m.ID).Str("provider", hfProviderID).Msg("huggingface: skipping model with zero or missing prices")
 				continue
 			}
 
