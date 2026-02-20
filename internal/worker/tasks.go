@@ -8,11 +8,13 @@ import "llm-pricing-api/internal/webhooks"
 //
 // OpenAI, Anthropic, Google, Mistral, and Amazon provider HTML scrapers
 // were removed: their pricing pages are JavaScript SPAs and cannot be
-// reliably scraped with a plain HTTP GET. OpenRouter and LiteLLM cover
-// the same models via machine-readable JSON endpoints.
+// reliably scraped with a plain HTTP GET. OpenRouter, LiteLLM, and
+// HuggingFace Inference Providers cover the same models via
+// machine-readable JSON endpoints.
 const (
-	TaskOpenRouterScrape = "scrape:openrouter"
-	TaskLiteLLMScrape    = "scrape:litellm"
+	TaskOpenRouterScrape  = "scrape:openrouter"
+	TaskLiteLLMScrape     = "scrape:litellm"
+	TaskHuggingFaceScrape = "scrape:huggingface"
 )
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks

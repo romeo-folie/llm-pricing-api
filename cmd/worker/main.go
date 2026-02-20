@@ -115,6 +115,7 @@ func main() {
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)
+	mux.HandleFunc(worker.TaskHuggingFaceScrape, h.HandleHuggingFaceScrape)
 
 	// WebhookDeliveryHandler holds the AES key so it can decrypt secrets at
 	// task execution time — secrets are stored encrypted at rest.
@@ -129,6 +130,9 @@ func main() {
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
 		log.Fatal().Err(err).Msg("scheduler: register litellm")
+	}
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
+		log.Fatal().Err(err).Msg("scheduler: register huggingface")
 	}
 
 	if err := scheduler.Start(); err != nil {
@@ -151,6 +155,9 @@ func main() {
 	}
 	if _, err := client.Enqueue(asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
 		log.Warn().Err(err).Msg("initial litellm scrape enqueue failed")
+	}
+	if _, err := client.Enqueue(asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
+		log.Warn().Err(err).Msg("initial huggingface scrape enqueue failed")
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
 
