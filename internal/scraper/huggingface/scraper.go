@@ -40,17 +40,67 @@ type Scraper struct {
 
 // New returns a Scraper using the provided HTTP client.
 // If client is nil, a default client with a 60s timeout and SSRF prevention
-// (no redirects to RFC-1918 or loopback addresses) is used.
+// (RFC-1918 / loopback / link-local addresses blocked at the Transport and
+// CheckRedirect layers) is used.
 func New(client *http.Client) *Scraper {
 	if client == nil {
 		client = &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout:   60 * time.Second,
+			Transport: newSSRFSafeTransport(),
+			// CheckRedirect provides a fast, early-exit block for redirect URLs
+			// that point to private IPs — defense-in-depth alongside DialContext.
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return checkRedirectHost(req.Context(), req.URL.Hostname())
 			},
 		}
 	}
 	return &Scraper{client: client, baseURL: defaultBaseURL}
+}
+
+// newSSRFSafeTransport returns an http.Transport whose DialContext resolves the
+// target hostname once, validates all resolved IPs against the private/loopback
+// blocklist, and then connects directly to the first safe IP — eliminating the
+// DNS rebinding window that exists when resolution and TCP connect are separate
+// operations (SSRF prevention per CLAUDE.md).
+func newSSRFSafeTransport() *http.Transport {
+	base := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("huggingface: split addr %q: %w", addr, err)
+			}
+			resolved, err := net.DefaultResolver.LookupHost(ctx, host)
+			if err != nil {
+				return nil, fmt.Errorf("huggingface: resolve %q: %w", host, err)
+			}
+			if err := checkIPs(resolved); err != nil {
+				return nil, err
+			}
+			// Connect directly to the first resolved IP to prevent re-resolution
+			// (and the associated rebinding window) inside the dialer.
+			return base.DialContext(ctx, network, net.JoinHostPort(resolved[0], port))
+		},
+	}
+}
+
+// checkIPs returns an error if any address in addrs is a private, loopback, or
+// link-local IP.  It is the shared inner check used by both checkRedirectHost
+// and newSSRFSafeTransport's DialContext.
+func checkIPs(addrs []string) error {
+	for _, a := range addrs {
+		ip := net.ParseIP(a)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+			return fmt.Errorf("huggingface: address %s blocked (SSRF prevention)", ip)
+		}
+	}
+	return nil
 }
 
 // checkRedirectHost blocks redirects to private IP ranges and loopback.
@@ -63,19 +113,10 @@ func checkRedirectHost(ctx context.Context, host string) error {
 	}
 	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 	if err != nil {
-		// If we can't resolve it, block it.
+		// If we can't resolve it, block it (fail-closed).
 		return fmt.Errorf("huggingface: redirect host %q unresolvable: %w", host, err)
 	}
-	for _, addr := range addrs {
-		ip := net.ParseIP(addr)
-		if ip == nil {
-			continue
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
-			return fmt.Errorf("huggingface: redirect to private/loopback address %s blocked (SSRF prevention)", ip)
-		}
-	}
-	return nil
+	return checkIPs(addrs)
 }
 
 // hfModel is one element of the HuggingFace /api/models JSON array.
@@ -144,7 +185,7 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 				continue
 			}
 
-			const epsilon = 1e-15
+			const epsilon = 1e-12
 			if entry.Pricing.Input <= epsilon || entry.Pricing.Output <= epsilon {
 				slog.Debug("huggingface: skipping model with zero or missing prices", "id", m.ID, "provider", hfProviderID)
 				continue

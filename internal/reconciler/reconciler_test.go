@@ -768,6 +768,44 @@ func TestReconcile_NonIndependentSources_CollapsesToSingleSource(t *testing.T) {
 	}
 }
 
+func TestReconcile_NonIndependentSources_SecondCycle_Publishes(t *testing.T) {
+	// Cycle 1: HF + OpenRouter (both underlying="together-ai") collapse to single-source →
+	//          goes into pending, no publish.
+	// Cycle 2: same diffs again → fetchCount reaches 2 → auto-publish.
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	diffs := []diff.PriceDiff{
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "huggingface_inference_providers",
+			UnderlyingProvider: "together-ai",
+		},
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "openrouter",
+			UnderlyingProvider: "together-ai",
+		},
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("cycle 1 Reconcile: %v", err)
+	}
+	if len(s.published) != 0 {
+		t.Errorf("cycle 1: want 0 publishes (pending), got %d", len(s.published))
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("cycle 2 Reconcile: %v", err)
+	}
+	if len(s.published) != 1 {
+		t.Errorf("cycle 2: want 1 publish (confirmed), got %d", len(s.published))
+	}
+}
+
 func TestReconcile_IndependentSources_ProcessesAsMultiSource(t *testing.T) {
 	// HuggingFace (underlying="together-ai") + LiteLLM (underlying="" → effective="litellm")
 	// → different effective providers → truly independent → processMultiSource.

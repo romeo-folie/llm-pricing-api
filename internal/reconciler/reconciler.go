@@ -205,6 +205,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		}
 
 		if len(groupDiffs) >= 2 {
+			// Sort by source name for deterministic behaviour in both paths below.
+			// processMultiSource also sorts internally, but we sort here too so that
+			// groupDiffs[0] is stable when collapsing non-independent sources.
+			slices.SortFunc(groupDiffs, func(a, b diff.PriceDiff) int {
+				return cmp.Compare(a.Source, b.Source)
+			})
+
 			// Count distinct underlying infrastructure providers.
 			// If all diffs trace back to the same provider (e.g. HuggingFace + OpenRouter
 			// both reporting Together AI prices), treat as single-source — they are NOT
@@ -362,7 +369,11 @@ func (r *Reconciler) processSingleSource(
 	sourceIDs map[string]int,
 	activeWebhooks []WebhookRow,
 ) {
-	key := slug + ":" + string(field) + ":" + d.Source
+	// Use effectiveProvider so the key is stable across cycles even when different
+	// aggregators (e.g. HuggingFace vs OpenRouter) collapse to the same underlying
+	// provider.  For direct sources (LiteLLM), effectiveProvider falls back to
+	// d.Source, so the key is unchanged from the old behaviour.
+	key := slug + ":" + string(field) + ":" + effectiveProvider(d)
 	sourceID := sourceIDs[d.Source]
 
 	r.mu.Lock()

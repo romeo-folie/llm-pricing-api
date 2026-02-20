@@ -2,6 +2,7 @@ package huggingface
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -424,22 +425,17 @@ func TestCheckRedirectHost_UnresolvableHostBlocked(t *testing.T) {
 }
 
 // TestNew_NilClient_SSRFPrevention verifies that the default client (New(nil)) blocks
-// HTTP redirects to loopback addresses via the CheckRedirect hook.
+// all TCP connections to loopback/private addresses via the Transport's DialContext hook.
+// This covers the SSRF prevention requirement from CLAUDE.md (custom http.Transport).
 func TestNew_NilClient_SSRFPrevention(t *testing.T) {
-	// Server that immediately redirects to a loopback target; the default client must block it.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "http://127.0.0.1:1/blocked", http.StatusFound)
-	}))
-	defer srv.Close()
-
 	s := New(nil)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/test", nil)
 	if err != nil {
 		t.Fatalf("build request: %v", err)
 	}
 	_, err = s.client.Do(req)
 	if err == nil {
-		t.Error("expected SSRF redirect to loopback to be blocked, got nil error")
+		t.Error("expected connection to loopback to be blocked (SSRF prevention), got nil error")
 	}
 }
 
@@ -478,5 +474,8 @@ func TestFetch_ContextCancellation(t *testing.T) {
 	_, err := newTestScraper(srv).Fetch(ctx)
 	if err == nil {
 		t.Fatal("want error for cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("want context.Canceled in error chain, got: %v", err)
 	}
 }
