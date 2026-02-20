@@ -14,28 +14,30 @@ const MaxPerPage = 200
 
 // modelResponse is the JSON shape for a single model item.
 type modelResponse struct {
-	ID            int           `json:"id"`
-	Provider      string        `json:"provider"`
-	Name          string        `json:"name"`
-	Slug          string        `json:"slug"`
-	Modality      string        `json:"modality"`
-	ContextWindow *int          `json:"context_window"`
-	PriceInput    float64       `json:"price_input"`
-	PriceOutput   float64       `json:"price_output"`
-	Meta          api.TrustMeta `json:"meta"`
+	ID                 int           `json:"id"`
+	Provider           string        `json:"provider"`
+	Name               string        `json:"name"`
+	Slug               string        `json:"slug"`
+	Modality           string        `json:"modality"`
+	ContextWindow      *int          `json:"context_window"`
+	PriceInput         float64       `json:"price_input"`
+	PriceOutput        float64       `json:"price_output"`
+	UnderlyingProvider *string       `json:"underlying_provider"`
+	Meta               api.TrustMeta `json:"meta"`
 }
 
 func modelToResponse(r ModelRow) modelResponse {
 	return modelResponse{
-		ID:            r.ID,
-		Provider:      r.Provider,
-		Name:          r.Name,
-		Slug:          r.Slug,
-		Modality:      r.Modality,
-		ContextWindow: r.ContextWindow,
-		PriceInput:    r.PriceInput,
-		PriceOutput:   r.PriceOutput,
-		Meta:          r.Meta,
+		ID:                 r.ID,
+		Provider:           r.Provider,
+		Name:               r.Name,
+		Slug:               r.Slug,
+		Modality:           r.Modality,
+		ContextWindow:      r.ContextWindow,
+		PriceInput:         r.PriceInput,
+		PriceOutput:        r.PriceOutput,
+		UnderlyingProvider: r.UnderlyingProvider,
+		Meta:               r.Meta,
 	}
 }
 

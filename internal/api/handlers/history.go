@@ -10,12 +10,15 @@ import (
 )
 
 // historyItemResponse is the JSON shape for one price_history record.
+// Field order must match HistoryRow exactly to enable the historyItemResponse(r)
+// direct type conversion below.
 type historyItemResponse struct {
 	InputCostPerToken  float64   `json:"input_cost_per_token"`
 	OutputCostPerToken float64   `json:"output_cost_per_token"`
 	Source             string    `json:"source"`
 	ConfirmedAt        time.Time `json:"confirmed_at"`
 	RecordedAt         time.Time `json:"recorded_at"`
+	UnderlyingProvider *string   `json:"underlying_provider"`
 }
 
 // GetModelHistory handles GET /v1/models/:id/history.
