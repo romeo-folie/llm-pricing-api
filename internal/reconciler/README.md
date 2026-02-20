@@ -43,7 +43,7 @@ Implementations must be safe for concurrent use.
 | `LookupModelID(ctx, slug)` | Resolve a model slug to its DB primary key |
 | `LookupModelProvider(ctx, id)` | Resolve a model primary key to its provider name (used for webhook payloads) |
 | `LookupCurrentPrice(ctx, modelID, sourceID)` | Fetch current input/output costs for the unchanged field |
-| `PublishPrice(ctx, modelID, sourceID, input, output, confidence)` | Transactionally insert into `price_history` and upsert `prices` |
+| `PublishPrice(ctx, modelID, sourceID, input, output, confidence, underlyingProvider)` | Transactionally insert into `price_history` and upsert `prices`; `underlyingProvider` is stored in both tables for provenance |
 | `FlagDiscrepancy(ctx, modelID, srcA, srcB, field, valA, valB, delta)` | Insert into `review_queue` (idempotent via `ON CONFLICT DO NOTHING`) |
 | `ListActiveWebhooks(ctx)` | Return all non-deleted `webhooks` rows (used by the webhook fan-out after publish) |
 
@@ -60,10 +60,31 @@ type WebhookRow struct {
 }
 ```
 
+### `effectiveProvider` helper (`reconciler.go`)
+
+```go
+func effectiveProvider(d diff.PriceDiff) string
+```
+
+Returns the infrastructure provider identity used for independence checking. For pass-through
+aggregators (HuggingFace Inference Providers, OpenRouter), returns `d.UnderlyingProvider`
+(e.g. `"together"`). For direct sources (LiteLLM), `UnderlyingProvider` is empty, so it falls
+back to `d.Source` (e.g. `"litellm"`).
+
+This function is the **sole independence gate**: two diffs with the same `effectiveProvider`
+for the same (slug, field) are not independent confirmations — even if they come from different
+aggregator sources (e.g. both HuggingFace and OpenRouter routing through Together AI). Such
+groups are collapsed to the single-source path and require 2 consecutive cycles to publish.
+
 ### `Reconciler` struct (`reconciler.go`)
 
-Holds a `Store` reference, an in-memory `pending` map (key: `slug+":"+field+":"+source`)
-that persists across `Reconcile` calls, and an optional `*asynq.Client` for webhook delivery.
+Holds a `Store` reference, an in-memory `pending` map
+(key: `slug+":"+field+":"+effectiveProvider(d)`) that persists across `Reconcile` calls,
+and an optional `*asynq.Client` for webhook delivery.
+
+> **Pending key note:** the key suffix is `effectiveProvider(d)` (not `d.Source`). This keeps
+> the 2-consecutive-fetch counter stable when collapsed groups alternate between aggregators
+> as the "winning" representative across cycles.
 
 **Constructors:**
 - `New(db *pgxpool.Pool) *Reconciler` — production use
@@ -89,13 +110,14 @@ Decision logic per (slug, field) group:
 
 | Scenario | Action |
 |----------|--------|
-| 1 source, 1st cycle | Held in pending map (not published) |
-| 1 source, 2nd cycle (same value) | Published with `ConfidenceMedium` |
-| 1 source, value changed | Counter reset; stays pending |
-| 2+ sources, all agree within ε | Published with `ConfidenceHigh` |
-| 2+ sources, consensus ≥2, outlier >5% | **Flag AND publish** `ConfidenceHigh` |
-| 2+ sources, all disagree, max delta >5% | Flagged for review; not published |
-| 2+ sources, minor spread (≤5%) | Published with `ConfidenceMedium` |
+| 2+ sources, but all share the same `effectiveProvider` | Collapsed to single-source (independence gate) |
+| 1 source (or collapsed group), 1st cycle | Held in pending map (not published) |
+| 1 source (or collapsed group), 2nd cycle (same value) | Published with `ConfidenceMedium` |
+| 1 source (or collapsed group), value changed | Counter reset; stays pending |
+| 2+ **independent** sources, all agree within ε | Published with `ConfidenceHigh` |
+| 2+ **independent** sources, consensus ≥2, outlier >5% | **Flag AND publish** `ConfidenceHigh` |
+| 2+ **independent** sources, all disagree, max delta >5% | Flagged for review; not published |
+| 2+ **independent** sources, minor spread (≤5%) | Published with `ConfidenceMedium` |
 
 **Pending map TTL:** entries not refreshed within 72 hours are swept by `sweepStalePending()`
 at the start of each `Reconcile` call, bounding memory growth.

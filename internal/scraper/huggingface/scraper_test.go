@@ -187,8 +187,9 @@ func TestFetch_HappyPath(t *testing.T) {
 	if llamaModel.provider != "together" {
 		t.Errorf("want provider=together, got %q", llamaModel.provider)
 	}
-	if llamaModel.underlyingProvider != "together-ai" {
-		t.Errorf("want UnderlyingProvider=together-ai, got %q", llamaModel.underlyingProvider)
+	if llamaModel.underlyingProvider != "together" {
+		// normProv maps "together-ai" → "together" to match OpenRouter's convention.
+		t.Errorf("want UnderlyingProvider=together, got %q", llamaModel.underlyingProvider)
 	}
 	if llamaModel.sourceName != "huggingface_inference_providers" {
 		t.Errorf("want SourceName=huggingface_inference_providers, got %q", llamaModel.sourceName)

@@ -87,16 +87,19 @@ func newSSRFSafeTransport() *http.Transport {
 	}
 }
 
-// checkIPs returns an error if any address in addrs is a private, loopback, or
-// link-local IP.  It is the shared inner check used by both checkRedirectHost
-// and newSSRFSafeTransport's DialContext.
+// checkIPs returns an error if any address in addrs is a private, loopback,
+// link-local, multicast, or unspecified IP.  It is the shared inner check used
+// by both checkRedirectHost and newSSRFSafeTransport's DialContext.
+// Addresses that net.ParseIP cannot parse are treated as blocked (fail-closed).
 func checkIPs(addrs []string) error {
 	for _, a := range addrs {
 		ip := net.ParseIP(a)
 		if ip == nil {
-			continue
+			// Fail-closed: an unparseable address is not provably safe.
+			return fmt.Errorf("huggingface: unparseable address %q blocked (SSRF prevention)", a)
 		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 			return fmt.Errorf("huggingface: address %s blocked (SSRF prevention)", ip)
 		}
 	}
@@ -201,7 +204,10 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 				OutputCostPerToken: entry.Pricing.Output,
 				Modality:           "text",
 				SourceName:         "huggingface_inference_providers",
-				UnderlyingProvider: hfProviderID,
+				// Use normProv (not the raw hfProviderID) so that the reconciler's
+				// independence gate compares apples to apples: both HuggingFace and
+				// OpenRouter emit "together" for Together AI, "fireworks" for Fireworks, etc.
+				UnderlyingProvider: normProv,
 				FetchedAt:          fetchedAt,
 			})
 		}
