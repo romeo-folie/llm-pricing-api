@@ -21,11 +21,10 @@ export default function Nav() {
   return (
     <header
       className="sticky top-0 z-50 w-full"
-      style={{ backgroundColor: "var(--bg)" }}
+      style={{ backgroundColor: "var(--bg)", borderBottom: "1px solid var(--border)" }}
     >
       <div
-        className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8"
-        style={{ borderBottom: "1px solid var(--border)" }}
+        className="mx-auto flex h-16 max-w-7xl items-center justify-between"
       >
         {/* Logo */}
         <Link href="/" className="flex items-center gap-0.5 select-none">

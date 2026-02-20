@@ -10,8 +10,12 @@ export const metadata: Metadata = {
 
 export default function DocsPage() {
   return (
-    <main>
-      <ApiReference specUrl="/openapi.json" />
-    </main>
+    <>
+      {/* Hide the global decorative rail lines — they interfere with Scalar's full-width layout */}
+      <style>{`body::before, body::after { display: none !important; }`}</style>
+      <main>
+        <ApiReference specUrl="/openapi.json" />
+      </main>
+    </>
   )
 }

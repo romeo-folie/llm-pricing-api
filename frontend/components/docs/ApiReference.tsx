@@ -7,6 +7,11 @@ import "@scalar/api-reference-react/style.css"
 // and teal accent. Scalar exposes CSS custom properties on `.scalar-app` and
 // the `.light-mode` / `.dark-mode` scope classes.
 const customCss = `
+  /* Hide the dark/light mode toggle — site is light-mode only */
+  .darklight-reference button {
+    display: none !important;
+  }
+
   .light-mode,
   .scalar-app {
     --scalar-color-1:        #1C1917;
