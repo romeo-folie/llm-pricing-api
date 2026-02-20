@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: "/compare",    label: "Compare"    },
   { href: "/calculator", label: "Calculator" },
   { href: "/changes",    label: "Changes"    },
+  { href: "/docs",       label: "Docs"       },
   { href: "/pricing",    label: "Pricing"    },
 ] as const
 
