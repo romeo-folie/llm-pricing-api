@@ -11,6 +11,7 @@ Defines the `Scraper` interface and `ScrapedModel` type that every scraper imple
 ```
 internal/scraper/
   scraper.go          # Scraper interface and ScrapedModel struct
+  ssrf.go             # Shared SSRF-safe HTTP transport and IP validation
   README.md           # This file
   openrouter/         # OpenRouter /v1/models REST API scraper
   litellm/            # LiteLLM GitHub raw JSON scraper
@@ -47,6 +48,22 @@ All implementations must:
 - Propagate errors (not swallow them) so the asynq worker can retry
 - Be safe to call concurrently
 - Set `FetchedAt` to the time the HTTP request was made
+
+### SSRF-Safe Transport (`ssrf.go`)
+
+All scrapers fetch from external URLs, making them a potential SSRF (Server-Side Request Forgery) vector — a malicious API response could redirect your server to internal addresses like `169.254.169.254` (cloud metadata) or `localhost:6379` (Redis).
+
+The shared transport closes this attack surface with three exported functions:
+
+| Function | Role |
+|----------|------|
+| `NewSSRFSafeTransport()` | Returns an `*http.Transport` whose `DialContext` resolves DNS once, validates all IPs against the blocklist, then connects directly to the resolved IP — eliminating the DNS rebinding window between resolution and connection |
+| `CheckIPs(addrs)` | Inner validation shared by both the transport and redirect checker. Blocks private (RFC 1918), loopback, link-local, multicast, and unspecified addresses. Fail-closed: unparseable addresses are blocked |
+| `CheckRedirectHost(ctx, host)` | `http.Client.CheckRedirect` hook that blocks redirects to private/loopback targets — defense-in-depth for post-connection redirects |
+
+**Usage in scrapers**: Each scraper constructs its default `*http.Client` with `NewSSRFSafeTransport()` as the transport and `CheckRedirectHost` as the redirect policy. Test clients (e.g. backed by `httptest.Server`) bypass this transport since test traffic targets loopback by design.
+
+**Why shared**: Before extraction, each scraper had inline SSRF checks. Adding the HuggingFace scraper as a third consumer made the duplication untenable, so the logic was extracted to `ssrf.go` for all three to share.
 
 ## Design Notes
 
