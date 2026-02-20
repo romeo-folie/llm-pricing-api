@@ -144,11 +144,12 @@ function toChange(raw: RawChange): PriceChange {
   const oldOutputM = raw.old_output * PER_MILLION
   const newOutputM = raw.new_output * PER_MILLION
 
-  const oldTotal = oldInputM + oldOutputM
-  const deltaPct =
-    oldTotal > 0
-      ? ((newInputM + newOutputM - oldTotal) / oldTotal) * 100
-      : 0
+  // Only include fields that previously had a non-zero price in the delta.
+  // A field going $0→$X is new pricing data being populated, not a price
+  // change — including it inflates delta_pct dramatically.
+  const oldSum = (oldInputM > 0 ? oldInputM : 0) + (oldOutputM > 0 ? oldOutputM : 0)
+  const newSum = (oldInputM > 0 ? newInputM : 0) + (oldOutputM > 0 ? newOutputM : 0)
+  const deltaPct = oldSum > 0 ? ((newSum - oldSum) / oldSum) * 100 : 0
 
   return {
     // Deterministic ID from model + timestamp — stable across polling requests

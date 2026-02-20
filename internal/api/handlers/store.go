@@ -698,12 +698,26 @@ func (s *pgxStore) listChangesRaw(ctx context.Context, since *time.Time, provide
 }
 
 // changeDeltaPct computes the percentage price change for a ChangeRow.
+//
+// Only fields that previously had a non-zero price are included in the
+// calculation.  A field transitioning from $0 to a non-zero value means
+// pricing data was absent before — treating it as a change would inflate
+// the reported delta dramatically (e.g. out:$0→$15 with in:$3→$3 would
+// otherwise read as +500% rather than +0%).
 func changeDeltaPct(c ChangeRow) float64 {
-	oldTotal := c.OldInput + c.OldOutput
-	if oldTotal <= 0 {
+	var oldSum, newSum float64
+	if c.OldInput > 0 {
+		oldSum += c.OldInput
+		newSum += c.NewInput
+	}
+	if c.OldOutput > 0 {
+		oldSum += c.OldOutput
+		newSum += c.NewOutput
+	}
+	if oldSum <= 0 {
 		return 0
 	}
-	return ((c.NewInput + c.NewOutput) - oldTotal) / oldTotal * 100
+	return (newSum - oldSum) / oldSum * 100
 }
 
 // GetChangesSummary returns pre-aggregated change data for the heatmap and
