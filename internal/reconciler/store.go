@@ -49,7 +49,7 @@ type Store interface {
 
 	// PublishPrice inserts a confirmed snapshot into price_history and upserts
 	// the current price in the prices table, within a single transaction.
-	PublishPrice(ctx context.Context, modelID, sourceID int, input, output float64, confidence models.Confidence) error
+	PublishPrice(ctx context.Context, modelID, sourceID int, input, output float64, confidence models.Confidence, underlyingProvider string) error
 
 	// FlagDiscrepancy inserts a review_queue entry for a multi-source
 	// disagreement.  Uses ON CONFLICT DO NOTHING so repeated calls while a
@@ -119,7 +119,7 @@ func (s *pgxStore) LookupCurrentPrice(ctx context.Context, modelID, sourceID int
 	return input, output, true, nil
 }
 
-func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, input, output float64, confidence models.Confidence) error {
+func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, input, output float64, confidence models.Confidence, underlyingProvider string) error {
 	now := time.Now().UTC()
 
 	tx, err := s.db.Begin(ctx)
@@ -134,10 +134,10 @@ func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, inpu
 	// so we cannot use a simpler (model_id, source_id, confirmed_at)-only key.
 	ct, err := tx.Exec(ctx, `
 		INSERT INTO price_history
-			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, recorded_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, recorded_at, underlying_provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT DO NOTHING
-	`, modelID, input, output, sourceID, now, now)
+	`, modelID, input, output, sourceID, now, now, underlyingProvider)
 	if err != nil {
 		return fmt.Errorf("insert price_history (model=%d, source=%d): %w", modelID, sourceID, err)
 	}
@@ -154,14 +154,15 @@ func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, inpu
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO prices
-			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, confidence)
-		VALUES ($1, $2, $3, $4, $5, $6)
+			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, confidence, underlying_provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (model_id, source_id) DO UPDATE SET
 			input_cost_per_token  = EXCLUDED.input_cost_per_token,
 			output_cost_per_token = EXCLUDED.output_cost_per_token,
 			confirmed_at          = EXCLUDED.confirmed_at,
-			confidence            = EXCLUDED.confidence
-	`, modelID, input, output, sourceID, now, string(confidence))
+			confidence            = EXCLUDED.confidence,
+			underlying_provider   = EXCLUDED.underlying_provider
+	`, modelID, input, output, sourceID, now, string(confidence), underlyingProvider)
 	if err != nil {
 		return fmt.Errorf("upsert prices (model=%d, source=%d): %w", modelID, sourceID, err)
 	}

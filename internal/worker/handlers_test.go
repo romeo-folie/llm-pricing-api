@@ -68,7 +68,7 @@ func (s *mockReconcilerStore) LookupModelProvider(_ context.Context, _ int) (str
 func (s *mockReconcilerStore) LookupCurrentPrice(_ context.Context, _, _ int) (float64, float64, bool, error) {
 	return 0, 0, false, nil
 }
-func (s *mockReconcilerStore) PublishPrice(_ context.Context, _, _ int, _, _ float64, _ models.Confidence) error {
+func (s *mockReconcilerStore) PublishPrice(_ context.Context, _, _ int, _, _ float64, _ models.Confidence, _ string) error {
 	return nil
 }
 func (s *mockReconcilerStore) FlagDiscrepancy(_ context.Context, _, _, _ int, _ models.PriceField, _, _ float64, _ float64) error {
