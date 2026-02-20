@@ -2,7 +2,7 @@ import { Suspense } from "react"
 import type { Metadata } from "next"
 
 export const dynamic = "force-dynamic"
-import { getChanges, getProviders } from "@/lib/api"
+import { getChangesPage, getChangesSummary, getProviders } from "@/lib/api"
 import ChangesFeed from "@/components/changes/ChangesFeed"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
@@ -29,12 +29,15 @@ export default async function ChangesPage({ searchParams }: PageProps) {
     since:    sp.since    || undefined,
   }
 
-  const [changesResult, providersResult] = await Promise.allSettled([
-    getChanges(filter),
+  const [changesResult, summaryResult, providersResult] = await Promise.allSettled([
+    getChangesPage({ ...filter, limit: 50 }),
+    getChangesSummary({ window: "7d", provider: filter.provider }),
     getProviders(),
   ])
-  const changes   = changesResult.status   === "fulfilled" ? changesResult.value   : []
-  const providers = providersResult.status === "fulfilled" ? providersResult.value : []
+
+  const changesPage = changesResult.status === "fulfilled" ? changesResult.value : null
+  const summary     = summaryResult.status === "fulfilled" ? summaryResult.value : null
+  const providers   = providersResult.status === "fulfilled" ? providersResult.value : []
   const apiUnavailable = changesResult.status === "rejected"
 
   return (
@@ -45,7 +48,11 @@ export default async function ChangesPage({ searchParams }: PageProps) {
       {apiUnavailable && <ApiUnavailableBanner />}
       <Suspense fallback={null}>
         <ChangesFeed
-          initialChanges={changes}
+          initialChanges={changesPage?.data ?? []}
+          initialTotal={changesPage?.total ?? 0}
+          initialHasMore={changesPage?.hasMore ?? false}
+          initialNextCursor={changesPage?.nextCursor ?? null}
+          initialSummary={summary}
           providers={providers}
           initialProvider={sp.provider ?? ""}
           initialSince={sp.since ?? ""}

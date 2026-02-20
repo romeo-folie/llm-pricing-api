@@ -2,10 +2,11 @@ import { Suspense } from "react"
 import type { Metadata } from "next"
 
 export const dynamic = "force-dynamic"
-import { getModels, getProviders } from "@/lib/api"
+import { getModelsPaginated, getProviders } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
 import ModelCard from "@/components/model/ModelCard"
 import ModelDetailModal from "@/components/model/ModelDetailModal"
+import Pagination from "@/components/ui/Pagination"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
@@ -21,10 +22,17 @@ export const metadata: Metadata = {
 }
 
 interface PageProps {
-  searchParams: Promise<{ provider?: string; modality?: string; min_context?: string; model?: string }>
+  searchParams: Promise<{
+    provider?: string
+    modality?: string
+    min_context?: string
+    model?: string
+    page?: string
+  }>
 }
 
 const MODALITIES = ["text", "multimodal", "image", "audio", "embedding"]
+const PER_PAGE = 24
 
 export default async function ModelsPage({ searchParams }: PageProps) {
   const sp = await searchParams
@@ -34,13 +42,29 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     min_context: sp.min_context ? Number(sp.min_context) : undefined,
   }
 
+  const requestedPage = sp.page ? Math.max(1, Number(sp.page) || 1) : 1
+
   const [modelsResult, providersResult] = await Promise.allSettled([
-    getModels(filter),
+    getModelsPaginated({ ...filter, page: requestedPage, per_page: PER_PAGE }),
     getProviders(),
   ])
-  const models   = modelsResult.status   === "fulfilled" ? modelsResult.value   : []
+  const { data: models, total } = modelsResult.status === "fulfilled"
+    ? modelsResult.value
+    : { data: [], total: 0 }
   const providers = providersResult.status === "fulfilled" ? providersResult.value : []
   const apiUnavailable = modelsResult.status === "rejected"
+
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
+  // Clamp page to valid range
+  const page = Math.min(requestedPage, totalPages)
+  const rangeStart = (page - 1) * PER_PAGE + 1
+  const rangeEnd = Math.min(page * PER_PAGE, total)
+
+  // Preserve current filters in pagination links
+  const paginationParams: Record<string, string> = {}
+  if (sp.provider) paginationParams.provider = sp.provider
+  if (sp.modality) paginationParams.modality = sp.modality
+  if (sp.min_context) paginationParams.min_context = sp.min_context
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -81,7 +105,9 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             Model Browser
           </h1>
           <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
-            {apiUnavailable ? "API unavailable" : `${models.length} models tracked · updated every 5 minutes`}
+            {apiUnavailable
+              ? "API unavailable"
+              : `${total} models tracked · updated every 5 minutes`}
           </p>
         </div>
 
@@ -185,6 +211,16 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           )}
         </form>
 
+        {/* Result count */}
+        {!apiUnavailable && total > 0 && (
+          <p
+            className="font-outfit text-sm"
+            style={{ color: "var(--muted)", marginBottom: "12px" }}
+          >
+            Showing {rangeStart}–{rangeEnd} of {total} models
+          </p>
+        )}
+
         {/* Column headers */}
         <div
           className="font-orbitron text-xs"
@@ -228,6 +264,13 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             ))}
           </div>
         )}
+
+        {/* Pagination */}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          searchParams={paginationParams}
+        />
       </main>
 
       {/* Modal — reads ?model= param */}

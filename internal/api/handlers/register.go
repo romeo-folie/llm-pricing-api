@@ -33,6 +33,7 @@ func New(store Store) *Handlers {
 //	GET /v1/models/:id
 //	GET /v1/providers
 //	GET /v1/compare
+//	GET /v1/changes/summary
 //	GET /v1/changes
 func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 	store := NewPgxStore(db)
@@ -42,6 +43,7 @@ func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 	v1.Get("/models/:id", h.GetModel)
 	v1.Get("/providers", h.ListProviders)
 	v1.Get("/compare", h.Compare)
+	v1.Get("/changes/summary", h.GetChangesSummary)
 	v1.Get("/changes", h.ListChanges)
 }
 

@@ -209,6 +209,33 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** Variant of apiFetch that also returns response headers (e.g. for X-Total-Count). */
+async function apiFetchWithHeaders<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ body: T; headers: Headers }> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    next: { revalidate: 300 },
+    ...init,
+    headers: buildHeaders(init?.headers as HeadersInit | undefined),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(
+      `API error ${res.status} at ${path}${body.detail ? `: ${body.detail}` : ""}`,
+    )
+  }
+  const body = (await res.json()) as T
+  return { body, headers: res.headers }
+}
+
+// ─── Paginated Result ───────────────────────────────────────────────────────
+
+export interface PaginatedResult<T> {
+  data: T
+  total: number
+}
+
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
 export interface ModelsFilter {
@@ -227,6 +254,27 @@ export async function getModels(filter?: ModelsFilter): Promise<Model[]> {
   const qs = `?${params.toString()}`
   const res = await apiFetch<RawEnvelope<RawModel[]>>(`/v1/models${qs}`)
   return res.data.map(toModel)
+}
+
+/** Paginated variant — returns a page of models + total count from X-Total-Count header. */
+export async function getModelsPaginated(
+  filter?: ModelsFilter & { page?: number; per_page?: number },
+): Promise<PaginatedResult<Model[]>> {
+  const params = new URLSearchParams()
+  if (filter?.provider) params.set("provider", filter.provider)
+  if (filter?.modality) params.set("modality", filter.modality)
+  if (filter?.min_context) params.set("min_context", String(filter.min_context))
+  params.set("page", String(filter?.page ?? 1))
+  params.set("per_page", String(filter?.per_page ?? 24))
+  const qs = `?${params.toString()}`
+  const { body, headers } = await apiFetchWithHeaders<RawEnvelope<RawModel[]>>(
+    `/v1/models${qs}`,
+  )
+  const total = parseInt(headers.get("X-Total-Count") ?? "0", 10)
+  return {
+    data: body.data.map(toModel),
+    total,
+  }
 }
 
 export async function getModel(id: string): Promise<Model> {
@@ -289,4 +337,167 @@ export async function getChanges(
   const qs = params.toString() ? `?${params.toString()}` : ""
   const res = await apiFetch<RawEnvelope<RawChange[]>>(`/v1/changes${qs}`)
   return res.data.map(toChange)
+}
+
+// ─── Paginated Changes ──────────────────────────────────────────────────────
+
+export interface ChangesPageFilter {
+  since?: string
+  before?: string
+  provider?: string
+  limit?: number
+}
+
+export interface ChangesPageResult {
+  data: PriceChange[]
+  total: number
+  hasMore: boolean
+  nextCursor: string | null
+}
+
+/** Fetch a single page of changes using cursor-based pagination. */
+export async function getChangesPage(
+  filter?: ChangesPageFilter,
+): Promise<ChangesPageResult> {
+  const params = new URLSearchParams()
+  if (filter?.since) {
+    const since = filter.since.includes("T")
+      ? filter.since
+      : `${filter.since}T00:00:00Z`
+    params.set("since", since)
+  }
+  if (filter?.before) params.set("before", filter.before)
+  if (filter?.provider) params.set("provider", filter.provider)
+  if (filter?.limit) params.set("limit", String(filter.limit))
+  const qs = params.toString() ? `?${params.toString()}` : ""
+  const { body, headers } = await apiFetchWithHeaders<RawEnvelope<RawChange[]>>(
+    `/v1/changes${qs}`,
+  )
+  const total = parseInt(headers.get("X-Total-Count") ?? "0", 10)
+  const hasMore = headers.get("X-Has-More") === "true"
+  const nextCursor = headers.get("X-Next-Cursor") || null
+  return {
+    data: body.data.map(toChange),
+    total,
+    hasMore,
+    nextCursor,
+  }
+}
+
+// ─── Changes Summary ────────────────────────────────────────────────────────
+
+interface RawHeatmapModelNode {
+  model_id: number
+  model_slug: string
+  change_count: number
+  avg_delta_pct: number
+}
+
+interface RawHeatmapProviderGroup {
+  provider: string
+  total_changes: number
+  models: RawHeatmapModelNode[]
+}
+
+interface RawTopMover {
+  model_id: number
+  model_slug: string
+  provider: string
+  delta_pct: number
+  old_input: number
+  old_output: number
+  new_input: number
+  new_output: number
+  source: string
+  confirmed_at: string
+}
+
+interface RawChangesSummary {
+  heatmap: RawHeatmapProviderGroup[]
+  top_movers: RawTopMover[]
+  total_changes: number
+  window: string
+}
+
+export interface HeatmapModelNode {
+  model_id: string
+  model_slug: string
+  change_count: number
+  avg_delta_pct: number
+}
+
+export interface HeatmapProviderGroup {
+  provider: string
+  total_changes: number
+  models: HeatmapModelNode[]
+}
+
+export interface TopMover {
+  model_id: string
+  model_slug: string
+  provider: string
+  delta_pct: number
+  old_input_price: number
+  old_output_price: number
+  new_input_price: number
+  new_output_price: number
+  source: string
+  confirmed_at: string
+}
+
+export interface ChangesSummary {
+  heatmap: HeatmapProviderGroup[]
+  top_movers: TopMover[]
+  total_changes: number
+  window: string
+}
+
+function toSummary(raw: RawChangesSummary): ChangesSummary {
+  return {
+    heatmap: (raw.heatmap ?? []).map((g) => ({
+      provider: g.provider,
+      total_changes: g.total_changes,
+      models: (g.models ?? []).map((m) => ({
+        model_id: String(m.model_id),
+        model_slug: m.model_slug,
+        change_count: m.change_count,
+        avg_delta_pct: m.avg_delta_pct,
+      })),
+    })),
+    top_movers: (raw.top_movers ?? []).map((m) => ({
+      model_id: String(m.model_id),
+      model_slug: m.model_slug,
+      provider: m.provider,
+      delta_pct: m.delta_pct,
+      old_input_price: m.old_input * PER_MILLION,
+      old_output_price: m.old_output * PER_MILLION,
+      new_input_price: m.new_input * PER_MILLION,
+      new_output_price: m.new_output * PER_MILLION,
+      source: m.source,
+      confirmed_at: m.confirmed_at,
+    })),
+    total_changes: raw.total_changes,
+    window: raw.window,
+  }
+}
+
+export interface SummaryFilter {
+  window?: string
+  since?: string
+  provider?: string
+}
+
+/** Fetch pre-aggregated summary data for heatmap and leaderboard. */
+export async function getChangesSummary(
+  filter?: SummaryFilter,
+): Promise<ChangesSummary> {
+  const params = new URLSearchParams()
+  if (filter?.window) params.set("window", filter.window)
+  if (filter?.since) params.set("since", filter.since)
+  if (filter?.provider) params.set("provider", filter.provider)
+  const qs = params.toString() ? `?${params.toString()}` : ""
+  const res = await apiFetch<RawEnvelope<RawChangesSummary>>(
+    `/v1/changes/summary${qs}`,
+  )
+  return toSummary(res.data)
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +27,8 @@ type mockStore struct {
 	getModel              func(ctx context.Context, id int) (handlers.ModelRow, error)
 	listProviders         func(ctx context.Context) ([]handlers.ProviderRow, error)
 	compareModels         func(ctx context.Context, ids []int) ([]handlers.ModelRow, error)
-	listChanges           func(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, error)
+	listChanges           func(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, int, error)
+	getChangesSummary     func(ctx context.Context, filter handlers.SummaryFilter) (handlers.ChangesSummary, error)
 	getPriceHistory       func(ctx context.Context, modelID int) ([]api.PriceHistoryRow, error)
 	getPriceHistoryBatch  func(ctx context.Context, modelIDs []int) (map[int][]api.PriceHistoryRow, error)
 	modelExists           func(ctx context.Context, id int) (bool, error)
@@ -62,11 +65,18 @@ func (m *mockStore) CompareModels(ctx context.Context, ids []int) ([]handlers.Mo
 	return nil, nil
 }
 
-func (m *mockStore) ListChanges(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, error) {
+func (m *mockStore) ListChanges(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
 	if m.listChanges != nil {
 		return m.listChanges(ctx, filter)
 	}
-	return nil, nil
+	return nil, 0, nil
+}
+
+func (m *mockStore) GetChangesSummary(ctx context.Context, filter handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+	if m.getChangesSummary != nil {
+		return m.getChangesSummary(ctx, filter)
+	}
+	return handlers.ChangesSummary{}, nil
 }
 
 func (m *mockStore) GetPriceHistory(ctx context.Context, modelID int) ([]api.PriceHistoryRow, error) {
@@ -131,11 +141,28 @@ func newApp(store handlers.Store) *fiber.App {
 	v1.Get("/models/:id", h.GetModel)
 	v1.Get("/providers", h.ListProviders)
 	v1.Get("/compare", h.Compare)
+	v1.Get("/changes/summary", h.GetChangesSummary)
 	v1.Get("/changes", h.ListChanges)
 	return app
 }
 
-// get performs a GET request and returns the *http.Response.
+// getWithHeaders performs a GET request and returns the status, body, and headers.
+func getWithHeaders(t *testing.T, app *fiber.App, path string) (int, []byte, http.Header) {
+	t.Helper()
+	req := httptest.NewRequest("GET", path, nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, body, resp.Header
+}
+
+// get performs a GET request and returns the status code and body.
 func get(t *testing.T, app *fiber.App, path string) (int, []byte) {
 	t.Helper()
 	req := httptest.NewRequest("GET", path, nil)
@@ -603,7 +630,7 @@ func TestCompare_DeduplicatesIDs(t *testing.T) {
 
 func TestListChanges_OK(t *testing.T) {
 	store := &mockStore{
-		listChanges: func(_ context.Context, _ handlers.ChangesFilter) ([]handlers.ChangeRow, error) {
+		listChanges: func(_ context.Context, _ handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
 			return []handlers.ChangeRow{
 				{
 					ModelID:     1,
@@ -616,7 +643,7 @@ func TestListChanges_OK(t *testing.T) {
 					ConfirmedAt: time.Now().UTC(),
 					Source:      "openrouter",
 				},
-			}, nil
+			}, 1, nil
 		},
 	}
 	app := newApp(store)
@@ -651,9 +678,9 @@ func TestListChanges_InvalidSince_Returns400(t *testing.T) {
 func TestListChanges_ValidSince_PassedToStore(t *testing.T) {
 	var capturedFilter handlers.ChangesFilter
 	store := &mockStore{
-		listChanges: func(_ context.Context, f handlers.ChangesFilter) ([]handlers.ChangeRow, error) {
+		listChanges: func(_ context.Context, f handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
 			capturedFilter = f
-			return nil, nil
+			return nil, 0, nil
 		},
 	}
 	app := newApp(store)
@@ -670,8 +697,8 @@ func TestListChanges_ValidSince_PassedToStore(t *testing.T) {
 
 func TestListChanges_EmptyResult_ReturnsEmptyArray(t *testing.T) {
 	store := &mockStore{
-		listChanges: func(_ context.Context, _ handlers.ChangesFilter) ([]handlers.ChangeRow, error) {
-			return nil, nil
+		listChanges: func(_ context.Context, _ handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			return nil, 0, nil
 		},
 	}
 	app := newApp(store)
@@ -689,6 +716,380 @@ func TestListChanges_EmptyResult_ReturnsEmptyArray(t *testing.T) {
 	}
 	// nil slice marshalled from empty store returns null; verify response body is valid.
 	_ = envelope
+}
+
+func TestListChanges_XTotalCountHeader(t *testing.T) {
+	store := &mockStore{
+		listChanges: func(_ context.Context, _ handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			return []handlers.ChangeRow{
+				{ModelID: 1, ModelSlug: "openai/gpt-4", Provider: "openai", ConfirmedAt: time.Now().UTC(), Source: "openrouter"},
+			}, 142, nil
+		},
+	}
+	app := newApp(store)
+
+	status, _, headers := getWithHeaders(t, app, "/v1/changes")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+	if got := headers.Get("X-Total-Count"); got != "142" {
+		t.Errorf("X-Total-Count: expected 142, got %q", got)
+	}
+}
+
+func TestListChanges_DefaultLimit(t *testing.T) {
+	var capturedFilter handlers.ChangesFilter
+	store := &mockStore{
+		listChanges: func(_ context.Context, f handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			capturedFilter = f
+			return nil, 0, nil
+		},
+	}
+	app := newApp(store)
+
+	get(t, app, "/v1/changes")
+
+	if capturedFilter.Limit != 50 {
+		t.Errorf("default limit: expected 50, got %d", capturedFilter.Limit)
+	}
+}
+
+func TestListChanges_LimitExceedsMax_Returns400(t *testing.T) {
+	app := newApp(&mockStore{})
+
+	status, _ := get(t, app, "/v1/changes?limit=201")
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for limit=201, got %d", status)
+	}
+}
+
+func TestListChanges_InvalidLimit_Returns400(t *testing.T) {
+	app := newApp(&mockStore{})
+
+	status, _ := get(t, app, "/v1/changes?limit=abc")
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for limit=abc, got %d", status)
+	}
+}
+
+func TestListChanges_InvalidBefore_Returns400(t *testing.T) {
+	app := newApp(&mockStore{})
+
+	status, _ := get(t, app, "/v1/changes?before=not-a-date")
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for before=not-a-date, got %d", status)
+	}
+}
+
+func TestListChanges_BeforeCursor_PassedToStore(t *testing.T) {
+	var capturedFilter handlers.ChangesFilter
+	store := &mockStore{
+		listChanges: func(_ context.Context, f handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			capturedFilter = f
+			return nil, 0, nil
+		},
+	}
+	app := newApp(store)
+
+	get(t, app, "/v1/changes?before=2026-02-01T12:00:00Z")
+
+	if capturedFilter.Before == nil {
+		t.Fatal("expected Before to be set")
+	}
+	expected := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	if !capturedFilter.Before.Equal(expected) {
+		t.Errorf("Before: got %v, want %v", *capturedFilter.Before, expected)
+	}
+}
+
+func TestListChanges_HasMoreHeader(t *testing.T) {
+	// Return limit+1 rows (51 for default limit=50) to trigger hasMore=true.
+	now := time.Now().UTC()
+	store := &mockStore{
+		listChanges: func(_ context.Context, f handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			rows := make([]handlers.ChangeRow, f.Limit+1)
+			for i := range rows {
+				rows[i] = handlers.ChangeRow{
+					ModelID:     i + 1,
+					ModelSlug:   "openai/gpt-4",
+					Provider:    "openai",
+					ConfirmedAt: now.Add(-time.Duration(i) * time.Minute),
+					Source:      "openrouter",
+				}
+			}
+			return rows, 100, nil
+		},
+	}
+	app := newApp(store)
+
+	status, body, headers := getWithHeaders(t, app, "/v1/changes?limit=5")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	if got := headers.Get("X-Has-More"); got != "true" {
+		t.Errorf("X-Has-More: expected true, got %q", got)
+	}
+	if got := headers.Get("X-Next-Cursor"); got == "" {
+		t.Error("X-Next-Cursor: expected non-empty cursor")
+	}
+
+	// Verify body only contains limit items, not limit+1.
+	var envelope struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(envelope.Data) != 5 {
+		t.Errorf("expected 5 items in response, got %d", len(envelope.Data))
+	}
+}
+
+func TestListChanges_NoMore_HasMoreFalse(t *testing.T) {
+	store := &mockStore{
+		listChanges: func(_ context.Context, _ handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			return []handlers.ChangeRow{
+				{ModelID: 1, ModelSlug: "openai/gpt-4", Provider: "openai", ConfirmedAt: time.Now().UTC(), Source: "openrouter"},
+			}, 1, nil
+		},
+	}
+	app := newApp(store)
+
+	_, _, headers := getWithHeaders(t, app, "/v1/changes")
+	if got := headers.Get("X-Has-More"); got != "false" {
+		t.Errorf("X-Has-More: expected false, got %q", got)
+	}
+}
+
+// TestListChanges_CursorRoundTrip verifies that the X-Next-Cursor value
+// (emitted with sub-second precision) can be used as the before= query
+// parameter without being rejected as invalid.
+func TestListChanges_CursorRoundTrip(t *testing.T) {
+	// Use a timestamp with sub-second precision to simulate real PostgreSQL
+	// TIMESTAMPTZ values which have microsecond resolution.
+	ts := time.Date(2026, 2, 10, 14, 30, 45, 123456000, time.UTC)
+
+	var callCount int
+	store := &mockStore{
+		listChanges: func(_ context.Context, f handlers.ChangesFilter) ([]handlers.ChangeRow, int, error) {
+			callCount++
+			if callCount == 1 {
+				// First call: return 2 rows to trigger hasMore.
+				return []handlers.ChangeRow{
+					{ModelID: 1, ModelSlug: "openai/gpt-4", Provider: "openai", ConfirmedAt: ts, Source: "openrouter"},
+					{ModelID: 2, ModelSlug: "openai/gpt-3.5", Provider: "openai", ConfirmedAt: ts.Add(-time.Minute), Source: "openrouter"},
+				}, 5, nil
+			}
+			// Second call: return 1 row, no more.
+			return []handlers.ChangeRow{
+				{ModelID: 3, ModelSlug: "anthropic/claude-3", Provider: "anthropic", ConfirmedAt: ts.Add(-2 * time.Minute), Source: "openrouter"},
+			}, 5, nil
+		},
+	}
+	app := newApp(store)
+
+	// First request with limit=1 so hasMore triggers.
+	status1, _, headers1 := getWithHeaders(t, app, "/v1/changes?limit=1")
+	if status1 != fiber.StatusOK {
+		t.Fatalf("first request: expected 200, got %d", status1)
+	}
+
+	cursor := headers1.Get("X-Next-Cursor")
+	if cursor == "" {
+		t.Fatal("X-Next-Cursor: expected non-empty cursor from first request")
+	}
+
+	// Second request: use the cursor as before=. Must not return 400.
+	status2, body2 := get(t, app, "/v1/changes?before="+url.QueryEscape(cursor))
+	if status2 != fiber.StatusOK {
+		t.Fatalf("cursor round-trip: expected 200, got %d; body: %s", status2, body2)
+	}
+}
+
+// --- GetChangesSummary tests --------------------------------------------
+
+func TestGetChangesSummary_OK(t *testing.T) {
+	store := &mockStore{
+		getChangesSummary: func(_ context.Context, _ handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+			return handlers.ChangesSummary{
+				Heatmap: []handlers.HeatmapProviderGroup{
+					{
+						Provider:     "openai",
+						TotalChanges: 3,
+						Models: []handlers.HeatmapModelNode{
+							{ModelID: 1, ModelSlug: "openai/gpt-4", ChangeCount: 3, AvgDeltaPct: 15.5},
+						},
+					},
+				},
+				TopMovers: []handlers.TopMover{
+					{ModelID: 1, ModelSlug: "openai/gpt-4", Provider: "openai", DeltaPct: 25.0},
+				},
+				TotalChanges: 3,
+			}, nil
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/changes/summary")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Heatmap      []json.RawMessage `json:"heatmap"`
+			TopMovers    []json.RawMessage `json:"top_movers"`
+			TotalChanges int               `json:"total_changes"`
+			Window       string            `json:"window"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data.Heatmap) != 1 {
+		t.Errorf("expected 1 heatmap group, got %d", len(envelope.Data.Heatmap))
+	}
+	if len(envelope.Data.TopMovers) != 1 {
+		t.Errorf("expected 1 top mover, got %d", len(envelope.Data.TopMovers))
+	}
+	if envelope.Data.TotalChanges != 3 {
+		t.Errorf("total_changes: expected 3, got %d", envelope.Data.TotalChanges)
+	}
+	if envelope.Data.Window != "24h" {
+		t.Errorf("window: expected 24h, got %q", envelope.Data.Window)
+	}
+}
+
+func TestGetChangesSummary_InvalidWindow_Returns400(t *testing.T) {
+	app := newApp(&mockStore{})
+
+	status, _ := get(t, app, "/v1/changes/summary?window=1y")
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for window=1y, got %d", status)
+	}
+}
+
+func TestGetChangesSummary_DefaultWindow(t *testing.T) {
+	var capturedFilter handlers.SummaryFilter
+	store := &mockStore{
+		getChangesSummary: func(_ context.Context, f handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+			capturedFilter = f
+			return handlers.ChangesSummary{}, nil
+		},
+	}
+	app := newApp(store)
+
+	get(t, app, "/v1/changes/summary")
+
+	if capturedFilter.Since == nil {
+		t.Fatal("expected Since to be set (from default 24h window)")
+	}
+	// Since should be approximately 24h ago.
+	diff := time.Since(*capturedFilter.Since)
+	if diff < 23*time.Hour || diff > 25*time.Hour {
+		t.Errorf("Since should be ~24h ago, got %v ago", diff)
+	}
+}
+
+func TestGetChangesSummary_7dWindow(t *testing.T) {
+	var capturedFilter handlers.SummaryFilter
+	store := &mockStore{
+		getChangesSummary: func(_ context.Context, f handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+			capturedFilter = f
+			return handlers.ChangesSummary{}, nil
+		},
+	}
+	app := newApp(store)
+
+	get(t, app, "/v1/changes/summary?window=7d")
+
+	if capturedFilter.Since == nil {
+		t.Fatal("expected Since to be set (from 7d window)")
+	}
+	diff := time.Since(*capturedFilter.Since)
+	if diff < 6*24*time.Hour || diff > 8*24*time.Hour {
+		t.Errorf("Since should be ~7d ago, got %v ago", diff)
+	}
+}
+
+func TestGetChangesSummary_ProviderFilter(t *testing.T) {
+	var capturedFilter handlers.SummaryFilter
+	store := &mockStore{
+		getChangesSummary: func(_ context.Context, f handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+			capturedFilter = f
+			return handlers.ChangesSummary{}, nil
+		},
+	}
+	app := newApp(store)
+
+	get(t, app, "/v1/changes/summary?provider=anthropic")
+
+	if capturedFilter.Provider != "anthropic" {
+		t.Errorf("provider: expected anthropic, got %q", capturedFilter.Provider)
+	}
+}
+
+func TestGetChangesSummary_SinceOverridesWindow(t *testing.T) {
+	var capturedFilter handlers.SummaryFilter
+	store := &mockStore{
+		getChangesSummary: func(_ context.Context, f handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+			capturedFilter = f
+			return handlers.ChangesSummary{}, nil
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/changes/summary?window=7d&since=2026-01-15T00:00:00Z")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	if capturedFilter.Since == nil {
+		t.Fatal("expected Since to be set")
+	}
+	expected := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	if !capturedFilter.Since.Equal(expected) {
+		t.Errorf("Since: got %v, want %v (explicit since should override window)", *capturedFilter.Since, expected)
+	}
+
+	// When since overrides window, the response window field should be "custom".
+	var envelope struct {
+		Data struct {
+			Window string `json:"window"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if envelope.Data.Window != "custom" {
+		t.Errorf("window: expected \"custom\" when since overrides, got %q", envelope.Data.Window)
+	}
+}
+
+func TestGetChangesSummary_EmptyResult_NullSafeArrays(t *testing.T) {
+	store := &mockStore{
+		getChangesSummary: func(_ context.Context, _ handlers.SummaryFilter) (handlers.ChangesSummary, error) {
+			// Return nil slices to test null-safety.
+			return handlers.ChangesSummary{
+				Heatmap:   nil,
+				TopMovers: nil,
+			}, nil
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/changes/summary")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	// Verify slices are [] not null in JSON.
+	if !strings.Contains(string(body), `"heatmap":[]`) {
+		t.Errorf("heatmap should be [] not null; body: %s", body)
+	}
+	if !strings.Contains(string(body), `"top_movers":[]`) {
+		t.Errorf("top_movers should be [] not null; body: %s", body)
+	}
 }
 
 // --- RFC 7807 error shape test ------------------------------------------

@@ -2,23 +2,11 @@
 
 import type { PriceChange } from "@/lib/api"
 import { formatPrice, formatDelta, formatRelative, formatSourceName } from "@/lib/format"
+import { providerStyle } from "@/lib/provider-colors"
 
 interface ChangeRowProps {
   change: PriceChange
   isNew?: boolean
-}
-
-const PROVIDER_COLORS: Record<string, { color: string; bg: string }> = {
-  openai:    { color: "var(--accent)", bg: "var(--accentLt)" },
-  anthropic: { color: "var(--blue)",   bg: "var(--blueLt)"   },
-  google:    { color: "var(--blue)",   bg: "var(--blueLt)"   },
-  mistral:   { color: "var(--green)",  bg: "var(--greenLt)"  },
-  meta:      { color: "var(--purple)", bg: "var(--purpleLt)" },
-}
-
-function providerStyle(provider: string) {
-  const key = provider.toLowerCase()
-  return PROVIDER_COLORS[key] ?? { color: "var(--dim)", bg: "var(--surfaceLo)" }
 }
 
 export default function ChangeRow({ change, isNew }: ChangeRowProps) {

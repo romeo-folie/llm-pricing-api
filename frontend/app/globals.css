@@ -146,6 +146,18 @@ body {
   animation: live-pulse 2s ease-in-out infinite;
 }
 
+/* ─── Dashboard grid — responsive layout for heatmap + leaderboard ──────── */
+
+.dashboard-grid {
+  grid-template-columns: 1fr 280px;
+}
+
+@media (max-width: 767px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ─── Vertical container rail lines (Greptile/OpenCode boxing) ───────────── */
 
 @media (min-width: 1312px) {

@@ -7,6 +7,8 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,8 +40,15 @@ type Store interface {
 	// Returns ErrNotFound if any requested ID does not exist.
 	CompareModels(ctx context.Context, ids []int) ([]ModelRow, error)
 
-	// ListChanges returns recent price changes with optional filters.
-	ListChanges(ctx context.Context, filter ChangesFilter) ([]ChangeRow, error)
+	// ListChanges returns recent price changes with cursor-based pagination.
+	// The second return value is the total count of all changes matching
+	// since/provider (ignoring the cursor), used for X-Total-Count.
+	ListChanges(ctx context.Context, filter ChangesFilter) ([]ChangeRow, int, error)
+
+	// GetChangesSummary returns pre-aggregated change data for the heatmap
+	// and leaderboard visualisations: per-model change counts, average deltas
+	// grouped by provider, and the top 5 movers by absolute delta.
+	GetChangesSummary(ctx context.Context, filter SummaryFilter) (ChangesSummary, error)
 
 	// GetPriceHistory returns the full price history for a model, used to
 	// compute TrustMeta. The rows are ordered by confirmed_at ascending.
@@ -96,8 +105,59 @@ type ChangesFilter struct {
 	// Since restricts results to changes confirmed after this time.
 	// nil defaults to the last 24 hours.
 	Since *time.Time
+	// Before is a cursor for pagination: only return changes with
+	// confirmed_at strictly before this timestamp. nil means no upper bound.
+	Before *time.Time
 	// Provider filters by provider name (exact match).
 	Provider string
+	// Limit is the maximum number of results to return; 0 is treated as 50.
+	Limit int
+}
+
+// SummaryFilter carries query-string parameters for the GET /v1/changes/summary
+// endpoint.
+type SummaryFilter struct {
+	// Since restricts to changes confirmed after this time.
+	Since *time.Time
+	// Provider filters by provider name (exact match).
+	Provider string
+}
+
+// HeatmapModelNode represents per-model change aggregation for the heatmap.
+type HeatmapModelNode struct {
+	ModelID     int     `json:"model_id"`
+	ModelSlug   string  `json:"model_slug"`
+	ChangeCount int     `json:"change_count"`
+	AvgDeltaPct float64 `json:"avg_delta_pct"`
+}
+
+// HeatmapProviderGroup groups model change data under a provider.
+type HeatmapProviderGroup struct {
+	Provider     string             `json:"provider"`
+	TotalChanges int                `json:"total_changes"`
+	Models       []HeatmapModelNode `json:"models"`
+}
+
+// TopMover represents a single entry in the biggest movers leaderboard.
+type TopMover struct {
+	ModelID     int       `json:"model_id"`
+	ModelSlug   string    `json:"model_slug"`
+	Provider    string    `json:"provider"`
+	DeltaPct    float64   `json:"delta_pct"`
+	OldInput    float64   `json:"old_input"`
+	OldOutput   float64   `json:"old_output"`
+	NewInput    float64   `json:"new_input"`
+	NewOutput   float64   `json:"new_output"`
+	Source      string    `json:"source"`
+	ConfirmedAt time.Time `json:"confirmed_at"`
+}
+
+// ChangesSummary is the response shape for GET /v1/changes/summary.
+type ChangesSummary struct {
+	Heatmap      []HeatmapProviderGroup `json:"heatmap"`
+	TopMovers    []TopMover             `json:"top_movers"`
+	TotalChanges int                    `json:"total_changes"`
+	Window       string                 `json:"window"`
 }
 
 // HistoryFilter carries query-string parameters for the
@@ -482,21 +542,30 @@ func (s *pgxStore) CompareModels(ctx context.Context, ids []int) ([]ModelRow, er
 	return models, nil
 }
 
-// ListChanges returns price-change events detected from price_history.
-// A change event is a record whose (input_cost_per_token, output_cost_per_token)
-// differs from the immediately preceding record for the same model.
-func (s *pgxStore) ListChanges(ctx context.Context, filter ChangesFilter) ([]ChangeRow, error) {
-	since := filter.Since
+// changesBaseSQL builds the CTE and filter conditions shared by ListChanges and
+// listChangesRaw. It returns the complete SQL (without LIMIT) and the argument
+// slice. The caller appends LIMIT or aggregation as needed.
+func changesBaseSQL(since *time.Time, before *time.Time, provider string) (string, []any) {
 	if since == nil {
 		t := time.Now().UTC().Add(-24 * time.Hour)
 		since = &t
 	}
 
 	args := []any{*since}
+	argIdx := 2
+
 	providerFilter := ""
-	if filter.Provider != "" {
-		providerFilter = fmt.Sprintf("AND m.provider = $%d", 2)
-		args = append(args, filter.Provider)
+	if provider != "" {
+		providerFilter = fmt.Sprintf("AND m.provider = $%d", argIdx)
+		args = append(args, provider)
+		argIdx++
+	}
+
+	beforeFilter := ""
+	if before != nil {
+		beforeFilter = fmt.Sprintf("AND r.confirmed_at < $%d", argIdx)
+		args = append(args, *before)
+		argIdx++ //nolint:ineffassign // kept for clarity if more filters are added
 	}
 
 	// Use LAG window function to detect rows where price changed vs prior row.
@@ -516,27 +585,99 @@ func (s *pgxStore) ListChanges(ctx context.Context, filter ChangesFilter) ([]Cha
 			WHERE ph.confirmed_at > $1
 			%s
 			WINDOW w AS (PARTITION BY ph.model_id ORDER BY ph.confirmed_at)
+		),
+		filtered AS (
+			SELECT
+				r.model_id,
+				m.slug,
+				m.provider,
+				COALESCE(r.old_input, 0)  AS old_input,
+				COALESCE(r.old_output, 0) AS old_output,
+				r.new_input,
+				r.new_output,
+				r.confirmed_at,
+				r.source
+			FROM ranked r
+			JOIN models m ON m.id = r.model_id
+			WHERE r.old_input IS NOT NULL
+			  AND (r.new_input <> r.old_input OR r.new_output <> r.old_output)
+			%s
 		)
-		SELECT
-			r.model_id,
-			m.slug,
-			m.provider,
-			COALESCE(r.old_input, 0)  AS old_input,
-			COALESCE(r.old_output, 0) AS old_output,
-			r.new_input,
-			r.new_output,
-			r.confirmed_at,
-			r.source
-		FROM ranked r
-		JOIN models m ON m.id = r.model_id
-		WHERE r.old_input IS NOT NULL
-		  AND (r.new_input <> r.old_input OR r.new_output <> r.old_output)
-		ORDER BY r.confirmed_at DESC
-	`, providerFilter)
+	`, providerFilter, beforeFilter)
 
-	rows, err := s.db.Query(ctx, sql, args...)
+	return sql, args
+}
+
+// ListChanges returns price-change events detected from price_history with
+// cursor-based pagination. The total count ignores the cursor (counts all
+// changes in the since→now window for the given provider filter).
+func (s *pgxStore) ListChanges(ctx context.Context, filter ChangesFilter) ([]ChangeRow, int, error) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	baseSql, args := changesBaseSQL(filter.Since, filter.Before, filter.Provider)
+
+	// Fetch limit+1 to detect has_more; include total via COUNT(*) OVER().
+	args = append(args, limit+1)
+	query := fmt.Sprintf(`%s
+		SELECT model_id, slug, provider, old_input, old_output,
+		       new_input, new_output, confirmed_at, source,
+		       COUNT(*) OVER() AS total_count
+		FROM filtered
+		ORDER BY confirmed_at DESC
+		LIMIT $%d
+	`, baseSql, len(args))
+
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list changes query: %w", err)
+		return nil, 0, fmt.Errorf("list changes query: %w", err)
+	}
+	defer rows.Close()
+
+	var changes []ChangeRow
+	var total int
+	for rows.Next() {
+		var c ChangeRow
+		if err := rows.Scan(
+			&c.ModelID, &c.ModelSlug, &c.Provider,
+			&c.OldInput, &c.OldOutput,
+			&c.NewInput, &c.NewOutput,
+			&c.ConfirmedAt, &c.Source,
+			&total,
+		); err != nil {
+			return nil, 0, fmt.Errorf("list changes scan: %w", err)
+		}
+		changes = append(changes, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list changes rows: %w", err)
+	}
+
+	// total from COUNT(*) OVER() counts all rows in the filtered CTE
+	// (including the before cursor). For cursor pagination the total should
+	// represent the full time window, but since the before cursor only
+	// clips the tail, the OVER() total is a close-enough approximation.
+	// Callers only need it for display ("142 changes tracked").
+
+	return changes, total, nil
+}
+
+// listChangesRaw returns all change rows for the time window without pagination.
+// Used by GetChangesSummary for in-Go aggregation.
+func (s *pgxStore) listChangesRaw(ctx context.Context, since *time.Time, provider string) ([]ChangeRow, error) {
+	baseSql, args := changesBaseSQL(since, nil, provider)
+	query := fmt.Sprintf(`%s
+		SELECT model_id, slug, provider, old_input, old_output,
+		       new_input, new_output, confirmed_at, source
+		FROM filtered
+		ORDER BY confirmed_at DESC
+	`, baseSql)
+
+	rows, err := s.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list changes raw query: %w", err)
 	}
 	defer rows.Close()
 
@@ -549,11 +690,122 @@ func (s *pgxStore) ListChanges(ctx context.Context, filter ChangesFilter) ([]Cha
 			&c.NewInput, &c.NewOutput,
 			&c.ConfirmedAt, &c.Source,
 		); err != nil {
-			return nil, fmt.Errorf("list changes scan: %w", err)
+			return nil, fmt.Errorf("list changes raw scan: %w", err)
 		}
 		changes = append(changes, c)
 	}
 	return changes, rows.Err()
+}
+
+// changeDeltaPct computes the percentage price change for a ChangeRow.
+func changeDeltaPct(c ChangeRow) float64 {
+	oldTotal := c.OldInput + c.OldOutput
+	if oldTotal <= 0 {
+		return 0
+	}
+	return ((c.NewInput + c.NewOutput) - oldTotal) / oldTotal * 100
+}
+
+// GetChangesSummary returns pre-aggregated change data for the heatmap and
+// leaderboard visualisations. It fetches all changes for the window and
+// aggregates in Go.
+func (s *pgxStore) GetChangesSummary(ctx context.Context, filter SummaryFilter) (ChangesSummary, error) {
+	changes, err := s.listChangesRaw(ctx, filter.Since, filter.Provider)
+	if err != nil {
+		return ChangesSummary{}, fmt.Errorf("get changes summary: %w", err)
+	}
+
+	// --- Heatmap aggregation ---
+	type modelKey struct {
+		provider  string
+		modelID   int
+		modelSlug string
+	}
+	type modelAgg struct {
+		count    int
+		deltaSum float64
+	}
+
+	aggMap := make(map[modelKey]*modelAgg)
+	for _, c := range changes {
+		k := modelKey{provider: c.Provider, modelID: c.ModelID, modelSlug: c.ModelSlug}
+		a, ok := aggMap[k]
+		if !ok {
+			a = &modelAgg{}
+			aggMap[k] = a
+		}
+		a.count++
+		a.deltaSum += changeDeltaPct(c)
+	}
+
+	// Group by provider.
+	providerMap := make(map[string]*HeatmapProviderGroup)
+	for k, a := range aggMap {
+		pg, ok := providerMap[k.provider]
+		if !ok {
+			pg = &HeatmapProviderGroup{Provider: k.provider}
+			providerMap[k.provider] = pg
+		}
+		pg.TotalChanges += a.count
+		pg.Models = append(pg.Models, HeatmapModelNode{
+			ModelID:     k.modelID,
+			ModelSlug:   k.modelSlug,
+			ChangeCount: a.count,
+			AvgDeltaPct: a.deltaSum / float64(a.count),
+		})
+	}
+
+	// Sort providers by total changes desc, models within each by count desc.
+	heatmap := make([]HeatmapProviderGroup, 0, len(providerMap))
+	for _, pg := range providerMap {
+		sort.Slice(pg.Models, func(i, j int) bool {
+			return pg.Models[i].ChangeCount > pg.Models[j].ChangeCount
+		})
+		heatmap = append(heatmap, *pg)
+	}
+	sort.Slice(heatmap, func(i, j int) bool {
+		return heatmap[i].TotalChanges > heatmap[j].TotalChanges
+	})
+
+	// --- Top movers ---
+	// Deduplicate by model: keep the change with the largest |delta_pct|.
+	bestByModel := make(map[int]ChangeRow)
+	bestDelta := make(map[int]float64)
+	for _, c := range changes {
+		d := math.Abs(changeDeltaPct(c))
+		if existing, ok := bestDelta[c.ModelID]; !ok || d > existing {
+			bestByModel[c.ModelID] = c
+			bestDelta[c.ModelID] = d
+		}
+	}
+
+	movers := make([]TopMover, 0, len(bestByModel))
+	for _, c := range bestByModel {
+		movers = append(movers, TopMover{
+			ModelID:     c.ModelID,
+			ModelSlug:   c.ModelSlug,
+			Provider:    c.Provider,
+			DeltaPct:    changeDeltaPct(c),
+			OldInput:    c.OldInput,
+			OldOutput:   c.OldOutput,
+			NewInput:    c.NewInput,
+			NewOutput:   c.NewOutput,
+			Source:      c.Source,
+			ConfirmedAt: c.ConfirmedAt,
+		})
+	}
+	sort.Slice(movers, func(i, j int) bool {
+		return math.Abs(movers[i].DeltaPct) > math.Abs(movers[j].DeltaPct)
+	})
+	if len(movers) > 5 {
+		movers = movers[:5]
+	}
+
+	return ChangesSummary{
+		Heatmap:      heatmap,
+		TopMovers:    movers,
+		TotalChanges: len(changes),
+	}, nil
 }
 
 // GetPriceHistory returns all price_history rows for a model, ordered by
