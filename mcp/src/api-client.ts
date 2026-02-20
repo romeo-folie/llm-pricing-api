@@ -23,10 +23,6 @@ export class ApiClient {
     this.apiKey = apiKey;
   }
 
-  private debugKey(): string {
-    return this.apiKey.substring(0, 8) + "...";
-  }
-
   private buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
     const url = new URL(path, this.baseUrl + "/");
     if (params) {

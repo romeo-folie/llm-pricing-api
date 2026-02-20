@@ -1,6 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ApiClient, ApiError } from "../api-client.js";
-import { formatMcpError } from "../errors.js";
+import { formatMcpError, validationError } from "../errors.js";
 
 export const definition = {
   name: "get_price_history",
@@ -30,12 +30,16 @@ export async function handler(
   args: Record<string, unknown>,
   client: ApiClient
 ): Promise<CallToolResult> {
-  const model_id = args.model_id as string;
+  const model_id = args.model_id;
+  if (typeof model_id !== "string" || model_id.trim() === "") {
+    const err = validationError("model_id must be a non-empty string");
+    return { content: [{ type: "text", text: formatMcpError(err) }], isError: true };
+  }
   const from = args.from as string | undefined;
   const to = args.to as string | undefined;
 
   try {
-    const result = await client.get(`/v1/models/${model_id}/history`, {
+    const result = await client.get(`/v1/models/${encodeURIComponent(model_id)}/history`, {
       params: { from, to },
     });
     return {

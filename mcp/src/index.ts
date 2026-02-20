@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createServer as createHttpServer } from "http";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ApiClient } from "./api-client.js";
 import { createServer } from "./server.js";
@@ -33,12 +34,22 @@ async function main(): Promise<void> {
       const { StreamableHTTPServerTransport } = await import(
         "@modelcontextprotocol/sdk/server/streamableHttp.js"
       );
-      // Stateless mode: no session management needed for a public API proxy
+      // Stateless mode: no session management needed for a public API proxy.
+      // StreamableHTTPServerTransport is a request handler, not a standalone listener —
+      // we create a Node.js HTTP server and wire requests to transport.handleRequest.
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
-      console.error(`llmrates MCP server listening on HTTP port ${port}`);
       await server.connect(transport);
+      const httpServer = createHttpServer((req, res) => {
+        transport.handleRequest(req, res).catch((err) => {
+          console.error("HTTP request error:", err instanceof Error ? err.message : err);
+          res.writeHead(500).end();
+        });
+      });
+      httpServer.listen(port, () => {
+        console.error(`llmrates MCP server listening on HTTP port ${port}`);
+      });
     } catch {
       console.error(
         "HTTP transport is not available in this SDK version. " +

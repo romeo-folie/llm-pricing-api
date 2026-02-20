@@ -4,7 +4,7 @@
   "description": "MCP server for LLM Rates — real-time LLM pricing data",
   "main": "dist/index.js",
   "bin": {
-    "@llmrates/mcp": "dist/index.js"
+    "llmrates-mcp": "dist/index.js"
   },
   "files": [
     "dist/",
