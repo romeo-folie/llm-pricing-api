@@ -67,6 +67,11 @@ func Diff(stored []models.Price, storedModels []models.Model, incoming []scraper
 	return diffs
 }
 
+// newModelDiff creates a PriceDiff for a model that has no prior price in storage.
+// PctChange is set to 1.0 (100%) as a sentinel for "no prior value" — the same value
+// used by fieldDiff when oldVal is zero. NeedsReview is false because first-appearance
+// is not a price change requiring human review; downstream consumers must check OldValue==0
+// to distinguish new-model diffs from genuine large increases.
 func newModelDiff(slug, source, underlyingProvider string, field models.PriceField, newVal float64) PriceDiff {
 	return PriceDiff{
 		ModelSlug:          slug,

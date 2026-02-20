@@ -103,15 +103,23 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 			ctxWindow = &v
 		}
 
+		// provider is the slug prefix (e.g. "anthropic" from "anthropic/claude-3-opus").
+		// We use it for both Provider and UnderlyingProvider. For OpenRouter, the slug
+		// prefix is the model author, which is the best available proxy for the
+		// infrastructure provider since the /v1/models endpoint does not expose per-model
+		// inference endpoint information. This lets the reconciler detect when OpenRouter
+		// and HuggingFace Inference Providers are serving the same underlying model
+		// (e.g. both carrying "together/llama-3" → UnderlyingProvider "together").
+		provider := providerFromSlug(m.ID)
 		models = append(models, scraper.ScrapedModel{
 			Slug:               m.ID,
-			Provider:           providerFromSlug(m.ID),
+			Provider:           provider,
 			InputCostPerToken:  input,
 			OutputCostPerToken: output,
 			ContextWindow:      ctxWindow,
 			Modality:           m.Architecture.Modality,
 			SourceName:         "openrouter",
-			UnderlyingProvider: providerFromSlug(m.ID),
+			UnderlyingProvider: provider,
 			FetchedAt:          fetchedAt,
 		})
 	}
