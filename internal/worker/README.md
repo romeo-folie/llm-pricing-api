@@ -36,6 +36,7 @@ String constants used as the asynq task type. The same constants are used in `cm
 |---|---|---|
 | `TaskOpenRouterScrape` | `"scrape:openrouter"` | Every 6 hours |
 | `TaskLiteLLMScrape` | `"scrape:litellm"` | Every 24 hours |
+| `TaskHuggingFaceScrape` | `"scrape:huggingface"` | Every 24 hours |
 | `TypeWebhookDeliver` | `"webhook:deliver"` | On-demand (enqueued by reconciler) |
 
 ### WorkerStore (`store.go`)
@@ -44,16 +45,17 @@ String constants used as the asynq task type. The same constants are used in `cm
 type WorkerStore interface {
     FetchModels(ctx context.Context) ([]models.Model, error)
     FetchPricesBySource(ctx context.Context, sourceName string) ([]models.Price, error)
+    EnsureModels(ctx context.Context, models []scraper.ScrapedModel) error
 }
 ```
 
-`FetchModels` returns all rows from the `models` table (used by the diff engine to resolve model IDs to slugs). `FetchPricesBySource` returns all `prices` rows for the named source via `JOIN sources` — the result is the baseline the diff engine compares incoming scraped data against.
+`FetchModels` returns all rows from the `models` table (used by the diff engine to resolve model IDs to slugs). `FetchPricesBySource` returns all `prices` rows for the named source via `JOIN sources` — the result is the baseline the diff engine compares incoming scraped data against. `EnsureModels` upserts any model slugs from incoming scraped data that do not yet exist in the `models` table, creating them before the diff engine runs.
 
 `NewPgxStore(db *pgxpool.Pool) WorkerStore` returns the production implementation.
 
 ### Handlers (`handlers.go`)
 
-`NewHandlers(store WorkerStore, rec *reconciler.Reconciler) *Handlers` is the constructor. Public methods (`HandleOpenRouterScrape`, `HandleLiteLLMScrape`) delegate to the private `runPipeline` helper.
+`NewHandlers(store WorkerStore, rec *reconciler.Reconciler) *Handlers` is the constructor. Public methods (`HandleOpenRouterScrape`, `HandleLiteLLMScrape`, `HandleHuggingFaceScrape`) delegate to the private `runPipeline` helper.
 
 **Pipeline per handler:**
 1. `slog.Info("handler: starting", ...)` — structured log with task name
@@ -109,6 +111,7 @@ type WebhookTaskPayload struct {
 | `internal/scraper` | `Scraper` interface accepted by `runPipeline` |
 | `internal/scraper/openrouter` | OpenRouter API scraper |
 | `internal/scraper/litellm` | LiteLLM GitHub JSON scraper |
+| `internal/scraper/huggingface` | HuggingFace Inference Providers scraper |
 | `internal/diff` | Diff engine — computes price changes |
 | `internal/reconciler` | Reconciliation engine — mediates all DB writes |
 | `internal/models` | Shared domain types (`Model`, `Price`) |
@@ -124,12 +127,14 @@ store := worker.NewPgxStore(db)
 rec   := reconciler.New(db)
 h     := worker.NewHandlers(store, rec)
 
-mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
-mux.HandleFunc(worker.TaskLiteLLMScrape,    h.HandleLiteLLMScrape)
-mux.HandleFunc(worker.TypeWebhookDeliver,   worker.HandleWebhookDeliver)
+mux.HandleFunc(worker.TaskOpenRouterScrape,  h.HandleOpenRouterScrape)
+mux.HandleFunc(worker.TaskLiteLLMScrape,     h.HandleLiteLLMScrape)
+mux.HandleFunc(worker.TaskHuggingFaceScrape, h.HandleHuggingFaceScrape)
+mux.HandleFunc(worker.TypeWebhookDeliver,    worker.HandleWebhookDeliver)
 
 scheduler.Register("@every 6h",  asynq.NewTask(worker.TaskOpenRouterScrape, nil))
 scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil))
+scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceScrape, nil))
 ```
 
 ## Testing

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"llm-pricing-api/internal/scraper"
 )
 
 // happyPathResponse contains two models:
@@ -382,8 +384,8 @@ func TestCheckRedirectHost_BlocksLoopback(t *testing.T) {
 	cases := []string{"127.0.0.1", "127.0.0.2"}
 	for _, host := range cases {
 		t.Run(host, func(t *testing.T) {
-			if err := checkRedirectHost(context.Background(), host); err == nil {
-				t.Errorf("checkRedirectHost(%q) = nil, want error (loopback blocked)", host)
+			if err := scraper.CheckRedirectHost(context.Background(), host); err == nil {
+				t.Errorf("scraper.CheckRedirectHost(%q) = nil, want error (loopback blocked)", host)
 			}
 		})
 	}
@@ -394,8 +396,8 @@ func TestCheckRedirectHost_BlocksPrivate(t *testing.T) {
 	cases := []string{"192.168.1.1", "10.0.0.1", "172.16.0.1"}
 	for _, host := range cases {
 		t.Run(host, func(t *testing.T) {
-			if err := checkRedirectHost(context.Background(), host); err == nil {
-				t.Errorf("checkRedirectHost(%q) = nil, want error (private IP blocked)", host)
+			if err := scraper.CheckRedirectHost(context.Background(), host); err == nil {
+				t.Errorf("scraper.CheckRedirectHost(%q) = nil, want error (private IP blocked)", host)
 			}
 		})
 	}
@@ -404,24 +406,24 @@ func TestCheckRedirectHost_BlocksPrivate(t *testing.T) {
 // TestCheckRedirectHost_BlocksLoopbackWithPort verifies that port stripping works before
 // the loopback check (a host of "127.0.0.1:8080" must still be rejected).
 func TestCheckRedirectHost_BlocksLoopbackWithPort(t *testing.T) {
-	if err := checkRedirectHost(context.Background(), "127.0.0.1:8080"); err == nil {
-		t.Error(`checkRedirectHost("127.0.0.1:8080") = nil, want error`)
+	if err := scraper.CheckRedirectHost(context.Background(), "127.0.0.1:8080"); err == nil {
+		t.Error(`scraper.CheckRedirectHost("127.0.0.1:8080") = nil, want error`)
 	}
 }
 
 // TestCheckRedirectHost_AllowsPublicIP verifies that a well-known public IP is not blocked.
 // IP literals are resolved without a real DNS query, so this test is deterministic.
 func TestCheckRedirectHost_AllowsPublicIP(t *testing.T) {
-	if err := checkRedirectHost(context.Background(), "8.8.8.8"); err != nil {
-		t.Errorf(`checkRedirectHost("8.8.8.8") = %v, want nil`, err)
+	if err := scraper.CheckRedirectHost(context.Background(), "8.8.8.8"); err != nil {
+		t.Errorf(`scraper.CheckRedirectHost("8.8.8.8") = %v, want nil`, err)
 	}
 }
 
 // TestCheckRedirectHost_UnresolvableHostBlocked verifies that a host that cannot be
 // resolved is treated as blocked rather than allowed (fail-closed).
 func TestCheckRedirectHost_UnresolvableHostBlocked(t *testing.T) {
-	if err := checkRedirectHost(context.Background(), "this-host-definitely-does-not-exist.invalid"); err == nil {
-		t.Error("checkRedirectHost with unresolvable host should return error (fail-closed)")
+	if err := scraper.CheckRedirectHost(context.Background(), "this-host-definitely-does-not-exist.invalid"); err == nil {
+		t.Error("scraper.CheckRedirectHost with unresolvable host should return error (fail-closed)")
 	}
 }
 

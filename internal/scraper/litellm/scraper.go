@@ -22,10 +22,21 @@ type Scraper struct {
 }
 
 // New returns a Scraper using the provided HTTP client.
-// If client is nil a default client with a 15s timeout is used.
+// If client is nil, a default client with a 60s timeout and SSRF prevention
+// (RFC-1918 / loopback / link-local addresses blocked at the Transport and
+// CheckRedirect layers via scraper.NewSSRFSafeTransport and scraper.CheckRedirectHost)
+// is used.
 func New(client *http.Client) *Scraper {
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: scraper.NewSSRFSafeTransport(),
+			// CheckRedirect provides a fast, early-exit block for redirect URLs
+			// that point to private IPs — defense-in-depth alongside DialContext.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return scraper.CheckRedirectHost(req.Context(), req.URL.Hostname())
+			},
+		}
 	}
 	return &Scraper{client: client, url: defaultURL}
 }

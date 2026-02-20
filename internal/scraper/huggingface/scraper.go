@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -41,85 +40,21 @@ type Scraper struct {
 // New returns a Scraper using the provided HTTP client.
 // If client is nil, a default client with a 60s timeout and SSRF prevention
 // (RFC-1918 / loopback / link-local addresses blocked at the Transport and
-// CheckRedirect layers) is used.
+// CheckRedirect layers via scraper.NewSSRFSafeTransport and scraper.CheckRedirectHost)
+// is used.
 func New(client *http.Client) *Scraper {
 	if client == nil {
 		client = &http.Client{
 			Timeout:   60 * time.Second,
-			Transport: newSSRFSafeTransport(),
+			Transport: scraper.NewSSRFSafeTransport(),
 			// CheckRedirect provides a fast, early-exit block for redirect URLs
 			// that point to private IPs — defense-in-depth alongside DialContext.
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return checkRedirectHost(req.Context(), req.URL.Hostname())
+				return scraper.CheckRedirectHost(req.Context(), req.URL.Hostname())
 			},
 		}
 	}
 	return &Scraper{client: client, baseURL: defaultBaseURL}
-}
-
-// newSSRFSafeTransport returns an http.Transport whose DialContext resolves the
-// target hostname once, validates all resolved IPs against the private/loopback
-// blocklist, and then connects directly to the first safe IP — eliminating the
-// DNS rebinding window that exists when resolution and TCP connect are separate
-// operations (SSRF prevention per CLAUDE.md).
-func newSSRFSafeTransport() *http.Transport {
-	base := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	return &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, fmt.Errorf("huggingface: split addr %q: %w", addr, err)
-			}
-			resolved, err := net.DefaultResolver.LookupHost(ctx, host)
-			if err != nil {
-				return nil, fmt.Errorf("huggingface: resolve %q: %w", host, err)
-			}
-			if err := checkIPs(resolved); err != nil {
-				return nil, err
-			}
-			// Connect directly to the first resolved IP to prevent re-resolution
-			// (and the associated rebinding window) inside the dialer.
-			return base.DialContext(ctx, network, net.JoinHostPort(resolved[0], port))
-		},
-	}
-}
-
-// checkIPs returns an error if any address in addrs is a private, loopback,
-// link-local, multicast, or unspecified IP.  It is the shared inner check used
-// by both checkRedirectHost and newSSRFSafeTransport's DialContext.
-// Addresses that net.ParseIP cannot parse are treated as blocked (fail-closed).
-func checkIPs(addrs []string) error {
-	for _, a := range addrs {
-		ip := net.ParseIP(a)
-		if ip == nil {
-			// Fail-closed: an unparseable address is not provably safe.
-			return fmt.Errorf("huggingface: unparseable address %q blocked (SSRF prevention)", a)
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-			return fmt.Errorf("huggingface: address %s blocked (SSRF prevention)", ip)
-		}
-	}
-	return nil
-}
-
-// checkRedirectHost blocks redirects to private IP ranges and loopback.
-// Returns an error (blocking the redirect) if the host resolves to a
-// private or loopback address (SSRF prevention).
-func checkRedirectHost(ctx context.Context, host string) error {
-	// Strip port if present.
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
-	if err != nil {
-		// If we can't resolve it, block it (fail-closed).
-		return fmt.Errorf("huggingface: redirect host %q unresolvable: %w", host, err)
-	}
-	return checkIPs(addrs)
 }
 
 // hfModel is one element of the HuggingFace /api/models JSON array.
