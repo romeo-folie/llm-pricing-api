@@ -4,7 +4,7 @@ Background job worker entrypoint for the LLM Pricing Platform.
 
 ## Purpose
 
-Runs an asynq worker server that processes asynchronous scraper tasks from the Redis-backed job queue. On startup it connects to PostgreSQL, wires the seven scraper task handlers through the diff and reconciliation pipeline, and starts a cron scheduler that enqueues scrape jobs at the configured intervals. The worker is the sole process responsible for keeping pricing data fresh; it never serves HTTP traffic.
+Runs an asynq worker server that processes asynchronous scraper tasks from the Redis-backed job queue. On startup it connects to PostgreSQL, wires the scraper task handlers through the diff and reconciliation pipeline, and starts a cron scheduler that enqueues scrape jobs at the configured intervals. The worker is the sole process responsible for keeping pricing data fresh. It also runs a minimal HTTP health server on `APP_PORT` (default 8080) so that Railway's health check can verify the service is alive.
 
 ## Structure
 
@@ -16,7 +16,8 @@ cmd/worker/
 
 ## Key Components
 
-- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers all 7 scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown via `srv.Shutdown()` and `scheduler.Shutdown()`.
+- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of the health server, asynq server, and scheduler.
+- **`GET /health`** — Pings both PostgreSQL and Redis. Returns `{"status":"ok","db":"ok","redis":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable. Used by Railway's health check to verify the worker is running.
 
 ## Tasks and Cron Schedule
 

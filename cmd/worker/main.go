@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -161,11 +162,47 @@ func main() {
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
 
+	// Start a minimal HTTP server for Railway health checks. The worker is a
+	// pure asynq consumer with no Fiber router, but Railway expects every
+	// service to respond on healthcheckPath ("/health"). We bind to APP_PORT
+	// (same env var the API uses) so the shared railway.json config works for
+	// both services without modification.
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		dbStatus := "ok"
+		if err := db.Ping(ctx); err != nil {
+			dbStatus = "error"
+		}
+		redisStatus := "ok"
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			redisStatus = "error"
+		}
+		status := "ok"
+		code := http.StatusOK
+		if dbStatus != "ok" || redisStatus != "ok" {
+			status = "degraded"
+			code = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(`{"status":"` + status + `","db":"` + dbStatus + `","redis":"` + redisStatus + `"}`))
+	})
+	healthSrv := &http.Server{Addr: ":" + cfg.AppPort, Handler: healthMux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		log.Info().Str("port", cfg.AppPort).Msg("health server listening")
+		if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("health server error")
+		}
+	}()
+
 	// Block until SIGINT or SIGTERM, then shut down gracefully.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
 	<-quit
 	log.Info().Msg("worker shutting down...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = healthSrv.Shutdown(shutdownCtx)
 	srv.Shutdown()
 }
