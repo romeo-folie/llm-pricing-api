@@ -56,7 +56,50 @@ export class ApiClient {
         throw new ApiError(err, response.status);
       }
 
-      return JSON.parse(body) as T;
+      try {
+        return JSON.parse(body) as T;
+      } catch {
+        throw new ApiError(
+          { kind: "server", message: `Unexpected non-JSON response from ${this.baseUrl}` },
+          response.status
+        );
+      }
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new ApiError(networkError(this.baseUrl));
+      }
+      throw new ApiError(networkError(this.baseUrl));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Fetch a plain-text / non-JSON response body. Used for endpoints that
+   *  return formats other than JSON (e.g. /v1/context?format=markdown). */
+  async getText(path: string, options?: RequestOptions): Promise<string> {
+    const url = this.buildUrl(path, options?.params);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: "text/plain, text/markdown",
+        },
+        signal: controller.signal,
+      });
+
+      const body = await response.text();
+
+      if (!response.ok) {
+        const err = classifyHttpError(response.status, body, this.baseUrl);
+        throw new ApiError(err, response.status);
+      }
+
+      return body;
     } catch (err) {
       if (err instanceof ApiError) throw err;
       if (err instanceof Error && err.name === "AbortError") {

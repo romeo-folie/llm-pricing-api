@@ -29,5 +29,13 @@
     "node": ">=18.0.0"
   },
   "keywords": ["mcp", "llm", "pricing", "ai"],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romeo-folie/llm-pricing-api.git"
+  },
+  "homepage": "https://llmrates.com",
+  "publishConfig": {
+    "access": "public"
+  }
 }

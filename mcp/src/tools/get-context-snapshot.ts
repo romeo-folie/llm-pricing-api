@@ -26,6 +26,10 @@ export async function handler(
   const format = args.format as string | undefined;
 
   try {
+    if (format === "markdown") {
+      const text = await client.getText("/v1/context", { params: { format } });
+      return { content: [{ type: "text", text }] };
+    }
     const result = await client.get("/v1/context", {
       params: { format },
     });

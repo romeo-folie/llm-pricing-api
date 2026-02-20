@@ -43,9 +43,15 @@ func (m *mockWebhookStore) DeleteWebhook(ctx context.Context, id, apiKeyHash str
 
 // --- helpers ---
 
+// noopURLValidator bypasses SSRF DNS checks in unit tests that focus on
+// request handling rather than URL validation behaviour.
+var noopURLValidator = func(string) error { return nil }
+
 // newWebhookApp creates a minimal Fiber app wired with the webhook routes and
 // the given WebhookStore, pre-seeded with the tier/key_hash locals.
-func newWebhookApp(store handlers.WebhookStore, tier, keyHash string) *fiber.App {
+// urlValidator is injected into the handler; pass noopURLValidator for tests
+// that do not need DNS resolution, or nil to use the real isWebhookURLSafe.
+func newWebhookApp(store handlers.WebhookStore, tier, keyHash string, urlValidator func(string) error) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 
 	// Inject locals directly (simulates auth middleware in tests).
@@ -58,7 +64,7 @@ func newWebhookApp(store handlers.WebhookStore, tier, keyHash string) *fiber.App
 	v1 := app.Group("/v1")
 
 	// Register only the webhook routes using the supplied mock store.
-	wh := &handlers.WebhookHandlerExport{Store: store}
+	wh := &handlers.WebhookHandlerExport{Store: store, UrlValidator: urlValidator}
 	v1.Post("/webhooks", middleware.RequireTier("pro"), wh.Create)
 	v1.Delete("/webhooks/:id", middleware.RequireTier("pro"), wh.Delete)
 
@@ -82,7 +88,7 @@ func doRequest(app *fiber.App, method, path string, body io.Reader) (int, []byte
 // --- tests ---
 
 func TestCreateWebhook_ReturnsSecret_201(t *testing.T) {
-	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash")
+	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash", noopURLValidator)
 
 	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
 	status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
@@ -114,7 +120,7 @@ func TestCreateWebhook_ReturnsSecret_201(t *testing.T) {
 }
 
 func TestCreateWebhook_InvalidURL_Returns400(t *testing.T) {
-	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash")
+	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash", noopURLValidator)
 
 	body := bytes.NewBufferString(`{"url":"not-a-url"}`)
 	status, _ := doRequest(app, "POST", "/v1/webhooks", body)
@@ -125,7 +131,7 @@ func TestCreateWebhook_InvalidURL_Returns400(t *testing.T) {
 }
 
 func TestCreateWebhook_MissingURL_Returns400(t *testing.T) {
-	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash")
+	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash", noopURLValidator)
 
 	body := bytes.NewBufferString(`{}`)
 	status, _ := doRequest(app, "POST", "/v1/webhooks", body)
@@ -136,7 +142,7 @@ func TestCreateWebhook_MissingURL_Returns400(t *testing.T) {
 }
 
 func TestCreateWebhook_FreeTier_Returns403(t *testing.T) {
-	app := newWebhookApp(&mockWebhookStore{}, "free", "testhash")
+	app := newWebhookApp(&mockWebhookStore{}, "free", "testhash", noopURLValidator)
 
 	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
 	status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
@@ -155,7 +161,7 @@ func TestCreateWebhook_FreeTier_Returns403(t *testing.T) {
 }
 
 func TestCreateWebhook_DeveloperTier_Returns403(t *testing.T) {
-	app := newWebhookApp(&mockWebhookStore{}, "developer", "testhash")
+	app := newWebhookApp(&mockWebhookStore{}, "developer", "testhash", noopURLValidator)
 
 	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
 	status, _ := doRequest(app, "POST", "/v1/webhooks", body)
@@ -174,7 +180,7 @@ func TestDeleteWebhook_Returns204(t *testing.T) {
 			return nil
 		},
 	}
-	app := newWebhookApp(store, "pro", "testhash")
+	app := newWebhookApp(store, "pro", "testhash", noopURLValidator)
 
 	status, _ := doRequest(app, "DELETE", "/v1/webhooks/test-id", nil)
 
@@ -189,11 +195,53 @@ func TestDeleteWebhook_WrongOwner_Returns404(t *testing.T) {
 			return handlers.ErrWebhookNotFound
 		},
 	}
-	app := newWebhookApp(store, "pro", "differenthash")
+	app := newWebhookApp(store, "pro", "differenthash", noopURLValidator)
 
 	status, _ := doRequest(app, "DELETE", "/v1/webhooks/test-id", nil)
 
 	if status != fiber.StatusNotFound {
 		t.Fatalf("expected 404 for wrong owner, got %d", status)
+	}
+}
+
+func TestCreateWebhook_HTTPScheme_Returns400(t *testing.T) {
+	// https is required; plain http must be rejected before any DNS lookup.
+	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash", nil) // real validator
+	body := bytes.NewBufferString(`{"url":"http://example.com/hook"}`)
+	status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for http URL, got %d; body: %s", status, respBody)
+	}
+}
+
+func TestCreateWebhook_LoopbackIP_Returns400(t *testing.T) {
+	// Loopback IPs must be rejected (SSRF protection). Uses the real validator;
+	// DNS resolution is not needed because the hostname is a literal IP address.
+	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash", nil) // real validator
+	for _, url := range []string{
+		"https://127.0.0.1/hook",
+		"https://127.0.0.2/hook", // any 127.x.x.x
+	} {
+		body := bytes.NewBufferString(`{"url":"` + url + `"}`)
+		status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
+		if status != fiber.StatusBadRequest {
+			t.Fatalf("expected 400 for loopback URL %s, got %d; body: %s", url, status, respBody)
+		}
+	}
+}
+
+func TestCreateWebhook_PrivateIP_Returns400(t *testing.T) {
+	// RFC 1918 private IPs must be rejected. DNS resolution not needed for literal IPs.
+	app := newWebhookApp(&mockWebhookStore{}, "pro", "testhash", nil) // real validator
+	for _, url := range []string{
+		"https://192.168.1.1/hook",
+		"https://10.0.0.1/hook",
+		"https://172.16.0.1/hook",
+	} {
+		body := bytes.NewBufferString(`{"url":"` + url + `"}`)
+		status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
+		if status != fiber.StatusBadRequest {
+			t.Fatalf("expected 400 for private IP URL %s, got %d; body: %s", url, status, respBody)
+		}
 	}
 }

@@ -675,7 +675,6 @@ func (s *pgxStore) GetModelHistory(ctx context.Context, modelID int, filter Hist
 		args = append(args, *filter.To)
 		argIdx++
 	}
-	_ = argIdx
 
 	sql := fmt.Sprintf(`
 		SELECT
@@ -770,7 +769,6 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 		args = append(args, *filter.MaxPriceInput)
 		argIdx++
 	}
-	_ = argIdx
 
 	sql := fmt.Sprintf(`
 		SELECT
