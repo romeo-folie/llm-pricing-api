@@ -179,7 +179,9 @@ func setupTestApp(t *testing.T) *fiber.App {
 	)
 
 	handlers.RegisterFree(v1, db, rdb)
-	handlers.RegisterDev(v1, db, rdb)
+	if err := handlers.RegisterDev(v1, db, rdb); err != nil {
+		t.Fatalf("register dev handlers: %v", err)
+	}
 	log := zerolog.Nop()
 	// Pass "" as webhookSecretKey: the handler skips AES-256-GCM when no
 	// 32-byte key is configured and stores secrets as plaintext. Intentional
@@ -943,8 +945,13 @@ func TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels(t *testing.T)
 	if envelope.Data.Intent != "recommend" {
 		t.Errorf("expected intent 'recommend', got %q", envelope.Data.Intent)
 	}
-	// ranked_models may be empty if no models match, but the field must be present.
-	// (The seed data may not have summarization-modality models.)
+	// The seed data contains 6 text-modality models (GPT-4o Mini, GPT-4 Turbo,
+	// Claude 3.5 Sonnet, Claude 3 Haiku, Gemini 1.5 Pro, Gemini 1.5 Flash).
+	// "summarization" maps to the text modality via taskModalityMap, so at
+	// least one ranked model must be returned.
+	if len(envelope.Data.RankedModels) == 0 {
+		t.Errorf("expected non-empty ranked_models for summarization query; body: %s", body)
+	}
 }
 
 // TestIntegrationAsk_FreeKey_Returns403 verifies that /v1/ask enforces Developer+ tier.

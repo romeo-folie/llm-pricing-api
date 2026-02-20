@@ -173,6 +173,7 @@ func TestGetOpenAPI_ContainsAllV1Paths(t *testing.T) {
 		"/v1/webhooks",
 		"/v1/webhooks/{id}",
 		"/v1/context",
+		"/v1/ask",
 		"/v1/stream/changes",
 	}
 
@@ -576,37 +577,6 @@ func TestGetLLMsTxt_ContainsAuthInstructions(t *testing.T) {
 	}
 	if !strings.Contains(text, "curl") {
 		t.Error("llms.txt must contain curl examples")
-	}
-}
-
-// TestGetOpenAPI_ContainsAskPath verifies the spec includes /v1/ask.
-// This test ensures the existing TestGetOpenAPI_ContainsAllV1Paths check
-// is not the only guard — we also verify the ask path specifically for
-// backward compatibility in case the required list ever changes.
-func TestGetOpenAPI_ContainsAskPath(t *testing.T) {
-	app := newDiscoveryApp(&mockStore{})
-
-	req := httptest.NewRequest("GET", "/openapi.json", nil)
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatalf("app.Test: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-
-	var doc struct {
-		Paths map[string]any `json:"paths"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-
-	if _, ok := doc.Paths["/v1/ask"]; !ok {
-		t.Error("OpenAPI spec must include /v1/ask path")
 	}
 }
 

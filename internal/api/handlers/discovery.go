@@ -69,6 +69,11 @@ func (h *DiscoveryHandler) GetAIPlugin(c *fiber.Ctx) error {
 // llmsTxtHeader is the static header prepended to every /llms.txt response.
 // It describes the API, authentication requirements, available endpoints,
 // and example requests so that agents can bootstrap context without prior knowledge.
+//
+// The base URL is intentionally hardcoded to the production address — /llms.txt
+// is agent-facing documentation that describes the public API, not the current
+// deployment. Staging and local environments serve the same content so agents
+// always reference the canonical production endpoint.
 const llmsTxtHeader = `# LLM Rates — Pricing API
 
 Base URL: https://api.llmrates.live
