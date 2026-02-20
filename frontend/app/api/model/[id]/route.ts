@@ -18,7 +18,8 @@ export async function GET(
     return NextResponse.json({ model, history })
   } catch (e) {
     const msg    = e instanceof Error ? e.message : "Unknown error"
-    const status = msg.includes("404") ? 404 : 500
+    const parsed = msg.match(/^API error (\d{3}) at /)
+    const status = parsed ? parseInt(parsed[1], 10) : 500
     return NextResponse.json({ error: msg }, { status })
   }
 }

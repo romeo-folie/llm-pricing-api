@@ -19,11 +19,11 @@ var routeTTLs = []struct {
 	prefix string
 	ttl    time.Duration
 }{
-	{"/v1/context", 10 * time.Minute},
-	{"/v1/models", 5 * time.Minute},
-	{"/v1/providers", 5 * time.Minute},
-	{"/v1/changes", 5 * time.Minute},
-	{"/v1/compare", 2 * time.Minute},
+	{"/v1/context", 1 * time.Hour},
+	{"/v1/models", 30 * time.Minute},
+	{"/v1/providers", 30 * time.Minute},
+	{"/v1/changes", 10 * time.Minute},
+	{"/v1/compare", 10 * time.Minute},
 }
 
 // ttlForPath returns the cache TTL for the given request path, and whether the

@@ -132,8 +132,8 @@ func main() {
 	unkeyVerifier := middleware.NewUnkeyClient(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
 	v1 := app.Group("/v1",
 		middleware.Auth(unkeyVerifier, redisClient, cfg.UnkeyAPIID),
-		middleware.RateLimit(redisClient),
 		middleware.Cache(redisClient),
+		middleware.RateLimit(redisClient),
 	)
 
 	// Register public discovery routes outside the auth group.
