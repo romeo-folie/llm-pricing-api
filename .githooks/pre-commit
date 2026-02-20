@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pre-commit hook — blocks commits when lint or tests fail.
+# Install once per clone: git config core.hooksPath .githooks
+
+set -e
+
+echo "▶ golangci-lint..."
+golangci-lint run ./...
+
+echo "▶ go test..."
+go test ./...
+
+echo "✓ Pre-commit checks passed."

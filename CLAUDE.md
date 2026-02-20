@@ -295,14 +295,22 @@ If a finding is intentionally deferred (e.g. out of scope for this epic), docume
 
 ## Pre-Commit Checklist
 
-Before creating any commit, the following must all pass:
+> **ENFORCEMENT:** A git pre-commit hook in `.githooks/pre-commit` runs lint and tests automatically and **blocks the commit if either fails**. The hook must be active in every clone. On a fresh clone, run this once before doing any work:
+>
+> ```bash
+> git config core.hooksPath .githooks
+> ```
+>
+> **Never use `--no-verify` to bypass it.** If the hook is not installed, run the checks manually before every `git commit` — no exceptions.
 
-1. **All tests green**: `go test ./...` exits with zero failures.
-2. **Build succeeds**: `go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors. Always build into `bin/` — never `go build ./...` as it drops binaries into the project root.
-3. **Lint clean**: `golangci-lint run ./...` returns no errors. Install once with `brew install golangci-lint`; config is in `.golangci.yml`.
+Before creating any commit, **all** of the following must pass. Run them in this order:
+
+1. **Lint clean** — run first, fastest feedback: `golangci-lint run ./...` returns no errors. Install once with `brew install golangci-lint`; config is in `.golangci.yml`.
+2. **All tests green**: `go test ./...` exits with zero failures.
+3. **Build succeeds**: `go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors. Always build into `bin/` — never `go build ./...` as it drops binaries into the project root.
 4. **Code review clean**: `/code-reviewer` returns no actionable findings (see Code Review Gate above).
 
-Do not commit if any of the above fail.
+**Do not commit if any of the above fail. This is not optional.**
 
 ## Test-Driven Development
 
