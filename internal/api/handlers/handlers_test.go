@@ -489,6 +489,40 @@ func TestGetModel_BySlug_OK(t *testing.T) {
 	}
 }
 
+func TestGetModel_BySlug_PercentEncoded_OK(t *testing.T) {
+	// Slugs like "openai/gpt-4o" are sent as "openai%2Fgpt-4o" by the frontend.
+	// The handler must PathUnescape the param before the DB lookup.
+	const slug = "openai/gpt-4o"
+	store := &mockStore{
+		getModelBySlug: func(_ context.Context, s string) (handlers.ModelRow, error) {
+			if s == slug {
+				m := sampleModel(1)
+				m.Slug = slug
+				return m, nil
+			}
+			return handlers.ModelRow{}, handlers.ErrNotFound
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/models/openai%2Fgpt-4o")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200 for percent-encoded slug, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Slug string `json:"slug"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.Slug != slug {
+		t.Errorf("expected slug=%q, got %q", slug, envelope.Data.Slug)
+	}
+}
+
 func TestGetModel_BySlug_NotFound(t *testing.T) {
 	app := newApp(&mockStore{})
 

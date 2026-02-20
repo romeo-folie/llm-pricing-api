@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -115,7 +116,10 @@ func (h *Handlers) GetModel(c *fiber.Ctx) error {
 	if id, intErr := strconv.Atoi(idStr); intErr == nil && id > 0 {
 		model, err = h.store.GetModel(c.Context(), id)
 	} else {
-		model, err = h.store.GetModelBySlug(c.Context(), idStr)
+		// Fiber does not auto-decode %2F in path params; decode manually so
+		// slugs like "openai%2Fgpt-4o" resolve correctly to "openai/gpt-4o".
+		slug, _ := url.PathUnescape(idStr)
+		model, err = h.store.GetModelBySlug(c.Context(), slug)
 	}
 
 	if err != nil {
