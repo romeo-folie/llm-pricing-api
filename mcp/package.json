@@ -1,6 +1,6 @@
 {
   "name": "@llmrates/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for LLM Rates — real-time LLM pricing data",
   "main": "dist/index.js",
   "bin": {
