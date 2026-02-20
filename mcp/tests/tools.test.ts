@@ -5,6 +5,7 @@
  *   TEST_API_KEY  — Developer-tier Unkey API key (required for most tests)
  *   TEST_API_URL  — Override API base URL (optional; defaults to production)
  *   TEST_FREE_KEY — Free-tier Unkey API key (for tier-error tests; optional)
+ *   TEST_PRO_KEY  — Pro-tier Unkey API key (for subscribe_to_changes happy-path; optional)
  *
  * Tests that require a key are skipped automatically if TEST_API_KEY is not set.
  * This allows CI to run the suite with just npm test and skip live-API tests.
@@ -26,9 +27,11 @@ const SERVER_PATH = path.resolve(__dirname, "../dist/index.js");
 const TEST_API_KEY = process.env.TEST_API_KEY ?? "";
 const TEST_API_URL = process.env.TEST_API_URL ?? "";
 const TEST_FREE_KEY = process.env.TEST_FREE_KEY ?? "";
+const TEST_PRO_KEY = process.env.TEST_PRO_KEY ?? "";
 
 const hasApiKey = Boolean(TEST_API_KEY);
 const hasFreeKey = Boolean(TEST_FREE_KEY);
+const hasProKey = Boolean(TEST_PRO_KEY);
 
 /** Helper: create an MCP client connected to the server binary */
 async function createClient(env: Record<string, string> = {}): Promise<Client> {
@@ -48,20 +51,18 @@ async function createClient(env: Record<string, string> = {}): Promise<Client> {
 }
 
 // ---------------------------------------------------------------------------
-// Tool listing
+// Tool listing (requires any valid API key to connect)
 // ---------------------------------------------------------------------------
-describe("listTools", () => {
+describe.skipIf(!hasApiKey)("listTools", () => {
   let client: Client;
   beforeAll(async () => {
-    if (!hasApiKey) return;
     client = await createClient();
   });
   afterAll(async () => {
-    if (client) await client.close();
+    await client.close();
   });
 
   it("lists all 6 tools", async () => {
-    if (!hasApiKey) return;
     const result = await client.listTools();
     const names = result.tools.map((t) => t.name).sort();
     expect(names).toEqual([
@@ -78,28 +79,24 @@ describe("listTools", () => {
 // ---------------------------------------------------------------------------
 // Happy-path tests (require Developer-tier key)
 // ---------------------------------------------------------------------------
-describe("happy paths", () => {
+describe.skipIf(!hasApiKey)("happy paths", () => {
   let client: Client;
   beforeAll(async () => {
-    if (!hasApiKey) return;
     client = await createClient();
   });
   afterAll(async () => {
-    if (client) await client.close();
+    await client.close();
   });
 
   it("get_recent_changes — returns array of changes", async () => {
-    if (!hasApiKey) return;
     const result = await client.callTool({ name: "get_recent_changes", arguments: {} });
     expect(result.isError).toBeFalsy();
     expect(result.content).toHaveLength(1);
     const parsed = JSON.parse((result.content[0] as { text: string }).text);
-    // API returns an object with a data array or similar envelope — check it's parseable
     expect(parsed).toBeDefined();
   });
 
   it("compare_models — returns comparison data for 2 models", async () => {
-    if (!hasApiKey) return;
     const result = await client.callTool({
       name: "compare_models",
       arguments: { models: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"] },
@@ -110,7 +107,6 @@ describe("happy paths", () => {
   });
 
   it("get_cheapest_model — returns ranked results for a task", async () => {
-    if (!hasApiKey) return;
     const result = await client.callTool({
       name: "get_cheapest_model",
       arguments: { task: "text summarization" },
@@ -121,7 +117,6 @@ describe("happy paths", () => {
   });
 
   it("get_context_snapshot — returns pricing snapshot", async () => {
-    if (!hasApiKey) return;
     const result = await client.callTool({
       name: "get_context_snapshot",
       arguments: { format: "json" },
@@ -132,7 +127,6 @@ describe("happy paths", () => {
   });
 
   it("get_context_snapshot markdown — returns text content", async () => {
-    if (!hasApiKey) return;
     const result = await client.callTool({
       name: "get_context_snapshot",
       arguments: { format: "markdown" },
@@ -143,7 +137,6 @@ describe("happy paths", () => {
   });
 
   it("get_price_history — returns history for a known model", async () => {
-    if (!hasApiKey) return;
     const result = await client.callTool({
       name: "get_price_history",
       arguments: { model_id: "openai/gpt-4o-mini" },
@@ -151,6 +144,29 @@ describe("happy paths", () => {
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse((result.content[0] as { text: string }).text);
     expect(parsed).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Happy-path test for subscribe_to_changes (requires Pro-tier key)
+// ---------------------------------------------------------------------------
+describe("subscribe_to_changes happy path", () => {
+  it.skipIf(!hasProKey)("registers a webhook and returns confirmation", async () => {
+    const client = await createClient({ LLMRATES_API_KEY: TEST_PRO_KEY });
+    try {
+      const result = await client.callTool({
+        name: "subscribe_to_changes",
+        arguments: {
+          url: "https://webhook.site/test-llmrates",
+          events: ["price_change"],
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse((result.content[0] as { text: string }).text);
+      expect(parsed).toBeDefined();
+    } finally {
+      await client.close();
+    }
   });
 });
 
