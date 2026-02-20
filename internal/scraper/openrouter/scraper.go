@@ -111,6 +111,7 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 			ContextWindow:      ctxWindow,
 			Modality:           m.Architecture.Modality,
 			SourceName:         "openrouter",
+			UnderlyingProvider: providerFromSlug(m.ID),
 			FetchedAt:          fetchedAt,
 		})
 	}

@@ -88,6 +88,9 @@ func TestFetch_ParsesModelsCorrectly(t *testing.T) {
 	if gpt4.SourceName != "openrouter" {
 		t.Errorf("want source=openrouter, got %s", gpt4.SourceName)
 	}
+	if gpt4.UnderlyingProvider != "openai" {
+		t.Errorf("want UnderlyingProvider=openai (from slug openai/gpt-4), got %q", gpt4.UnderlyingProvider)
+	}
 	if gpt4.FetchedAt.IsZero() {
 		t.Error("FetchedAt should not be zero")
 	}

@@ -39,6 +39,12 @@ func incomingFrom(slug, provider, sourceName string, input, output float64) scra
 	}
 }
 
+func incomingWithUnderlying(slug, provider, sourceName, underlyingProvider string, input, output float64) scraper.ScrapedModel {
+	m := incomingFrom(slug, provider, sourceName, input, output)
+	m.UnderlyingProvider = underlyingProvider
+	return m
+}
+
 // tests
 
 func TestDiff_NoStoredPrices_NewModelIsNotFlaggedForReview(t *testing.T) {
@@ -256,6 +262,50 @@ func TestDiff_SourceAttribution_PropagatedToDiff(t *testing.T) {
 	}
 	if result[0].Source != "litellm" {
 		t.Errorf("want Source=%q, got %q", "litellm", result[0].Source)
+	}
+}
+
+func TestDiff_UnderlyingProvider_PropagatedToNewModelDiff(t *testing.T) {
+	inc := incomingWithUnderlying("together/llama-3", "together", "huggingface_inference_providers", "together-ai", 0.0001, 0.0002)
+	result := Diff(nil, nil, []scraper.ScrapedModel{inc})
+
+	if len(result) != 2 {
+		t.Fatalf("want 2 diffs for new model, got %d", len(result))
+	}
+	for _, d := range result {
+		if d.UnderlyingProvider != "together-ai" {
+			t.Errorf("field %s: want UnderlyingProvider=%q, got %q", d.Field, "together-ai", d.UnderlyingProvider)
+		}
+	}
+}
+
+func TestDiff_UnderlyingProvider_PropagatedToFieldDiff(t *testing.T) {
+	models_ := []models.Model{storedModel(1, "together/llama-3", "together")}
+	prices := []models.Price{storedPrice(1, 0.0001, 0.0002)}
+	inc := incomingWithUnderlying("together/llama-3", "together", "huggingface_inference_providers", "together-ai", 0.0002, 0.0002)
+
+	result := Diff(prices, models_, []scraper.ScrapedModel{inc})
+
+	if len(result) != 1 {
+		t.Fatalf("want 1 diff (input changed), got %d", len(result))
+	}
+	if result[0].UnderlyingProvider != "together-ai" {
+		t.Errorf("want UnderlyingProvider=%q, got %q", "together-ai", result[0].UnderlyingProvider)
+	}
+}
+
+func TestDiff_UnderlyingProvider_EmptyForDirectSources(t *testing.T) {
+	models_ := []models.Model{storedModel(1, "openai/gpt-4", "openai")}
+	prices := []models.Price{storedPrice(1, 0.00003, 0.00006)}
+	inc := []scraper.ScrapedModel{incoming("openai/gpt-4", "openai", 0.00006, 0.00006)}
+
+	result := Diff(prices, models_, inc)
+
+	if len(result) != 1 {
+		t.Fatalf("want 1 diff, got %d", len(result))
+	}
+	if result[0].UnderlyingProvider != "" {
+		t.Errorf("want empty UnderlyingProvider for direct source, got %q", result[0].UnderlyingProvider)
 	}
 }
 
