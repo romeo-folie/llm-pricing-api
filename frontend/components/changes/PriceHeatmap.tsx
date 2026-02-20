@@ -35,6 +35,9 @@ function HeatmapCell(props: CellProps) {
   const avgDelta = props.avgDelta ?? 0
   const changeCount = props.changeCount ?? 0
 
+  // Guard: Recharts treemap layout can emit negative dimensions for tiny cells
+  if (width <= 0 || height <= 0) return null
+
   // depth 1 = provider group, depth 2 = model leaf
   if (depth === 1) {
     return (

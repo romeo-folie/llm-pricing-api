@@ -9,7 +9,7 @@ const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.googletagmanager.com;
   style-src 'self' 'unsafe-inline';
-  font-src 'self';
+  font-src 'self' https://fonts.scalar.com;
   img-src 'self' data: blob: https:;
   media-src 'self';
   connect-src 'self' https://checkout.lemonsqueezy.com https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://*.analytics.google.com;

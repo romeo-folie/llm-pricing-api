@@ -9,10 +9,12 @@ const PRODUCT_LINKS = [
   { href: "/pricing",    label: "Pricing"       },
 ] as const
 
-const API_LINKS: { href: string; label: string; external?: boolean }[] = [
+// openapi.json is a rewrite to the Go API — use `native: true` to render a
+// plain <a> tag and prevent Next.js from attempting an RSC prefetch on it.
+const API_LINKS: { href: string; label: string; external?: boolean; native?: boolean }[] = [
   { href: "/docs",         label: "API Docs"    },
   { href: "/pricing",      label: "Plans"       },
-  { href: "/openapi.json", label: "OpenAPI Spec" },
+  { href: "/openapi.json", label: "OpenAPI Spec", native: true },
 ]
 
 const DISCOVERY_LINKS = [
@@ -80,15 +82,21 @@ export default function Footer() {
               [ DEVELOPERS ]
             </h3>
             <ul className="space-y-2">
-              {API_LINKS.map(({ href, label, external }) => (
+              {API_LINKS.map(({ href, label, external, native }) => (
                 <li key={href}>
-                  <Link
-                    href={href}
-                    className="footer-link text-sm font-outfit"
-                    {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                  >
-                    {label}
-                  </Link>
+                  {native ? (
+                    <a href={href} className="footer-link text-sm font-outfit">
+                      {label}
+                    </a>
+                  ) : (
+                    <Link
+                      href={href}
+                      className="footer-link text-sm font-outfit"
+                      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                    >
+                      {label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>
