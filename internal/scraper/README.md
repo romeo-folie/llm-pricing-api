@@ -12,9 +12,9 @@ Defines the `Scraper` interface and `ScrapedModel` type that every scraper imple
 internal/scraper/
   scraper.go          # Scraper interface and ScrapedModel struct
   README.md           # This file
-  openrouter/         # OpenRouter /v1/models REST API scraper (Issue #4)
-  litellm/            # LiteLLM GitHub raw JSON scraper (Issue #4)
-  providers/          # Provider HTML doc scrapers: OpenAI, Anthropic, Google, Mistral, Amazon (Issue #6)
+  openrouter/         # OpenRouter /v1/models REST API scraper
+  litellm/            # LiteLLM GitHub raw JSON scraper
+  huggingface/        # HuggingFace Inference Providers scraper (Issue #44)
 ```
 
 ## Key Components
@@ -31,7 +31,8 @@ The normalised output of every scraper. Fields map as follows:
 | `OutputCostPerToken` | varies per source | Normalised to cost per single token (`float64`) |
 | `ContextWindow` | integer or nil | `nil` if not reported by source |
 | `Modality` | string | Passed through as reported; validated by reconciler |
-| `SourceName` | constant per scraper | e.g. `"openrouter"`, `"openai-docs"` |
+| `SourceName` | constant per scraper | `"openrouter"`, `"litellm"`, or `"huggingface_inference_providers"` |
+| `UnderlyingProvider` | slug prefix or API field | Set by pass-through aggregators (OpenRouter, HuggingFace); `""` for direct sources like LiteLLM. Used by the reconciler as an independence gate — two diffs with the same `UnderlyingProvider` do not count as two independent source confirmations. |
 | `FetchedAt` | time of HTTP request | Set by each scraper at fetch time |
 
 ### `Scraper` interface
