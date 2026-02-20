@@ -51,7 +51,7 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 
 `RegisterDev(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client) error` wires the Developer+ routes (`/v1/models/:id/history`, `/v1/recommend`, `/v1/context`, `POST /v1/ask`) with `RequireTier("developer")` middleware applied. Returns an error if OTel instrument creation fails (e.g. for `AskHandler`). Free-tier API keys receive a RFC 7807 403.
 
-`RegisterDiscovery(app *fiber.App, db *pgxpool.Pool)` wires the three public discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`) on the root Fiber app (no auth required).
+`RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client)` wires the three public discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`) on the root Fiber app (no auth required). `rdb` is passed to `DiscoveryHandler` for Redis-cached responses (e.g. `/llms.txt`).
 
 `RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (Developer+ only). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
 
@@ -132,7 +132,7 @@ if err := handlers.RegisterSSE(v1, redisClient); err != nil {
 handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, logger)
 
 // Discovery routes — no auth, registered on the root app, not the v1 group.
-handlers.RegisterDiscovery(app, db)
+handlers.RegisterDiscovery(app, db, redisClient)
 ```
 
 ### Developer+ endpoints

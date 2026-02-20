@@ -34,11 +34,12 @@ type mockStore struct {
 }
 
 type publishCall struct {
-	modelID    int
-	sourceID   int
-	input      float64
-	output     float64
-	confidence models.Confidence
+	modelID            int
+	sourceID           int
+	input              float64
+	output             float64
+	confidence         models.Confidence
+	underlyingProvider string
 }
 
 type flagCall struct {
@@ -88,12 +89,12 @@ func (m *mockStore) LookupCurrentPrice(_ context.Context, modelID, sourceID int)
 	return 0, 0, false, nil
 }
 
-func (m *mockStore) PublishPrice(_ context.Context, modelID, sourceID int, input, output float64, confidence models.Confidence) error {
+func (m *mockStore) PublishPrice(_ context.Context, modelID, sourceID int, input, output float64, confidence models.Confidence, underlyingProvider string) error {
 	if m.publishErr != nil {
 		return m.publishErr
 	}
 	m.mu.Lock()
-	m.published = append(m.published, publishCall{modelID, sourceID, input, output, confidence})
+	m.published = append(m.published, publishCall{modelID, sourceID, input, output, confidence, underlyingProvider})
 	m.mu.Unlock()
 	return nil
 }
@@ -114,7 +115,12 @@ func (m *mockStore) ListActiveWebhooks(_ context.Context) ([]reconciler.WebhookR
 
 func newMockStore() *mockStore {
 	return &mockStore{
-		sourceIDs:     map[string]int{"openrouter": 1, "litellm": 2, "openai-docs": 3},
+		sourceIDs: map[string]int{
+			"openrouter":                      1,
+			"litellm":                         2,
+			"openai-docs":                     3,
+			"huggingface_inference_providers": 4,
+		},
 		modelIDs:      map[string]int{"openai/gpt-4o": 10, "anthropic/claude-3-5-sonnet": 20},
 		currentPrices: map[[2]int]struct{ input, output float64 }{},
 	}
@@ -727,5 +733,109 @@ func TestReconcile_PublishesEventOnConfirmedWrite(t *testing.T) {
 	}
 	if event.EventID < 1 {
 		t.Errorf("expected event_id >= 1, got %d", event.EventID)
+	}
+}
+
+func TestReconcile_NonIndependentSources_CollapsesToSingleSource(t *testing.T) {
+	// HuggingFace (underlying="together-ai") + OpenRouter (underlying="together-ai")
+	// share the same effective provider string → NOT independent → collapses to single-source.
+	// On first cycle: goes to pending, no publish.
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	diffs := []diff.PriceDiff{
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "huggingface_inference_providers",
+			UnderlyingProvider: "together-ai",
+		},
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "openrouter",
+			UnderlyingProvider: "together-ai",
+		},
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Same effective provider → collapsed to single-source → first cycle goes to pending
+	if len(s.published) != 0 {
+		t.Errorf("non-independent sources should collapse to single-source (pending on first cycle); got %d publishes", len(s.published))
+	}
+}
+
+func TestReconcile_NonIndependentSources_SecondCycle_Publishes(t *testing.T) {
+	// Cycle 1: HF + OpenRouter (both underlying="together-ai") collapse to single-source →
+	//          goes into pending, no publish.
+	// Cycle 2: same diffs again → fetchCount reaches 2 → auto-publish.
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	diffs := []diff.PriceDiff{
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "huggingface_inference_providers",
+			UnderlyingProvider: "together-ai",
+		},
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "openrouter",
+			UnderlyingProvider: "together-ai",
+		},
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("cycle 1 Reconcile: %v", err)
+	}
+	if len(s.published) != 0 {
+		t.Errorf("cycle 1: want 0 publishes (pending), got %d", len(s.published))
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("cycle 2 Reconcile: %v", err)
+	}
+	if len(s.published) != 1 {
+		t.Errorf("cycle 2: want 1 publish (confirmed), got %d", len(s.published))
+	}
+}
+
+func TestReconcile_IndependentSources_ProcessesAsMultiSource(t *testing.T) {
+	// HuggingFace (underlying="together-ai") + LiteLLM (underlying="" → effective="litellm")
+	// → different effective providers → truly independent → processMultiSource.
+	// Both agree on value → publishes with ConfidenceHigh.
+	s := newMockStore()
+	r := reconciler.NewWithStore(s)
+	diffs := []diff.PriceDiff{
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "huggingface_inference_providers",
+			UnderlyingProvider: "together-ai",
+		},
+		{
+			ModelSlug:          "openai/gpt-4o",
+			Field:              models.PriceFieldInput,
+			NewValue:           0.000005,
+			Source:             "litellm",
+			UnderlyingProvider: "",
+		},
+	}
+
+	if err := r.Reconcile(context.Background(), diffs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s.published) == 0 {
+		t.Fatal("independent sources agreeing should publish with ConfidenceHigh")
+	}
+	if s.published[0].confidence != models.ConfidenceHigh {
+		t.Errorf("expected ConfidenceHigh, got %s", s.published[0].confidence)
 	}
 }

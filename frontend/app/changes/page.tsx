@@ -7,13 +7,14 @@ import ChangesFeed from "@/components/changes/ChangesFeed"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
-  title: "Price Changes",
+  title: "AI Model Price Changes — Real-Time LLM Pricing Updates",
   description:
-    "Real-time LLM token pricing changes tracked across providers. Updated every 5 minutes from OpenRouter, LiteLLM, and provider docs.",
+    "Track AI model price changes in real time. See when GPT, Claude, Gemini, and Mistral pricing changes. Updated every 5 minutes from OpenRouter, LiteLLM, and Hugging Face.",
+  alternates: { canonical: "/changes" },
   openGraph: {
-    title: "LLM Price Changes",
+    title: "AI Model Price Changes — Live LLM Pricing Feed",
     description:
-      "Live feed of LLM pricing changes across OpenRouter, LiteLLM, and provider docs.",
+      "Real-time feed of AI model pricing changes. Track LLM cost updates across all major providers.",
   },
 }
 

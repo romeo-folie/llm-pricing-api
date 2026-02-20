@@ -21,15 +21,18 @@ internal/diff/
 
 ```go
 type PriceDiff struct {
-    ModelSlug   string
-    Field       models.PriceField  // "input_cost_per_token" or "output_cost_per_token"
-    OldValue    float64
-    NewValue    float64
-    PctChange   float64  // signed; positive = price increase
-    Source      string
-    NeedsReview bool     // true when abs(PctChange) > 5%
+    ModelSlug          string
+    Field              models.PriceField  // "input_cost_per_token" or "output_cost_per_token"
+    OldValue           float64
+    NewValue           float64
+    PctChange          float64  // signed; positive = price increase
+    Source             string
+    UnderlyingProvider string   // propagated from ScrapedModel; "" for direct sources
+    NeedsReview        bool     // true when abs(PctChange) > 5%
 }
 ```
+
+`UnderlyingProvider` carries the infrastructure provider identity (e.g. `"together"`) through to the reconciler, which uses it to prevent pass-through aggregators (OpenRouter, HuggingFace Inference Providers) from falsely counting as independent sources when they serve the same underlying model.
 
 ### `Diff`
 

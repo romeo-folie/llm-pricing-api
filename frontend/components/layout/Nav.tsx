@@ -38,7 +38,7 @@ export default function Nav() {
             className="font-outfit text-base font-semibold"
             style={{ color: "var(--accent)" }}
           >
-            Price
+            Rates
           </span>
         </Link>
 

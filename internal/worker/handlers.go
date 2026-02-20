@@ -10,6 +10,7 @@ import (
 	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/scraper"
+	"llm-pricing-api/internal/scraper/huggingface"
 	"llm-pricing-api/internal/scraper/litellm"
 	"llm-pricing-api/internal/scraper/openrouter"
 )
@@ -90,4 +91,10 @@ func (h *Handlers) HandleOpenRouterScrape(ctx context.Context, _ *asynq.Task) er
 // through the diff and reconciliation pipeline.
 func (h *Handlers) HandleLiteLLMScrape(ctx context.Context, _ *asynq.Task) error {
 	return h.runPipeline(ctx, TaskLiteLLMScrape, "litellm", litellm.New(nil))
+}
+
+// HandleHuggingFaceScrape runs the HuggingFace Inference Providers scraper and feeds
+// the result through the diff and reconciliation pipeline.
+func (h *Handlers) HandleHuggingFaceScrape(ctx context.Context, _ *asynq.Task) error {
+	return h.runPipeline(ctx, TaskHuggingFaceScrape, "huggingface_inference_providers", huggingface.New(nil))
 }

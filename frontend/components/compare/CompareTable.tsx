@@ -1,7 +1,7 @@
 "use client"
 
 import type { Model } from "@/lib/api"
-import { formatPrice, formatContext, formatAge } from "@/lib/format"
+import { formatPrice, formatContext, formatAge, formatSourceName } from "@/lib/format"
 
 interface CompareTableProps {
   models: Model[]
@@ -16,7 +16,7 @@ const ROWS: { label: string; key: keyof Model | string; render: (m: Model) => st
   { label: "Modality",     key: "modality",       render: (m) => m.modality },
   { label: "Confidence",   key: "confidence",     render: (m) => m.trust.confidence.toUpperCase() },
   { label: "Updated",      key: "updated",        render: (m) => formatAge(m.trust.age_hours) },
-  { label: "Source",       key: "source",         render: (m) => m.trust.source },
+  { label: "Source",       key: "source",         render: (m) => formatSourceName(m.trust.source) },
 ]
 
 export default function CompareTable({ models, onRemove }: CompareTableProps) {

@@ -9,13 +9,14 @@ import ModelDetailModal from "@/components/model/ModelDetailModal"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
-  title: "Model Browser",
+  title: "AI Model Pricing Browser — GPT, Claude, Gemini & More",
   description:
-    "Browse current pricing for 200+ LLM models across OpenAI, Anthropic, Google, Mistral and more. Filter by provider, modality, and context window.",
+    "Browse and compare pricing for 200+ AI models including GPT-4, Claude, Gemini, and Mistral. Filter by provider, modality, and context window. Updated every 5 minutes.",
+  alternates: { canonical: "/models" },
   openGraph: {
-    title: "LLM Model Browser",
+    title: "AI Model Pricing Browser — Compare LLM Token Costs",
     description:
-      "Browse and filter reconciled pricing for 200+ LLM models across major providers.",
+      "Browse reconciled pricing for 200+ AI models. Filter by provider, modality, and context window.",
   },
 }
 
@@ -47,7 +48,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     name: "LLM Token Pricing Database",
     description: "Reconciled pricing data for large language models across major providers.",
     url: "https://llmrates.live/models",
-    creator: { "@type": "Organization", name: "LLMPrice" },
+    creator: { "@type": "Organization", name: "LLMRates" },
     license: "https://creativecommons.org/licenses/by/4.0/",
   }
 

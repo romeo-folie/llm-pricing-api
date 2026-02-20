@@ -5,17 +5,19 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { safeJsonLd } from "@/lib/utils"
 
 export const revalidate = false
 
 export const metadata: Metadata = {
-  title: "Plans & Pricing",
+  title: "API Plans & Pricing — LLM Pricing Data for Developers",
   description:
-    "Transparent, reconciled LLM token pricing. Free tier, Developer API access, and Pro with webhooks and SLA.",
+    "Access reconciled AI model pricing data via API. Free tier (100 req/day), Developer ($15/mo, 10k req/day with price history), and Pro ($50/mo, unlimited + webhooks + SLA).",
+  alternates: { canonical: "/pricing" },
   openGraph: {
-    title: "LLM Pricing API Plans",
+    title: "LLMRates API Plans — AI Pricing Data for Developers & Agents",
     description:
-      "Free to $50/mo. Developer API: $15/mo, 10k req/day. Pro: $50/mo, unlimited + webhooks.",
+      "Free to $50/mo. Access reconciled LLM pricing data, price history, agent-optimized endpoints, and webhooks.",
   },
 }
 
@@ -125,8 +127,25 @@ const FAQ = [
 ]
 
 export default function PricingPage() {
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.a,
+      },
+    })),
+  }
+
   return (
     <main style={{ paddingTop: "48px", paddingBottom: "80px", backgroundColor: "var(--bg)" }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(faqJsonLd) }}
+      />
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
 
         {/* Header */}

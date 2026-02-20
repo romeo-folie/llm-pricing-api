@@ -54,7 +54,7 @@ func newDevAppWithTier(store handlers.Store, tier string) *fiber.App {
 	return app
 }
 
-// sampleHistoryRow returns a HistoryRow with plausible data.
+// sampleHistoryRow returns a HistoryRow with plausible data and no underlying_provider.
 func sampleHistoryRow(offset int) handlers.HistoryRow {
 	base := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC).Add(time.Duration(offset) * time.Hour)
 	return handlers.HistoryRow{
@@ -65,6 +65,9 @@ func sampleHistoryRow(offset int) handlers.HistoryRow {
 		RecordedAt:         base.Add(time.Minute),
 	}
 }
+
+// ptr returns a pointer to the given string value, for use in test data.
+func ptr(s string) *string { return &s }
 
 // sampleContextRow returns a ContextModelRow for testing.
 func sampleContextRow(id int) handlers.ContextModelRow {
@@ -119,6 +122,13 @@ func TestGetModelHistory_OK(t *testing.T) {
 	}
 	if envelope.Data[0].Source != "openrouter" {
 		t.Errorf("expected source 'openrouter', got %q", envelope.Data[0].Source)
+	}
+	// Verify ConfirmedAt maps to the correct field after the historyItemResponse(r)
+	// direct struct type conversion. A field-order mismatch would silently swap values.
+	wantConfirmedAt := rows[0].ConfirmedAt
+	if !envelope.Data[0].ConfirmedAt.Equal(wantConfirmedAt) {
+		t.Errorf("confirmed_at field mismatch: want %v, got %v (field-order regression in historyItemResponse?)",
+			wantConfirmedAt, envelope.Data[0].ConfirmedAt)
 	}
 }
 
@@ -250,6 +260,78 @@ func TestGetModelHistory_EmptyHistory_Returns200WithEmptyArray(t *testing.T) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v; body: %s", err, body)
+	}
+}
+
+func TestGetModelHistory_UnderlyingProvider_NullSerialisation(t *testing.T) {
+	// When underlying_provider is nil the JSON field must be present as null,
+	// not omitted from the response.
+	store := &mockStore{
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
+		},
+		getModelHistory: func(_ context.Context, _ int, _ handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
+			row := sampleHistoryRow(0) // UnderlyingProvider is nil
+			return []handlers.HistoryRow{row}, nil
+		},
+	}
+	app := newDevApp(store)
+
+	_, body := get(t, app, "/v1/models/1/history")
+
+	var envelope struct {
+		Data []struct {
+			UnderlyingProvider *string `json:"underlying_provider"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data) == 0 {
+		t.Fatal("expected at least one history item")
+	}
+	if envelope.Data[0].UnderlyingProvider != nil {
+		t.Errorf("expected underlying_provider to be null, got %q", *envelope.Data[0].UnderlyingProvider)
+	}
+	// Verify the field is present (null) in the raw JSON, not absent.
+	if !strings.Contains(string(body), `"underlying_provider":null`) {
+		t.Errorf("underlying_provider must be serialised as null, not omitted; body: %s", body)
+	}
+}
+
+func TestGetModelHistory_UnderlyingProvider_NonNullSerialisation(t *testing.T) {
+	// When underlying_provider is set it must appear as a string in the response.
+	prov := "together-ai"
+	store := &mockStore{
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
+		},
+		getModelHistory: func(_ context.Context, _ int, _ handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
+			row := sampleHistoryRow(0)
+			row.UnderlyingProvider = ptr(prov)
+			return []handlers.HistoryRow{row}, nil
+		},
+	}
+	app := newDevApp(store)
+
+	_, body := get(t, app, "/v1/models/1/history")
+
+	var envelope struct {
+		Data []struct {
+			UnderlyingProvider *string `json:"underlying_provider"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data) == 0 {
+		t.Fatal("expected at least one history item")
+	}
+	if envelope.Data[0].UnderlyingProvider == nil {
+		t.Fatal("expected underlying_provider to be non-null")
+	}
+	if *envelope.Data[0].UnderlyingProvider != prov {
+		t.Errorf("expected underlying_provider=%q, got %q", prov, *envelope.Data[0].UnderlyingProvider)
 	}
 }
 

@@ -108,6 +108,24 @@ func (r *Reconciler) sweepStalePending() {
 	r.mu.Unlock()
 }
 
+// effectiveProvider returns the infrastructure provider identity used for
+// independence checking. For pass-through aggregators (HuggingFace, OpenRouter),
+// this is the UnderlyingProvider value (e.g. "together-ai"). For direct sources
+// (LiteLLM), it falls back to the source name so they are always treated as
+// independent from aggregators.
+//
+// NOTE: independence checks require that both the slug AND the effectiveProvider
+// string match. Two sources with the same UnderlyingProvider but different slugs
+// are in separate (slug, field) groups and are never compared. This is a V1
+// best-effort check; slug normalisation alignment between HuggingFace and OpenRouter
+// is handled upstream in the respective scrapers.
+func effectiveProvider(d diff.PriceDiff) string {
+	if d.UnderlyingProvider != "" {
+		return d.UnderlyingProvider
+	}
+	return d.Source
+}
+
 // Reconcile applies a batch of price diffs produced by the diff engine.
 //
 // Multi-source groups (same slug+field, multiple sources):
@@ -187,7 +205,31 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		}
 
 		if len(groupDiffs) >= 2 {
-			r.processMultiSource(ctx, k.slug, k.field, modelID, groupDiffs, sourceIDs, activeWebhooks)
+			// Sort by source name for deterministic behaviour in both paths below.
+			// processMultiSource also sorts internally, but we sort here too so that
+			// groupDiffs[0] is stable when collapsing non-independent sources.
+			slices.SortFunc(groupDiffs, func(a, b diff.PriceDiff) int {
+				return cmp.Compare(a.Source, b.Source)
+			})
+
+			// Count distinct underlying infrastructure providers.
+			// If all diffs trace back to the same provider (e.g. HuggingFace + OpenRouter
+			// both reporting Together AI prices), treat as single-source — they are NOT
+			// independent confirmations.
+			distinct := make(map[string]struct{}, len(groupDiffs))
+			for _, d := range groupDiffs {
+				distinct[effectiveProvider(d)] = struct{}{}
+			}
+			if len(distinct) < 2 {
+				r.logger.Debug().
+					Str("slug", k.slug).
+					Str("field", string(k.field)).
+					Int("source_count", len(groupDiffs)).
+					Msg("reconciler: collapsing non-independent sources to single-source")
+				r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks)
+			} else {
+				r.processMultiSource(ctx, k.slug, k.field, modelID, groupDiffs, sourceIDs, activeWebhooks)
+			}
 		} else {
 			r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks)
 		}
@@ -244,7 +286,7 @@ func (r *Reconciler) processMultiSource(
 		}
 	}
 	if allAgree {
-		r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceHigh, activeWebhooks)
+		r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceHigh, groupDiffs[0].UnderlyingProvider, activeWebhooks)
 		return
 	}
 
@@ -302,7 +344,7 @@ func (r *Reconciler) processMultiSource(
 		// If a consensus of 2+ sources exists, publish despite the outlier.
 		// This implements the PRD rule: single noisy source ≠ block on majority agreement.
 		if consensusSize >= 2 {
-			r.publish(ctx, modelID, consensusSourceID, field, consensusValue, models.ConfidenceHigh, activeWebhooks)
+			r.publish(ctx, modelID, consensusSourceID, field, consensusValue, models.ConfidenceHigh, groupDiffs[0].UnderlyingProvider, activeWebhooks)
 		}
 		return
 	}
@@ -312,7 +354,7 @@ func (r *Reconciler) processMultiSource(
 	// after the sort above.  All candidates are within 5% of each other, so any value is
 	// a valid representation; alphabetical determinism is intentional and keeps the output
 	// stable across re-runs with the same source set.
-	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium, activeWebhooks)
+	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium, groupDiffs[0].UnderlyingProvider, activeWebhooks)
 }
 
 // processSingleSource handles a group where only one source reported a change.
@@ -327,7 +369,11 @@ func (r *Reconciler) processSingleSource(
 	sourceIDs map[string]int,
 	activeWebhooks []WebhookRow,
 ) {
-	key := slug + ":" + string(field) + ":" + d.Source
+	// Use effectiveProvider so the key is stable across cycles even when different
+	// aggregators (e.g. HuggingFace vs OpenRouter) collapse to the same underlying
+	// provider.  For direct sources (LiteLLM), effectiveProvider falls back to
+	// d.Source, so the key is unchanged from the old behaviour.
+	key := slug + ":" + string(field) + ":" + effectiveProvider(d)
 	sourceID := sourceIDs[d.Source]
 
 	r.mu.Lock()
@@ -347,7 +393,7 @@ func (r *Reconciler) processSingleSource(
 	r.mu.Unlock()
 
 	if shouldPublish {
-		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceMedium, activeWebhooks)
+		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceMedium, d.UnderlyingProvider, activeWebhooks)
 	}
 }
 
@@ -363,6 +409,7 @@ func (r *Reconciler) publish(
 	field models.PriceField,
 	newValue float64,
 	confidence models.Confidence,
+	underlyingProvider string,
 	activeWebhooks []WebhookRow,
 ) {
 	currInput, currOutput, _, err := r.store.LookupCurrentPrice(ctx, modelID, sourceID)
@@ -391,7 +438,7 @@ func (r *Reconciler) publish(
 		return
 	}
 
-	if err := r.store.PublishPrice(ctx, modelID, sourceID, input, output, confidence); err != nil {
+	if err := r.store.PublishPrice(ctx, modelID, sourceID, input, output, confidence, underlyingProvider); err != nil {
 		r.logger.Warn().
 			Int("model_id", modelID).
 			Int("source_id", sourceID).

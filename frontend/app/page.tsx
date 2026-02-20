@@ -7,14 +7,14 @@ import { getModels, getProviders, getChanges } from "@/lib/api"
 
 export const metadata: Metadata = {
   title: {
-    absolute: "LLMPrice — Reconciled LLM Token Pricing for Agents & Developers",
+    absolute: "LLMRates — Compare AI Model Pricing | LLM Token Cost Tracker",
   },
   description:
-    "Multi-source reconciled LLM token pricing with full price history, real-time change feed, and agent-optimized APIs. Compare models, calculate costs, and track price changes.",
+    "Compare AI model pricing across OpenAI, Anthropic, Google, and Mistral. Reconciled LLM token costs with full price history, real-time change feed, and agent-optimized APIs. Free tier available.",
   openGraph: {
-    title: "LLMPrice — Reconciled LLM Token Pricing",
+    title: "LLMRates — Compare AI Model Pricing & Track Cost Changes",
     description:
-      "Free and paid tiers. Full price history. /v1/context, /v1/ask, SSE stream. Built for agents and developers.",
+      "Compare GPT, Claude, Gemini, and Mistral pricing side by side. Full price history, real-time changes, and agent-native APIs.",
     type: "website",
   },
 }
@@ -32,7 +32,7 @@ const FEATURES = [
     icon: "⬡",
     title: "Multi-Source Reconciliation",
     description:
-      "OpenRouter + LiteLLM + provider docs. 2-source agreement required before publishing. Flagged discrepancies logged.",
+      "OpenRouter + LiteLLM + Hugging Face. 2-source agreement required before publishing. Flagged discrepancies logged.",
   },
   {
     icon: "⚡",
@@ -135,11 +135,7 @@ const TESTIMONIALS = [
 const DATA_SOURCES = [
   "OpenRouter",
   "LiteLLM",
-  "OpenAI",
-  "Anthropic",
-  "Google",
-  "Mistral",
-  "Amazon",
+  "Hugging Face",
 ]
 
 // ─── SSR helpers ──────────────────────────────────────────────────────────────

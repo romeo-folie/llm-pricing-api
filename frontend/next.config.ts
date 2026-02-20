@@ -51,6 +51,7 @@ const securityHeaders = [
 const API_BASE = process.env.LLM_PRICING_API_BASE_URL || "http://localhost:8080"
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   async headers() {
     return [
       {

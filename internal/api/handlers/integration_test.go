@@ -190,7 +190,7 @@ func setupTestApp(t *testing.T) *fiber.App {
 	if err := handlers.RegisterSSE(v1, rdb); err != nil {
 		t.Fatalf("register SSE: %v", err)
 	}
-	handlers.RegisterDiscovery(app, db)
+	handlers.RegisterDiscovery(app, db, rdb)
 
 	return app
 }

@@ -20,9 +20,13 @@ type ScrapedModel struct {
 	// The reconciler validates this before writing to the DB.
 	Modality string
 	// SourceName identifies the origin of this record. Expected values:
-	// "openrouter", "litellm", "openai-docs", "anthropic-docs",
-	// "google-docs", "mistral-docs", "amazon-docs".
+	// "openrouter", "litellm", "huggingface_inference_providers".
 	SourceName string
+	// UnderlyingProvider identifies the actual infrastructure provider when the
+	// source is a pass-through aggregator (e.g. "together-ai" when SourceName is
+	// "huggingface_inference_providers", or "together" when SourceName is "openrouter").
+	// Empty string means the source IS the infrastructure provider (e.g. "litellm").
+	UnderlyingProvider string
 	FetchedAt          time.Time
 }
 

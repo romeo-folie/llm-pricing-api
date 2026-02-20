@@ -10,13 +10,14 @@ import (
 
 // PriceDiff describes a detected change in a single price field for one model.
 type PriceDiff struct {
-	ModelSlug   string
-	Field       models.PriceField
-	OldValue    float64
-	NewValue    float64
-	PctChange   float64 // signed: positive = price increase
-	Source      string
-	NeedsReview bool // true when abs(PctChange) > 5%
+	ModelSlug          string
+	Field              models.PriceField
+	OldValue           float64
+	NewValue           float64
+	PctChange          float64 // signed: positive = price increase
+	Source             string
+	UnderlyingProvider string // propagated from ScrapedModel; "" for direct sources
+	NeedsReview        bool   // true when abs(PctChange) > 5%
 }
 
 // Diff computes price changes between current stored prices and freshly scraped data.
@@ -48,37 +49,43 @@ func Diff(stored []models.Price, storedModels []models.Model, incoming []scraper
 			// are skipped to avoid fabricated diffs for free/open-weight models or scraper bugs).
 			const epsilon = 1e-12
 			if s.InputCostPerToken > epsilon {
-				diffs = append(diffs, newModelDiff(s.Slug, s.SourceName, models.PriceFieldInput, s.InputCostPerToken))
+				diffs = append(diffs, newModelDiff(s.Slug, s.SourceName, s.UnderlyingProvider, models.PriceFieldInput, s.InputCostPerToken))
 			}
 			if s.OutputCostPerToken > epsilon {
-				diffs = append(diffs, newModelDiff(s.Slug, s.SourceName, models.PriceFieldOutput, s.OutputCostPerToken))
+				diffs = append(diffs, newModelDiff(s.Slug, s.SourceName, s.UnderlyingProvider, models.PriceFieldOutput, s.OutputCostPerToken))
 			}
 			continue
 		}
 
-		if d, changed := fieldDiff(s.Slug, s.SourceName, models.PriceFieldInput, current.InputCostPerToken, s.InputCostPerToken); changed {
+		if d, changed := fieldDiff(s.Slug, s.SourceName, s.UnderlyingProvider, models.PriceFieldInput, current.InputCostPerToken, s.InputCostPerToken); changed {
 			diffs = append(diffs, d)
 		}
-		if d, changed := fieldDiff(s.Slug, s.SourceName, models.PriceFieldOutput, current.OutputCostPerToken, s.OutputCostPerToken); changed {
+		if d, changed := fieldDiff(s.Slug, s.SourceName, s.UnderlyingProvider, models.PriceFieldOutput, current.OutputCostPerToken, s.OutputCostPerToken); changed {
 			diffs = append(diffs, d)
 		}
 	}
 	return diffs
 }
 
-func newModelDiff(slug, source string, field models.PriceField, newVal float64) PriceDiff {
+// newModelDiff creates a PriceDiff for a model that has no prior price in storage.
+// PctChange is set to 1.0 (100%) as a sentinel for "no prior value" — the same value
+// used by fieldDiff when oldVal is zero. NeedsReview is false because first-appearance
+// is not a price change requiring human review; downstream consumers must check OldValue==0
+// to distinguish new-model diffs from genuine large increases.
+func newModelDiff(slug, source, underlyingProvider string, field models.PriceField, newVal float64) PriceDiff {
 	return PriceDiff{
-		ModelSlug:   slug,
-		Field:       field,
-		OldValue:    0,
-		NewValue:    newVal,
-		PctChange:   1.0,
-		Source:      source,
-		NeedsReview: false,
+		ModelSlug:          slug,
+		Field:              field,
+		OldValue:           0,
+		NewValue:           newVal,
+		PctChange:          1.0,
+		Source:             source,
+		UnderlyingProvider: underlyingProvider,
+		NeedsReview:        false,
 	}
 }
 
-func fieldDiff(slug, source string, field models.PriceField, oldVal, newVal float64) (PriceDiff, bool) {
+func fieldDiff(slug, source, underlyingProvider string, field models.PriceField, oldVal, newVal float64) (PriceDiff, bool) {
 	const epsilon = 1e-12
 	if math.Abs(newVal-oldVal) < epsilon {
 		return PriceDiff{}, false
@@ -92,12 +99,13 @@ func fieldDiff(slug, source string, field models.PriceField, oldVal, newVal floa
 	}
 
 	return PriceDiff{
-		ModelSlug:   slug,
-		Field:       field,
-		OldValue:    oldVal,
-		NewValue:    newVal,
-		PctChange:   pct,
-		Source:      source,
-		NeedsReview: math.Abs(pct) > models.DiscrepancyThreshold,
+		ModelSlug:          slug,
+		Field:              field,
+		OldValue:           oldVal,
+		NewValue:           newVal,
+		PctChange:          pct,
+		Source:             source,
+		UnderlyingProvider: underlyingProvider,
+		NeedsReview:        math.Abs(pct) > models.DiscrepancyThreshold,
 	}, true
 }

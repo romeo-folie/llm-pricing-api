@@ -120,7 +120,7 @@ All fetches use `next: { revalidate: 300 }` (5-minute ISR). History uses 60s rev
 
 ## SEO
 
-- **Metadata**: Root layout defines `title.template: "%s — LLMPrice"`. Child pages export just the page-specific title.
+- **Metadata**: Root layout defines `title.template: "%s — LLMRates"`. Child pages export just the page-specific title.
 - **Open Graph**: Per-page `og:title` and `og:description`. Root layout includes `twitter` card metadata.
 - **OG Image**: Auto-generated via `app/opengraph-image.tsx` (1200x630 PNG).
 - **JSON-LD**: `Dataset` schema on `/models`, `Product + Offer` schema on `/models/[id]`.

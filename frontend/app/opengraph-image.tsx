@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og"
 
 export const runtime = "edge"
-export const alt = "LLMPrice — Reconciled LLM Token Pricing"
+export const alt = "LLMRates — Compare AI Model Pricing Across Providers"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
@@ -59,7 +59,7 @@ export default function OGImage() {
           }}
         >
           <span>LLM</span>
-          <span style={{ color: "#107E72" }}>Price</span>
+          <span style={{ color: "#107E72" }}>Rates</span>
         </div>
 
         {/* Subtitle */}
@@ -72,7 +72,7 @@ export default function OGImage() {
             maxWidth: "700px",
           }}
         >
-          Multi-source verified token pricing with full history and agent-optimized APIs
+          Compare AI model pricing. Full price history. Agent-optimized APIs.
         </div>
 
         {/* Stats bar */}

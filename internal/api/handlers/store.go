@@ -134,6 +134,11 @@ type ModelRow struct {
 	ConfirmedAt time.Time
 	// Source is the human-readable source name for the latest price.
 	Source string
+	// UnderlyingProvider is the infrastructure provider for pass-through aggregators
+	// (e.g. Together AI for an OpenRouter/HuggingFace-hosted model). NULL when not applicable.
+	// Only populated by GetModel; nil for rows returned by ListModels, CompareModels,
+	// and RecommendModels which do not yet select this column.
+	UnderlyingProvider *string
 	// Meta holds the pre-computed TrustMeta for this model.
 	Meta api.TrustMeta
 }
@@ -164,6 +169,10 @@ type HistoryRow struct {
 	Source             string
 	ConfirmedAt        time.Time
 	RecordedAt         time.Time
+	// UnderlyingProvider is the infrastructure provider for pass-through aggregators.
+	// NULL when not applicable. Must remain the last field to preserve the
+	// historyItemResponse(r) direct type conversion in history.go.
+	UnderlyingProvider *string
 }
 
 // ContextModelRow is a lightweight model record for the /v1/context endpoint.
@@ -321,10 +330,11 @@ func (s *pgxStore) GetModel(ctx context.Context, id int) (ModelRow, error) {
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
-			COALESCE(src.name, '')                        AS source
+			COALESCE(src.name, '')                        AS source,
+			p.underlying_provider
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id, underlying_provider
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -337,7 +347,7 @@ func (s *pgxStore) GetModel(ctx context.Context, id int) (ModelRow, error) {
 	err := s.db.QueryRow(ctx, sql, id).Scan(
 		&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 		&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-		&r.ConfirmedAt, &r.Source,
+		&r.ConfirmedAt, &r.Source, &r.UnderlyingProvider,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -681,7 +691,8 @@ func (s *pgxStore) GetModelHistory(ctx context.Context, modelID int, filter Hist
 			ph.output_cost_per_token::float8,
 			COALESCE(src.name, ''),
 			ph.confirmed_at,
-			ph.recorded_at
+			ph.recorded_at,
+			ph.underlying_provider
 		FROM price_history ph
 		LEFT JOIN sources src ON src.id = ph.source_id
 		%s
@@ -699,7 +710,7 @@ func (s *pgxStore) GetModelHistory(ctx context.Context, modelID int, filter Hist
 		var r HistoryRow
 		if err := rows.Scan(
 			&r.InputCostPerToken, &r.OutputCostPerToken,
-			&r.Source, &r.ConfirmedAt, &r.RecordedAt,
+			&r.Source, &r.ConfirmedAt, &r.RecordedAt, &r.UnderlyingProvider,
 		); err != nil {
 			return nil, fmt.Errorf("get model history scan %d: %w", modelID, err)
 		}

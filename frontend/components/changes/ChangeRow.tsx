@@ -1,7 +1,7 @@
 "use client"
 
 import type { PriceChange } from "@/lib/api"
-import { formatPrice, formatDelta, formatRelative } from "@/lib/format"
+import { formatPrice, formatDelta, formatRelative, formatSourceName } from "@/lib/format"
 
 interface ChangeRowProps {
   change: PriceChange
@@ -118,7 +118,7 @@ export default function ChangeRow({ change, isNew }: ChangeRowProps) {
             backgroundColor: "var(--blueLt)",
           }}
         >
-          {change.source}
+          {formatSourceName(change.source)}
         </span>
         <span className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
           {formatRelative(change.changed_at)}

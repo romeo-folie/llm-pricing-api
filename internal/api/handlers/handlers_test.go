@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -203,6 +204,40 @@ func TestListModels_OK(t *testing.T) {
 	}
 }
 
+func TestListModels_UnderlyingProvider_NullSerialisation(t *testing.T) {
+	// underlying_provider must appear as null in list items, not be omitted,
+	// because modelResponse has no omitempty on the field. This also guards
+	// against someone accidentally adding omitempty to the struct tag.
+	store := &mockStore{
+		listModels: func(_ context.Context, _ handlers.ListModelsFilter) ([]handlers.ModelRow, int, error) {
+			m := sampleModel(1)
+			m.UnderlyingProvider = nil
+			return []handlers.ModelRow{m}, 1, nil
+		},
+	}
+	app := newApp(store)
+
+	_, body := get(t, app, "/v1/models")
+
+	var envelope struct {
+		Data []struct {
+			UnderlyingProvider *string `json:"underlying_provider"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data) == 0 {
+		t.Fatal("expected at least one model item")
+	}
+	if envelope.Data[0].UnderlyingProvider != nil {
+		t.Errorf("expected underlying_provider null, got %q", *envelope.Data[0].UnderlyingProvider)
+	}
+	if !strings.Contains(string(body), `"underlying_provider":null`) {
+		t.Errorf("underlying_provider must be serialised as null, not omitted; body: %s", body)
+	}
+}
+
 func TestListModels_XTotalCountHeader(t *testing.T) {
 	store := &mockStore{
 		listModels: func(_ context.Context, _ handlers.ListModelsFilter) ([]handlers.ModelRow, int, error) {
@@ -376,6 +411,64 @@ func TestGetModel_ZeroID_Returns400(t *testing.T) {
 	status, _ := get(t, app, "/v1/models/0")
 	if status != fiber.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", status)
+	}
+}
+
+func TestGetModel_UnderlyingProvider_NullSerialisation(t *testing.T) {
+	// When underlying_provider is nil the JSON field must be present as null.
+	store := &mockStore{
+		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
+			m := sampleModel(id)
+			m.UnderlyingProvider = nil
+			return m, nil
+		},
+	}
+	app := newApp(store)
+
+	_, body := get(t, app, "/v1/models/1")
+
+	var envelope struct {
+		Data struct {
+			UnderlyingProvider *string `json:"underlying_provider"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.UnderlyingProvider != nil {
+		t.Errorf("expected underlying_provider null, got %q", *envelope.Data.UnderlyingProvider)
+	}
+	if !strings.Contains(string(body), `"underlying_provider":null`) {
+		t.Errorf("underlying_provider must be serialised as null, not omitted; body: %s", body)
+	}
+}
+
+func TestGetModel_UnderlyingProvider_NonNullSerialisation(t *testing.T) {
+	prov := "replicate"
+	store := &mockStore{
+		getModel: func(_ context.Context, id int) (handlers.ModelRow, error) {
+			m := sampleModel(id)
+			m.UnderlyingProvider = &prov
+			return m, nil
+		},
+	}
+	app := newApp(store)
+
+	_, body := get(t, app, "/v1/models/1")
+
+	var envelope struct {
+		Data struct {
+			UnderlyingProvider *string `json:"underlying_provider"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.UnderlyingProvider == nil {
+		t.Fatal("expected underlying_provider to be non-null")
+	}
+	if *envelope.Data.UnderlyingProvider != prov {
+		t.Errorf("expected underlying_provider=%q, got %q", prov, *envelope.Data.UnderlyingProvider)
 	}
 }
 
