@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-redis/redismock/v9"
 	"github.com/gofiber/fiber/v2"
 
 	"llm-pricing-api/internal/api"
@@ -16,12 +17,13 @@ import (
 )
 
 // newDiscoveryApp builds a minimal Fiber app wiring all three discovery
-// endpoints. The OpenAPI spec is the compile-time embed from static/openapi.json.
+// endpoints. Pass nil for rdb to disable Redis caching in tests.
+// The OpenAPI spec is the compile-time embed from static/openapi.json.
 func newDiscoveryApp(store handlers.Store) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: api.ErrorHandler,
 	})
-	dh := handlers.NewDiscoveryHandlerForTest(store)
+	dh := handlers.NewDiscoveryHandlerForTest(store, nil)
 	app.Get("/openapi.json", dh.GetOpenAPI)
 	app.Get("/.well-known/ai-plugin.json", dh.GetAIPlugin)
 	app.Get("/llms.txt", dh.GetLLMsTxt)
@@ -577,6 +579,112 @@ func TestGetLLMsTxt_ContainsAuthInstructions(t *testing.T) {
 	}
 	if !strings.Contains(text, "curl") {
 		t.Error("llms.txt must contain curl examples")
+	}
+}
+
+// --- /llms.txt Redis caching tests -------------------------------------
+
+// TestGetLLMsTxt_CacheHit verifies that a Redis cache hit is served without
+// calling the store, and that the correct Content-Type is preserved.
+func TestGetLLMsTxt_CacheHit(t *testing.T) {
+	rc, mock := redismock.NewClientMock()
+	cachedBody := "# cached response\nopenai/gpt-4o: input=$2.5000/1M output=$10.0000/1M\n"
+	mock.ExpectGet("cache:GET:/llms.txt").SetVal(cachedBody)
+
+	storeCalled := false
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			storeCalled = true
+			return sampleContextModels(), nil
+		},
+	}
+
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	dh := handlers.NewDiscoveryHandlerForTest(store, rc)
+	app.Get("/llms.txt", dh.GetLLMsTxt)
+
+	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if storeCalled {
+		t.Error("store must not be called on a cache hit")
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Errorf("want 200, got %d", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type on cache hit: got %q, want text/plain", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != cachedBody {
+		t.Errorf("body mismatch: got %q, want %q", string(body), cachedBody)
+	}
+}
+
+// TestGetLLMsTxt_CacheMiss verifies that on a Redis miss the store is queried
+// and the result is written to Redis.
+func TestGetLLMsTxt_CacheMiss(t *testing.T) {
+	rc, mock := redismock.NewClientMock()
+	mock.ExpectGet("cache:GET:/llms.txt").RedisNil()
+	mock.Regexp().ExpectSet("cache:GET:/llms.txt", `.*`, 30*time.Minute).SetVal("OK")
+
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return sampleContextModels(), nil
+		},
+	}
+
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	dh := handlers.NewDiscoveryHandlerForTest(store, rc)
+	app.Get("/llms.txt", dh.GetLLMsTxt)
+
+	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Errorf("want 200, got %d", resp.StatusCode)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Redis expectations unmet: %v", err)
+	}
+}
+
+// TestGetLLMsTxt_NilRedis verifies the handler falls back to the store when
+// no Redis client is configured (nil rdb).
+func TestGetLLMsTxt_NilRedis(t *testing.T) {
+	storeCalled := false
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			storeCalled = true
+			return sampleContextModels(), nil
+		},
+	}
+
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	dh := handlers.NewDiscoveryHandlerForTest(store, nil)
+	app.Get("/llms.txt", dh.GetLLMsTxt)
+
+	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if !storeCalled {
+		t.Error("store must be called when Redis client is nil")
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
 }
 

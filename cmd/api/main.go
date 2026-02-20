@@ -137,7 +137,7 @@ func main() {
 	)
 
 	// Register public discovery routes outside the auth group.
-	handlers.RegisterDiscovery(app, db)
+	handlers.RegisterDiscovery(app, db, redisClient)
 
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)

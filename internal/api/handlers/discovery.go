@@ -4,9 +4,11 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"llm-pricing-api/internal/api"
 )
@@ -19,23 +21,33 @@ import (
 //go:embed static/openapi.json
 var openAPISpec []byte
 
+// llmsTxtCacheKey is the Redis key for the cached /llms.txt response body.
+const llmsTxtCacheKey = "cache:GET:/llms.txt"
+
+// llmsTxtCacheTTL is how long the /llms.txt response is cached. The scraper
+// runs at most every 6 hours, so 30 minutes is well within freshness bounds.
+const llmsTxtCacheTTL = 30 * time.Minute
+
 // DiscoveryHandler serves the three public discovery endpoints:
 //   - GET /openapi.json              — OpenAPI 3.1 specification
 //   - GET /.well-known/ai-plugin.json — AI plugin manifest
 //   - GET /llms.txt                  — plain-text model price listing for agent context
 type DiscoveryHandler struct {
 	store Store
+	rdb   *redis.Client // nil disables caching (tests, local dev without Redis)
 }
 
-// NewDiscoveryHandler creates a DiscoveryHandler backed by the supplied pgx pool.
-func NewDiscoveryHandler(db *pgxpool.Pool) *DiscoveryHandler {
-	return &DiscoveryHandler{store: NewPgxStore(db)}
+// NewDiscoveryHandler creates a DiscoveryHandler backed by the supplied pgx pool
+// and Redis client. Pass nil for rdb to disable response caching.
+func NewDiscoveryHandler(db *pgxpool.Pool, rdb *redis.Client) *DiscoveryHandler {
+	return &DiscoveryHandler{store: NewPgxStore(db), rdb: rdb}
 }
 
-// NewDiscoveryHandlerForTest creates a DiscoveryHandler with the supplied Store.
-// Exported so external test packages can inject a mock store without a live DB.
-func NewDiscoveryHandlerForTest(store Store) *DiscoveryHandler {
-	return &DiscoveryHandler{store: store}
+// NewDiscoveryHandlerForTest creates a DiscoveryHandler with the supplied Store
+// and Redis client. Pass nil for rdb to disable caching in tests.
+// Exported so external test packages can inject mock dependencies without a live DB.
+func NewDiscoveryHandlerForTest(store Store, rdb *redis.Client) *DiscoveryHandler {
+	return &DiscoveryHandler{store: store, rdb: rdb}
 }
 
 // GetOpenAPI serves GET /openapi.json.
@@ -136,6 +148,16 @@ curl -H "Authorization: Bearer $KEY" -H "Accept: text/event-stream" \
 // Prices are expressed in per-million-token units for readability. The
 // endpoint is public and requires no authentication.
 func (h *DiscoveryHandler) GetLLMsTxt(c *fiber.Ctx) error {
+	c.Set("Content-Type", "text/plain; charset=utf-8")
+	c.Set(fiber.HeaderCacheControl, fmt.Sprintf("max-age=%d, public", int(llmsTxtCacheTTL.Seconds())))
+
+	// Cache hit: serve from Redis without touching the DB.
+	if h.rdb != nil {
+		if cached, err := h.rdb.Get(c.Context(), llmsTxtCacheKey).Bytes(); err == nil {
+			return c.Send(cached)
+		}
+	}
+
 	models, err := h.store.ListModelsForContext(c.Context(), 1000)
 	if err != nil {
 		return api.NewInternalError("failed to fetch model list")
@@ -152,6 +174,12 @@ func (h *DiscoveryHandler) GetLLMsTxt(c *fiber.Ctx) error {
 		)
 	}
 
-	c.Set("Content-Type", "text/plain; charset=utf-8")
-	return c.SendString(sb.String())
+	body := sb.String()
+
+	// Best-effort cache write; a Redis failure must not degrade the response.
+	if h.rdb != nil {
+		_ = h.rdb.Set(c.Context(), llmsTxtCacheKey, body, llmsTxtCacheTTL).Err()
+	}
+
+	return c.SendString(body)
 }

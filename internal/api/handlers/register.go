@@ -79,9 +79,9 @@ func RegisterDev(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) error {
 //
 //   - GET /openapi.json              — OpenAPI 3.1 specification
 //   - GET /.well-known/ai-plugin.json — AI plugin manifest
-//   - GET /llms.txt                  — plain-text model price listing
-func RegisterDiscovery(app *fiber.App, db *pgxpool.Pool) {
-	dh := NewDiscoveryHandler(db)
+//   - GET /llms.txt                  — plain-text model price listing (Redis-cached, 30 min TTL)
+func RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
+	dh := NewDiscoveryHandler(db, rdb)
 	app.Get("/openapi.json", dh.GetOpenAPI)
 	app.Get("/.well-known/ai-plugin.json", dh.GetAIPlugin)
 	app.Get("/llms.txt", dh.GetLLMsTxt)
