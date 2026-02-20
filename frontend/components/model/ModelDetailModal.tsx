@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import PriceHistoryChart from "./PriceHistoryChart"
+import { trackViewModelDetail, trackAddToCompare } from "@/lib/analytics"
 import type { Model, PriceHistoryEntry } from "@/lib/api"
 import { formatPrice, formatContext, formatAge, formatSourceName } from "@/lib/format"
 
@@ -71,6 +72,7 @@ export default function ModelDetailModal() {
     if (modelId) {
       setData(null)
       fetchData(modelId)
+      trackViewModelDetail(modelId)
     }
   }, [modelId, fetchData])
 
@@ -83,6 +85,7 @@ export default function ModelDetailModal() {
 
   function addToCompare() {
     if (!modelId) return
+    trackAddToCompare(modelId)
     router.push(`/compare?models=${encodeURIComponent(modelId)}`)
   }
 

@@ -49,6 +49,8 @@ frontend/
 │       ├── changes/route.ts    # Changes proxy for client-side polling
 │       └── model/[id]/route.ts # Model detail proxy
 ├── components/
+│   ├── analytics/
+│   │   └── GoogleAnalytics.tsx # GA4 script loader + route change tracker
 │   ├── layout/
 │   │   ├── Nav.tsx             # Sticky top navigation (client component)
 │   │   └── Footer.tsx          # Footer with product, dev, and agent links
@@ -71,6 +73,7 @@ frontend/
 │   └── calculator/
 │       └── CalculatorClient.tsx # Calculator with daily/monthly/yearly toggle
 ├── lib/
+│   ├── analytics.ts            # GA4 pageview + typed custom event helpers
 │   ├── api.ts                  # Server-only typed API client (all REST endpoints)
 │   └── utils.ts                # cn() class merging utility
 ├── public/                     # Static assets (SVGs, favicon)
@@ -102,6 +105,7 @@ Copy `.env.example` to `.env.local` and fill in values:
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Client | Lemon Squeezy checkout URL (Developer plan) |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Client | Lemon Squeezy checkout URL (Pro plan) |
 | `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap (default: `https://llmrates.live`) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Client | GA4 measurement ID (e.g. `G-XXXXXXXXXX`). Leave blank to disable analytics. |
 
 ## API Client (`lib/api.ts`)
 
@@ -148,6 +152,31 @@ npm run build
 npm start
 ```
 
+## Analytics (GA4)
+
+Google Analytics 4 integration is built in. Set `NEXT_PUBLIC_GA_MEASUREMENT_ID` to enable it.
+
+**What's tracked automatically:**
+- Pageviews on every client-side navigation (App Router route changes)
+- GA4 enhanced measurement (outbound clicks, scroll depth, site search — enabled in GA4 dashboard)
+
+**Custom events (fired from components):**
+
+| Event | Component | Trigger |
+|---|---|---|
+| `compare_models` | `CompareClient` | User selects 2+ models for comparison |
+| `calculate_cost` | `CalculatorClient` | Cost calculation completes |
+| `view_model_detail` | `ModelDetailModal` | Model detail modal opens |
+| `add_to_compare` | `ModelDetailModal` | "Add to Compare" clicked |
+| `share_comparison` | `CompareClient` | Share URL copied |
+| `click_pricing_cta` | (available) | Helper exported in `lib/analytics.ts` |
+
+To add tracking to a new component, import from `lib/analytics.ts`:
+```ts
+import { trackCompareModels } from "@/lib/analytics"
+trackCompareModels(["gpt-4o", "claude-sonnet-4"])
+```
+
 ## Deployment (Vercel)
 
 Vercel auto-detects Next.js and requires no build configuration. Import the `frontend/` directory as the Vercel project root (set **Root Directory** to `frontend` in the project settings).
@@ -161,6 +190,7 @@ Vercel auto-detects Next.js and requires no build configuration. Import the `fro
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Production, Preview | Lemon Squeezy checkout URL |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Production, Preview | Lemon Squeezy checkout URL |
 | `NEXT_PUBLIC_SITE_URL` | Production | Canonical URL (e.g. `https://llmrates.live`) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Production | GA4 measurement ID (`G-XXXXXXXXXX`) |
 
 `LLM_PRICING_API_KEY` must never be prefixed with `NEXT_PUBLIC_` — it is enforced as server-only by `import 'server-only'` in `lib/api.ts`.
 

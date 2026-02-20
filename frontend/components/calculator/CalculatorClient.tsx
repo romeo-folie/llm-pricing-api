@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
 import { formatCurrency } from "@/lib/format"
+import { trackCalculateCost } from "@/lib/analytics"
 import { calculateCost, type CostResult } from "@/app/calculator/actions"
 import ModelPicker from "@/components/compare/ModelPicker"
 import EmptyState from "@/components/ui/EmptyState"
@@ -47,6 +48,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
       const r = await calculateCost(ids, inp, out, per)
       setResults(r)
       setCalcError(null)
+      trackCalculateCost({ modelIds: ids, inputTokens: inp, outputTokens: out, period: per })
     } catch (e) {
       setCalcError(e instanceof Error ? e.message : "Calculation failed")
     }

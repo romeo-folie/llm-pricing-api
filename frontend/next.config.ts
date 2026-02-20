@@ -7,12 +7,12 @@ import type { NextConfig } from "next"
 // This is tracked as a follow-up hardening task.
 const ContentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline';
+  script-src 'self' 'unsafe-inline' https://www.googletagmanager.com;
   style-src 'self' 'unsafe-inline';
   font-src 'self';
   img-src 'self' data: blob: https:;
   media-src 'self';
-  connect-src 'self' https://checkout.lemonsqueezy.com;
+  connect-src 'self' https://checkout.lemonsqueezy.com https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://*.analytics.google.com;
   worker-src 'self';
   frame-src https://checkout.lemonsqueezy.com;
   object-src 'none';

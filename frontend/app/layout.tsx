@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import Nav from "@/components/layout/Nav"
 import Footer from "@/components/layout/Footer"
+import GoogleAnalytics from "@/components/analytics/GoogleAnalytics"
 import { safeJsonLd } from "@/lib/utils"
 import "./globals.css"
 
@@ -81,6 +82,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased flex min-h-screen flex-col`}>
+        <GoogleAnalytics />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: safeJsonLd(websiteJsonLd) }}

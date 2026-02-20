@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
+import { trackCompareModels, trackShareComparison } from "@/lib/analytics"
 import ModelPicker from "./ModelPicker"
 import CompareTable from "./CompareTable"
 import EmptyState from "@/components/ui/EmptyState"
@@ -43,6 +44,7 @@ export default function CompareClient({
     const picked = next.map((i) => allModels.find((m) => m.id === i)).filter(Boolean) as Model[]
     setCompareModels(picked)
     updateUrl(next)
+    if (next.length >= 2) trackCompareModels(next)
   }
 
   function handleRemove(id: string) {
@@ -55,6 +57,7 @@ export default function CompareClient({
   function handleShare() {
     navigator.clipboard.writeText(window.location.href).then(() => {
       setCopied(true)
+      trackShareComparison(selectedIds)
       setTimeout(() => setCopied(false), 2000)
     }).catch(() => {})
   }
