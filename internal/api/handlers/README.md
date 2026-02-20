@@ -55,13 +55,27 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 
 `RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (Developer+ only). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
 
-`RegisterPro(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client)` wires webhook CRUD (`POST /v1/webhooks`, `DELETE /v1/webhooks/:id`) gated behind the Pro tier.
+`RegisterPro(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client, webhookSecretKey string, log zerolog.Logger)` wires webhook CRUD (`POST /v1/webhooks`, `DELETE /v1/webhooks/:id`) gated behind the Pro tier. `webhookSecretKey` is the hex-encoded 32-byte AES-256-GCM key for encrypting webhook secrets at rest; pass an empty string to use an ephemeral key (secrets will not survive restarts).
 
 ### Trust metadata
 
 Every model response includes a `meta` field with `confirmed_at`, `source`, `confidence`, `age_hours`, and `change_velocity`. These are computed by `api.ComputeTrustMeta()` from the model's `price_history` rows, which are fetched for each model via `store.GetPriceHistory()`.
 
 List endpoints aggregate metadata by choosing the most recently confirmed model's meta as the envelope-level meta value.
+
+### Discovery endpoints (`discovery.go`)
+
+`DiscoveryHandler` serves three public endpoints (no authentication required):
+
+- **`GET /openapi.json`** — returns the compile-time embedded OpenAPI 3.1 document. Embedding at build time eliminates runtime file I/O.
+- **`GET /.well-known/ai-plugin.json`** — returns the AI plugin manifest for agent auto-discovery. Key fields:
+  - `name_for_human`: `"LLM Rates"` — display name for UI.
+  - `name_for_model`: `"llmrates"` — identifier used by LLM agents.
+  - `description_for_model`: describes all Phase 4 agent capabilities including `/v1/ask`, `/v1/context`, and `/v1/stream/changes`.
+  - `api.url`: `"/openapi.json"` — points agents to the OpenAPI spec.
+- **`GET /llms.txt`** — returns a plain-text document suitable for agent context loading. It has two sections:
+  1. A **static header** with the base URL, authentication instructions, a full endpoint listing, and example `curl` commands.
+  2. A **dynamic price listing** fetched from the DB: one line per model in the format `{provider}/{slug}: input=$N.NNNN/1M output=$N.NNNN/1M`.
 
 ### SSE stream handler (`sse.go`)
 
@@ -114,7 +128,8 @@ if err := handlers.RegisterDev(v1, db, redisClient); err != nil {
 if err := handlers.RegisterSSE(v1, redisClient); err != nil {
     log.Fatal().Err(err).Msg("SSE handler setup failed")
 }
-handlers.RegisterPro(v1, db, redisClient)
+// webhookSecretKey: hex-encoded 32-byte AES-256-GCM key from config; empty = ephemeral key
+handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, logger)
 
 // Discovery routes — no auth, registered on the root app, not the v1 group.
 handlers.RegisterDiscovery(app, db)
@@ -146,11 +161,41 @@ All Developer+ handlers enforce the tier gate via `RequireTier("developer")` at 
 - `history`: model alias + time reference (last week=7d, last month=30d, last year=365d, "past N days")
 - `recommend`: `max_price` from "under $N", `context_window` from "NNNk", `task` keyword
 
-**Response**:
+**Response** (`price` intent example):
 ```json
-{ "data": { "intent": "price", "inferred_params": { "model": "openai/gpt-4o" }, "models": [], "plain_english_summary": "...", "meta": { "query_time_ms": 5, "parser": "rule-v1" } }, "meta": {} }
+{
+  "data": {
+    "intent": "price",
+    "inferred_params": { "model": "openai/gpt-4o" },
+    "models": [],
+    "plain_english_summary": "Check the current pricing for openai/gpt-4o via GET /v1/models with a provider filter.",
+    "meta": { "query_time_ms": 5, "parser": "rule-v1" }
+  },
+  "meta": {}
+}
 ```
-`recommend` uses `ranked_models` key and calls `store.RecommendModels` for live results.
+
+**Response** (`recommend` intent example):
+```json
+{
+  "data": {
+    "intent": "recommend",
+    "inferred_params": { "task": "summarization", "max_price": 5.0 },
+    "ranked_models": [ { "id": 3, "provider": "openai", "slug": "gpt-4o-mini", ... } ],
+    "plain_english_summary": "Found 3 model(s) matching your criteria. Top recommendation: gpt-4o-mini (input: $0.1500/1M tokens).",
+    "meta": { "query_time_ms": 12, "parser": "rule-v1" }
+  },
+  "meta": {}
+}
+```
+
+- `intent`: one of `"price"`, `"compare"`, `"history"`, `"recommend"`
+- `inferred_params`: parameters extracted from the query (model slug, max_price, context_window, task, days, models list)
+- `models`: populated for `price` and `compare` intents (currently empty — callers use `inferred_params` to fetch)
+- `ranked_models`: populated for `recommend` intent — calls `store.RecommendModels` for live DB results
+- `plain_english_summary`: human-readable result summary including suggested follow-up API calls
+- `meta.query_time_ms`: total handler latency including any DB round-trip
+- `meta.parser`: parser version (`"rule-v1"` — deterministic regex, no LLM involved)
 
 ### ModelAliases (`aliases.go`)
 
