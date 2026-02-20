@@ -10,6 +10,16 @@ case "${SERVICE_TYPE:-api}" in
     exec ./bin/worker
     ;;
   api|*)
+    # Apply any pending database migrations before starting the API.
+    # Uses the internal DATABASE_URL which is only reachable from within
+    # Railway's private network.
+    if [ -n "$DATABASE_URL" ] && [ -x ./bin/migrate ]; then
+      echo "[migrate] applying pending migrations..."
+      ./bin/migrate -path migrations -database "$DATABASE_URL" up
+      echo "[migrate] done"
+    else
+      echo "[migrate] skipped (DATABASE_URL unset or migrate binary missing)"
+    fi
     exec ./bin/api
     ;;
 esac

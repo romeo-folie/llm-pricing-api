@@ -2,13 +2,14 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker",
+    "buildCommand": "GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest && go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker",
     "watchPatterns": [
       "**/*.go",
       "go.mod",
       "go.sum",
       "railway.json",
-      "start.sh"
+      "start.sh",
+      "migrations/**"
     ]
   },
   "deploy": {
