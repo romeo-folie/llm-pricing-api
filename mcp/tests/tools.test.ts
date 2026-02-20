@@ -141,6 +141,17 @@ describe("happy paths", () => {
     // Markdown format may return plain text rather than JSON
     expect((result.content[0] as { text: string }).text).toBeTruthy();
   });
+
+  it("get_price_history — returns history for a known model", async () => {
+    if (!hasApiKey) return;
+    const result = await client.callTool({
+      name: "get_price_history",
+      arguments: { model_id: "openai/gpt-4o-mini" },
+    });
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse((result.content[0] as { text: string }).text);
+    expect(parsed).toBeDefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
