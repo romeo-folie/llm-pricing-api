@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "404 — Page Not Found | LLMPrice",
+  title: "404 — Page Not Found | LLMRates",
 }
 
 export default function NotFound() {

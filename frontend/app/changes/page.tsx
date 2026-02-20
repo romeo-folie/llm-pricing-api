@@ -9,11 +9,11 @@ import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 export const metadata: Metadata = {
   title: "Price Changes",
   description:
-    "Real-time LLM token pricing changes tracked across providers. Updated every 5 minutes from OpenRouter, LiteLLM, and provider docs.",
+    "Real-time LLM token pricing changes tracked across providers. Updated every 5 minutes from OpenRouter, LiteLLM, and Hugging Face.",
   openGraph: {
-    title: "LLM Price Changes",
+    title: "Price Changes",
     description:
-      "Live feed of LLM pricing changes across OpenRouter, LiteLLM, and provider docs.",
+      "Live feed of LLM pricing changes across OpenRouter, LiteLLM, and Hugging Face.",
   },
 }
 

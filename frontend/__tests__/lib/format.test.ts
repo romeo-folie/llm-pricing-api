@@ -6,6 +6,7 @@ import {
   formatDelta,
   formatAge,
   formatRelative,
+  formatSourceName,
 } from "@/lib/format"
 
 describe("formatPrice", () => {
@@ -87,6 +88,24 @@ describe("formatAge", () => {
   it("formats days for 24+ hours", () => {
     expect(formatAge(48)).toBe("2d ago")
     expect(formatAge(72)).toBe("3d ago")
+  })
+})
+
+describe("formatSourceName", () => {
+  it("maps openrouter to OpenRouter", () => {
+    expect(formatSourceName("openrouter")).toBe("OpenRouter")
+  })
+
+  it("maps litellm to LiteLLM", () => {
+    expect(formatSourceName("litellm")).toBe("LiteLLM")
+  })
+
+  it("maps huggingface_inference_providers to Hugging Face", () => {
+    expect(formatSourceName("huggingface_inference_providers")).toBe("Hugging Face")
+  })
+
+  it("passes through unknown sources unchanged", () => {
+    expect(formatSourceName("some_new_source")).toBe("some_new_source")
   })
 })
 

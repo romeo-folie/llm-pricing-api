@@ -23,6 +23,7 @@ export interface Model {
   input_price_per_m: number
   output_price_per_m: number
   updated_at: string
+  underlying_provider: string | null
   trust: TrustMetadata
 }
 
@@ -31,6 +32,7 @@ export interface PriceHistoryEntry {
   input_price_per_m: number
   output_price_per_m: number
   source: string
+  underlying_provider: string | null
 }
 
 export interface Provider {
@@ -73,6 +75,7 @@ interface RawModel {
   context_window: number | null
   price_input: number
   price_output: number
+  underlying_provider?: string | null
   meta: RawTrustMeta
 }
 
@@ -92,6 +95,7 @@ interface RawHistoryItem {
   input_cost_per_token: number
   output_cost_per_token: number
   source: string
+  underlying_provider?: string | null
   confirmed_at: string
   recorded_at: string
 }
@@ -121,6 +125,7 @@ function toModel(raw: RawModel): Model {
     input_price_per_m: raw.price_input * PER_MILLION,
     output_price_per_m: raw.price_output * PER_MILLION,
     updated_at: raw.meta.confirmed_at ?? "",
+    underlying_provider: raw.underlying_provider ?? null,
     trust: raw.meta,
   }
 }
@@ -167,6 +172,7 @@ function toHistoryEntry(raw: RawHistoryItem): PriceHistoryEntry {
     input_price_per_m: raw.input_cost_per_token * PER_MILLION,
     output_price_per_m: raw.output_cost_per_token * PER_MILLION,
     source: raw.source,
+    underlying_provider: raw.underlying_provider ?? null,
   }
 }
 

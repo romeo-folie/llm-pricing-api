@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import PriceHistoryChart from "./PriceHistoryChart"
 import type { Model, PriceHistoryEntry } from "@/lib/api"
-import { formatPrice, formatContext, formatAge } from "@/lib/format"
+import { formatPrice, formatContext, formatAge, formatSourceName } from "@/lib/format"
 
 interface ModalData {
   model: Model
@@ -179,7 +179,14 @@ export default function ModelDetailModal() {
               </div>
               <div>
                 <div className="font-outfit text-xs" style={{ color: "var(--dim)" }}>Source</div>
-                <div className="font-outfit text-sm" style={{ color: "var(--text)" }}>{data.model.trust.source}</div>
+                <div className="font-outfit text-sm" style={{ color: "var(--text)" }}>
+                  {formatSourceName(data.model.trust.source)}
+                  {data.model.underlying_provider && (
+                    <span style={{ color: "var(--muted)", marginLeft: "4px" }}>
+                      via {data.model.underlying_provider.charAt(0).toUpperCase() + data.model.underlying_provider.slice(1)}
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <div className="font-outfit text-xs" style={{ color: "var(--dim)" }}>Updated</div>

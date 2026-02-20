@@ -28,6 +28,16 @@ export function formatAge(hours: number): string {
   return `${Math.round(hours / 24)}d ago`
 }
 
+/** Map raw backend source identifiers to human-readable display names. */
+export function formatSourceName(source: string): string {
+  const map: Record<string, string> = {
+    openrouter: "OpenRouter",
+    litellm: "LiteLLM",
+    huggingface_inference_providers: "Hugging Face",
+  }
+  return map[source] ?? source
+}
+
 /** Format an ISO timestamp as a relative time string. */
 export function formatRelative(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()

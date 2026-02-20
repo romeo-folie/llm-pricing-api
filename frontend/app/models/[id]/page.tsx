@@ -5,7 +5,7 @@ import { safeJsonLd } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 import PriceHistoryChart from "@/components/model/PriceHistoryChart"
-import { formatPrice, formatContext } from "@/lib/format"
+import { formatPrice, formatContext, formatSourceName } from "@/lib/format"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -137,7 +137,7 @@ export default async function ModelDetailPage({ params }: PageProps) {
         >
           {[
             { label: "Context",    value: formatContext(model.context_window) },
-            { label: "Source",     value: model.trust.source                  },
+            { label: "Source",     value: formatSourceName(model.trust.source) },
             { label: "Confidence", value: model.trust.confidence.toUpperCase() },
           ].map(({ label, value }) => (
             <div key={label}>
@@ -145,6 +145,14 @@ export default async function ModelDetailPage({ params }: PageProps) {
               <div className="font-orbitron text-sm" style={{ color: "var(--text)" }}>{value}</div>
             </div>
           ))}
+          {model.underlying_provider && (
+            <div>
+              <div className="font-outfit text-xs" style={{ color: "var(--dim)", marginBottom: "4px" }}>Via</div>
+              <div className="font-orbitron text-sm" style={{ color: "var(--text)" }}>
+                {model.underlying_provider.charAt(0).toUpperCase() + model.underlying_provider.slice(1)}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Actions */}

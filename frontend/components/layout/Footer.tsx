@@ -44,7 +44,7 @@ export default function Footer() {
                 className="font-outfit text-base font-semibold"
                 style={{ color: "var(--accent)" }}
               >
-                Price
+                Rates
               </span>
             </div>
             <p className="text-xs font-outfit leading-relaxed" style={{ color: "var(--muted)" }}>
@@ -120,7 +120,7 @@ export default function Footer() {
           style={{ borderTop: "1px solid var(--border)" }}
         >
           <p className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
-            &copy; <CopyrightYear /> LLMPrice. All prices reconciled from multiple sources.
+            &copy; <CopyrightYear /> LLMRates. All prices reconciled from multiple sources.
           </p>
           <p className="font-orbitron text-xs" style={{ color: "var(--dim)" }}>
             p99 &lt;200ms &middot; updated every 5m

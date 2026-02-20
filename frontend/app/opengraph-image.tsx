@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og"
 
 export const runtime = "edge"
-export const alt = "LLMPrice — Reconciled LLM Token Pricing"
+export const alt = "LLMRates — Reconciled LLM Token Pricing"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
@@ -59,7 +59,7 @@ export default function OGImage() {
           }}
         >
           <span>LLM</span>
-          <span style={{ color: "#107E72" }}>Price</span>
+          <span style={{ color: "#107E72" }}>Rates</span>
         </div>
 
         {/* Subtitle */}

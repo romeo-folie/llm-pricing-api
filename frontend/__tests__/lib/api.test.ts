@@ -31,6 +31,7 @@ function rawModel(overrides = {}) {
     context_window: 128000,
     price_input: 0.0000025,   // $2.50 per million
     price_output: 0.000010,   // $10.00 per million
+    underlying_provider: null as string | null,
     meta: {
       confirmed_at: "2026-02-18T12:00:00Z",
       source: "openrouter",
@@ -62,6 +63,7 @@ function rawHistoryItem(overrides = {}) {
     input_cost_per_token: 0.0000025,
     output_cost_per_token: 0.000010,
     source: "openrouter",
+    underlying_provider: null as string | null,
     confirmed_at: "2026-02-18T12:00:00Z",
     recorded_at: "2026-02-18T12:01:00Z",
     ...overrides,
@@ -134,6 +136,36 @@ describe("getModels", () => {
     expect(models[0].context_window).toBe(0)
   })
 
+  it("maps underlying_provider when present", async () => {
+    mockOk(envelope([rawModel({ underlying_provider: "together" })]))
+    const models = await getModels()
+    expect(models[0].underlying_provider).toBe("together")
+  })
+
+  it("defaults underlying_provider to null when absent", async () => {
+    const raw = rawModel()
+    delete (raw as Record<string, unknown>).underlying_provider
+    mockOk(envelope([raw]))
+    const models = await getModels()
+    expect(models[0].underlying_provider).toBeNull()
+  })
+
+  it("handles huggingface_inference_providers source", async () => {
+    mockOk(envelope([rawModel({
+      meta: {
+        confirmed_at: "2026-02-18T12:00:00Z",
+        source: "huggingface_inference_providers",
+        confidence: "high" as const,
+        age_hours: 1,
+        change_velocity: 0,
+      },
+      underlying_provider: "together",
+    })]))
+    const models = await getModels()
+    expect(models[0].trust.source).toBe("huggingface_inference_providers")
+    expect(models[0].underlying_provider).toBe("together")
+  })
+
   it("applies query filters", async () => {
     mockOk(envelope([]))
     await getModels({ provider: "anthropic", modality: "text", min_context: 128000 })
@@ -180,6 +212,20 @@ describe("getModelHistory", () => {
     const url = mockFetch.mock.calls[0][0] as string
     expect(url).toContain("from=2026-01-01")
     expect(url).toContain("to=2026-02-01")
+  })
+
+  it("maps underlying_provider through to history entry", async () => {
+    mockOk(envelope([rawHistoryItem({ underlying_provider: "replicate" })]))
+    const history = await getModelHistory("42")
+    expect(history[0].underlying_provider).toBe("replicate")
+  })
+
+  it("defaults underlying_provider to null for history entries", async () => {
+    const raw = rawHistoryItem()
+    delete (raw as Record<string, unknown>).underlying_provider
+    mockOk(envelope([raw]))
+    const history = await getModelHistory("42")
+    expect(history[0].underlying_provider).toBeNull()
   })
 })
 

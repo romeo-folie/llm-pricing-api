@@ -7,22 +7,22 @@ import "./globals.css"
 
 export const metadata: Metadata = {
   title: {
-    default: "LLMPrice — Reconciled LLM Token Pricing",
-    template: "%s — LLMPrice",
+    default: "LLMRates — Reconciled LLM Token Pricing",
+    template: "%s — LLMRates",
   },
   description:
     "Reconciled, source-attributed LLM token pricing with full price history. Compare models, calculate costs, and track price changes in real time.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"),
   openGraph: {
     type: "website",
-    siteName: "LLMPrice",
-    title: "LLMPrice — Reconciled LLM Token Pricing",
+    siteName: "LLMRates",
+    title: "LLMRates — Reconciled LLM Token Pricing",
     description:
       "Reconciled, source-attributed LLM token pricing with full price history. Built for agents and developers.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "LLMPrice — Reconciled LLM Token Pricing",
+    title: "LLMRates — Reconciled LLM Token Pricing",
     description:
       "Multi-source verified LLM token pricing with full price history and agent-optimized APIs.",
   },

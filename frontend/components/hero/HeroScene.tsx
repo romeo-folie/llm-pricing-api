@@ -3,10 +3,9 @@ import type { CSSProperties } from "react"
 /* ─── Static data ──────────────────────────────────────────────────────────── */
 
 const PROVIDERS = [
-  { label: "OpenAI", freq: "6h" },
-  { label: "Anthropic", freq: "6h" },
-  { label: "Google", freq: "daily" },
-  { label: "Mistral", freq: "daily" },
+  { label: "OpenRouter", freq: "6h" },
+  { label: "LiteLLM", freq: "daily" },
+  { label: "Hugging Face", freq: "daily" },
 ]
 
 const ENDPOINTS = [
@@ -21,12 +20,12 @@ const ENDPOINTS = [
 const VB_W = 540
 const VB_H = 360
 
-// Provider column
+// Provider column (3 sources — vertically centered)
 const P_X = 0
 const P_W = 102
 const P_H = 42
-const P_GAP = 78
-const P_Y0 = 24
+const P_GAP = 108
+const P_Y0 = 54
 
 // Reconcile box
 const R_X = 192
@@ -54,7 +53,8 @@ function endpointY(i: number) {
 /** Cubic bezier from provider right-edge to reconcile left-edge */
 function leftPath(i: number): string {
   const sy = providerY(i) + P_H / 2
-  const ey = R_Y + 40 + i * 52
+  // 3 left-side connection points spread across the reconcile box height
+  const ey = R_Y + 56 + i * 80
   const sx = P_X + P_W
   const ex = R_X
   const cx1 = sx + 36
@@ -103,7 +103,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         ...style,
       }}
       role="img"
-      aria-label="Architecture diagram: data from OpenAI, Anthropic, Google, and Mistral flows through a reconciliation engine to produce verified API endpoints"
+      aria-label="Architecture diagram: data from OpenRouter, LiteLLM, and Hugging Face flows through a reconciliation engine to produce verified API endpoints"
     >
       <svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}
