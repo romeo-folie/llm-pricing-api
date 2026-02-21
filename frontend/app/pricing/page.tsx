@@ -48,6 +48,7 @@ const TIERS: Tier[] = [
     ctaHref:  "/models",
     featured: false,
     features: [
+      { label: "100 req/day — hard capped",                included: true  },
       { label: "GET /v1/models — list all models",         included: true  },
       { label: "GET /v1/models/:id — model detail",        included: true  },
       { label: "GET /v1/compare — up to 5 models",        included: true  },
@@ -71,6 +72,7 @@ const TIERS: Tier[] = [
     featured: true,
     features: [
       { label: "Everything in Free",                               included: true  },
+      { label: "10,000 req/day — hard capped",                     included: true  },
       { label: "GET /v1/models/:id/history — price history",      included: true  },
       { label: "⚡ GET /v1/context — agent context snapshot",     included: true,  agent: true },
       { label: "⚡ POST /v1/ask — natural language queries",      included: true,  agent: true },
