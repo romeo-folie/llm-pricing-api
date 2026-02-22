@@ -95,7 +95,7 @@ Base URL: https://api.llmrates.live
 All endpoints require an API key as a Bearer token:
   Authorization: Bearer <your-api-key>
 
-Tiers: Free (100 req/day), Developer ($9.99/mo, 10k req/day), Pro ($14.99/mo, unlimited + webhooks)
+Tiers: Free (100 req/day), Developer ($14.99/mo, 10k req/day), Pro ($29.99/mo, unlimited + webhooks)
 
 ## Endpoints
 
