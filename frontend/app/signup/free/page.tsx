@@ -159,7 +159,11 @@ export default function FreeSignupPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
-                  if (formState.startsWith("error")) setFormState("idle")
+                  if (formState.startsWith("error")) {
+                    setFormState("idle")
+                    // Input is already focused; onFocus won't re-fire, so apply accent border directly.
+                    e.target.style.borderColor = "var(--accent)"
+                  }
                 }}
                 disabled={isLoading}
                 style={{
