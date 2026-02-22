@@ -23,6 +23,15 @@ type Config struct {
 	// LogLevel controls the minimum log level. Accepts zerolog level names:
 	// trace, debug, info, warn, error, fatal, panic. Defaults to "debug".
 	LogLevel string
+	// Lemon Squeezy billing integration.
+	LSAPIKey  string
+	LSStoreID string
+	// Resend transactional email.
+	ResendAPIKey    string
+	ResendFromEmail string
+	// SessionSecret is a 32-byte secret for signing the account session cookie.
+	// Must match in both Railway (API) and Vercel (frontend).
+	SessionSecret string
 }
 
 // Load reads configuration from environment variables.
@@ -56,6 +65,11 @@ func Load() (*Config, error) {
 		UnkeyAPIID:       os.Getenv("UNKEY_API_ID"),
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
+		LSAPIKey:         os.Getenv("LEMONSQUEEZY_API_KEY"),
+		LSStoreID:        os.Getenv("LEMONSQUEEZY_STORE_ID"),
+		ResendAPIKey:     os.Getenv("RESEND_API_KEY"),
+		ResendFromEmail:  getEnv("RESEND_FROM_EMAIL", "keys@llmrates.com"),
+		SessionSecret:    os.Getenv("SESSION_SECRET"),
 	}, nil
 }
 
