@@ -1,7 +1,7 @@
-# Phase: frontend
-> Build the public-facing Next.js 15 (App Router + SSR) frontend — model browser, cost calculator, comparison page, price change feed, pricing page, and hero Blender scene.
+# Phase: monetisation
+> Implement Lemon Squeezy billing, Unkey key lifecycle, email delivery via Resend, and a self-serve account dashboard.
 
-**Branch:** `epic/frontend` | **Worktree:** `../epic-frontend` | **Created:** 2026-02-18T21:30:05Z
+**Branch:** `epic/monetisation` | **Worktree:** `../epic-monetisation` | **Created:** 2026-02-22
 
 ---
 
@@ -9,58 +9,45 @@
 
 | # | Task | Status | GitHub |
 |---|------|--------|--------|
-| #24 | Project Scaffolding & Design System | **done** | [#24](https://github.com/romeo-folie/llm-pricing-api/issues/24) |
-| #27 | Hero Blender MCP Scene | **done** | [#27](https://github.com/romeo-folie/llm-pricing-api/issues/27) |
-| #23 | Model Browser, Detail Modal & History | **done** | [#23](https://github.com/romeo-folie/llm-pricing-api/issues/23) |
-| #25 | Price Change Feed | **done** | [#25](https://github.com/romeo-folie/llm-pricing-api/issues/25) |
-| #26 | Compare Page & Cost Calculator | **done** | [#26](https://github.com/romeo-folie/llm-pricing-api/issues/26) |
-| #28 | Pricing Page | **done** | [#28](https://github.com/romeo-folie/llm-pricing-api/issues/28) |
-| #29 | Landing Page | **done** | [#29](https://github.com/romeo-folie/llm-pricing-api/issues/29) |
-| #30 | SEO, Metadata, Sitemap & Deployment | **open** | [#30](https://github.com/romeo-folie/llm-pricing-api/issues/30) |
+| #50 | DB Migrations — billing_subscriptions & webhook_events | done | [#50](https://github.com/romeo-folie/llm-pricing-api/issues/50) |
+| #51 | Billing Service (`internal/billing`) | done | [#51](https://github.com/romeo-folie/llm-pricing-api/issues/51) |
+| #52 | Lemon Squeezy Webhook Handler | done | [#52](https://github.com/romeo-folie/llm-pricing-api/issues/52) |
+| #53 | Free Signup Endpoint (`POST /v1/signup/free`) | done | [#53](https://github.com/romeo-folie/llm-pricing-api/issues/53) |
+| #54 | Key Revocation Asynq Job (`billing:revoke-key`) | done | [#54](https://github.com/romeo-folie/llm-pricing-api/issues/54) |
+| #55 | Account Dashboard (`GET /v1/account`) | done | [#55](https://github.com/romeo-folie/llm-pricing-api/issues/55) |
+| #56 | Free Signup UI (Next.js page) | done | [#56](https://github.com/romeo-folie/llm-pricing-api/issues/56) |
+| #57 | E2E Billing Integration Tests | open | [#57](https://github.com/romeo-folie/llm-pricing-api/issues/57) |
 
-**Next action:** Start **#30 (SEO, Metadata, Sitemap & Deployment)** — generateMetadata on all pages, JSON-LD schemas, sitemap.ts, robots.txt, OG images, Lighthouse audit, Railway deployment config.
+**Next action:** Run `/pm:issue-start 57` to begin E2E Billing Integration Tests.
 
 ---
 
 ## Goals
 
-- Next.js 15 App Router with SSR for SEO
-- Isometric design language (bone/ivory palette, amber accent, Orbitron + Outfit fonts, borders-not-shadows)
-- Model browser with filters, detail modal, price history chart
-- Cost calculator and comparison page with shareable URL params
-- Price change feed with 60s client-side polling
-- Pricing page with tier cards
-- Lighthouse Performance ≥ 90, SEO ≥ 95
-- Railway deployment as a new `frontend` service
+- Self-serve Free tier signup (no payment needed): `POST /v1/auth/signup` → Unkey key issued → welcome email via Resend
+- Paid tier (Developer/Pro) provisioning via Lemon Squeezy webhooks: key creation, tier updates, delayed revocation at `ends_at`
+- Delayed key revocation via asynq `billing:revoke-key` job scheduled at `ends_at` (LS field for cancelled subscriptions)
+- `subscription_resumed` cancels the pending revocation job (stored in `billing_subscriptions.revoke_job_id`)
+- Account dashboard at `GET /v1/account` — plan card, API key display, usage stats, LS customer portal link
+- Free signup UI page at `/signup` in Next.js frontend
+- E2E tests covering the full billing flow
 
 ---
 
 ## Architecture Notes
 
-- All work lives in `frontend/` — this is a Next.js 16 project within the monorepo root
-- Design tokens are locked in `.claude/frontend-design-spec.md` — read it before writing any CSS or components
-- **No box-shadows anywhere** — use `border border-[--border]` for component edges per the spec
-- API client (`lib/api.ts`) is a **server-only** module — it injects `LLM_PRICING_API_KEY` for Dev-tier endpoints; this key must never reach the client bundle
-- Filters and calculator inputs live in URL search params — all user state must be shareable via URL
-- `next: { revalidate: 300 }` on all fetches — do not use `cache: 'no-store'` except in the changes feed poller
-- shadcn/ui components in `frontend/components/ui/`; design utilities in `frontend/app/globals.css`
-- `npm run build` must pass before any commit
-
----
-
-## What Was Done
-
-### Session 2026-02-18 (Session 1 + 2)
-
-- Created `.claude/epics/frontend/` directory with epic.md and all task files (#23–#30)
-- **#24 closed**: Next.js 16 scaffold, Tailwind v4 @theme design tokens, shadcn/ui (8 components), `lib/api.ts` (server-only typed client, lazy `buildHeaders()`, RFC 7807 error parsing), Nav + Footer layout (with `CopyrightYear` client component), security headers (CSP, X-Frame, X-Content-Type), Railway config, `/api/health` route, `.env.example`, README
-- **#27 Stream A closed**: HeroScene.tsx (model-viewer, lazy-loaded, split into ModelViewerHero + HeroScene for Rules of Hooks), HeroFallback.tsx (@lottiefiles/react-lottie-player, useId() SVG dedup), types/model-viewer.d.ts
-- **#23 closed**: SSR model browser with URL filters, ModelCard list, ModelDetailModal (?model= deep-link), PriceHistoryChart (Recharts, 7d/30d/90d/All), /models/[id] detail page, JSON-LD Product schema
-- **#25 closed**: Price change feed with SSR initial data, 60s polling via /api/changes proxy, animate-flash on new items, LIVE/PAUSED badge, provider + date URL filters
-- **#26 closed**: Compare page (ModelPicker, CompareTable, best-value highlight, share URL) + cost calculator (server action calculateCost, daily/monthly/yearly toggle, URL state)
-- **#28 closed**: Static pricing page with 3 tier cards (Recruit/Engineer/Architect), rank progression strip, FAQ Accordion
-- All 4 Sonnet + 2 Opus code review passes completed; all findings fixed
-- **#27 Stream B closed**: Blender MCP scene built (3 server racks + 5 gold coins + 3-point lighting). hero.webp (15KB, 1200×800, Cycles 128 samples) + hero.glb (93KB) in frontend/public/
+- **`internal/billing/`** — new package; owns `Service` struct with `CreateKey`, `UpdateKeyTier`, `RevokeKey`, `SendKeyDelivery`, `SendPlanChange`. Depends on Unkey SDK + Resend SDK.
+- **Unkey** — already integrated for key *verification* (`internal/middleware/auth.go`). New usage: key creation/update/revocation via the Unkey management API. Inject `UnkeyRootKey` from env.
+- **Lemon Squeezy webhooks** — registered at `POST /webhooks/lemon-squeezy` on the Fiber app root (outside `/v1/` — no API key auth on this route). HMAC-SHA256 verified via `X-Signature` header and `LEMONSQUEEZY_SIGNING_SECRET`.
+- **Critical LS field**: use `ends_at` (not `renews_at`) for cancelled subscription expiry. `renews_at` = next active billing date; `ends_at` = access end date for cancelled subs.
+- **`subscription_resumed`**: must cancel the pending asynq `billing:revoke-key` job. Task ID stored in `billing_subscriptions.revoke_job_id`.
+- **asynq** — already used for scrapers/webhooks. New task constant `TaskBillingRevokeKey = "billing:revoke-key"`. Handler registered in `cmd/worker/main.go`. Enqueued with `asynq.ProcessAt(ends_at)`.
+- **Resend** — email provider (Go SDK). Templates via `html/template`. Sends welcome email (key delivery) and plan change notification.
+- **DB tables**: `billing_subscriptions` and `webhook_events` (migration 000009). `billing_subscriptions.revoke_job_id TEXT` is nullable — populated on `subscription_cancelled`, cleared on `subscription_resumed`.
+- **Free signup**: `POST /v1/auth/signup` is *unauthenticated* (no API key required). Rate-limited separately. Creates Unkey key at Free tier, stores in DB, sends welcome email.
+- **Account dashboard**: `GET /v1/account` requires API key auth (any tier). Returns plan, key metadata, usage from Unkey, LS customer portal URL (24h validity from `data.attributes.urls.customer_portal`).
+- **Session / CSRF**: account dashboard Next.js page uses a signed cookie (`SESSION_SECRET`) to store the API key client-side. The same `SESSION_SECRET` must be set in both Railway (API) and Vercel (frontend) environments.
+- **Tier mapping**: LS variant/product ID → tier string via env vars `LS_VARIANT_DEV` and `LS_VARIANT_PRO`.
 
 ---
 
@@ -68,41 +55,52 @@
 
 | Path | Role |
 |------|------|
-| `frontend/` | Next.js 16 project root (primary work area) |
-| `frontend/app/` | App Router pages and layouts |
-| `frontend/app/globals.css` | Tailwind v4 @theme + all 23 design tokens |
-| `frontend/components/layout/` | Nav.tsx + Footer.tsx |
-| `frontend/components/ui/` | shadcn/ui primitives |
-| `frontend/components/hero/` | HeroScene.tsx + HeroFallback.tsx |
-| `frontend/components/model/` | ModelCard, ModelDetailModal, ModelPicker, PriceHistoryChart |
-| `frontend/components/compare/` | CompareClient, CompareTable, ModelPicker |
-| `frontend/components/changes/` | ChangesFeed, ChangeRow |
-| `frontend/components/calculator/` | CalculatorClient |
-| `frontend/app/calculator/actions.ts` | Server action for cost calculation |
-| `frontend/lib/api.ts` | Typed server-side API client (server-only) |
-| `frontend/next.config.ts` | CSP + security headers |
-| `.claude/frontend-design-spec.md` | **Locked design language — read before writing any UI** |
-| `.claude/epics/frontend/epic.md` | Full epic spec with task order |
+| `internal/billing/` | New package — billing service (primary work area for #51) |
+| `internal/api/handlers/billing.go` | New file — LS webhook handler (#52) and signup endpoint (#53) |
+| `internal/worker/billing_handler.go` | New file — asynq `billing:revoke-key` handler (#54) |
+| `internal/worker/tasks.go` | Add `TaskBillingRevokeKey` constant (#54) |
+| `cmd/worker/main.go` | Register new handler (#54) |
+| `cmd/api/main.go` | Register `/webhooks/lemon-squeezy` + `/v1/auth/signup` + `/v1/account` routes |
+| `migrations/` | New 000009 migration pair (#50) |
+| `frontend/app/signup/` | New signup page + form (#56) |
+| `.env.example` | New env vars: `LEMONSQUEEZY_SIGNING_SECRET`, `UNKEY_ROOT_KEY`, `RESEND_API_KEY`, `LS_VARIANT_DEV`, `LS_VARIANT_PRO`, `SESSION_SECRET` |
+
+---
+
+## Dependency Order
+
+```
+#50 (DB migrations)
+  └── #51 (billing service)
+        ├── #52 (webhook handler)   ← parallel once #51 done
+        ├── #53 (free signup)       ← parallel once #51 done
+        └── #54 (revoke-key job)    ← parallel once #51 done
+              └── #55 (account dashboard)
+                    └── #56 (signup UI)
+                          └── #57 (E2E tests)
+```
 
 ---
 
 ## CCPM Quick Commands
 
 ```text
-/pm:next                       # What to work on next
-/pm:issue-start 29             # Landing page (unblocked once #27 Stream B done)
-/pm:issue-start 30             # SEO + deployment (unblocked once #23-#29 done)
-/pm:epic-status frontend       # This epic's progress
+/pm:next                          # What to work on next
+/pm:issue-start <N>               # Claim and begin a task
+/pm:issue-close <N>               # Mark complete, update this file
+/pm:epic-status monetisation      # This epic's progress
+/pm:blocked                       # See blocked tasks
 ```
 
 ---
 
 ## Resuming Work
 
-1. Check the **Current Status** table above for the next `open` task without blockers.
-2. Run `/pm:issue-start <N>` to claim it and read its full spec.
-3. Before writing any UI code, invoke `/frontend-design:frontend-design` per CLAUDE.md.
-4. Run `npm run build --prefix frontend` — TypeScript must be error-free before committing.
-5. Run `/code-reviewer` (Sonnet) then `/code-reviewer` (Opus) — fix all findings before closing.
-6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
-7. Remaining order: **#30 (SEO/deploy)** — final task.
+1. Check the **Current Status** table above for the next `open` task with no open blockers.
+2. Run `/pm:issue-start <N>` to claim it and read its full spec on GitHub.
+3. Write tests first (TDD per CLAUDE.md), then implement.
+4. Run `golangci-lint run ./...` and `go test ./...` — both must be clean before committing.
+5. Run `/code-reviewer` (Sonnet) then `/code-reviewer` (Opus) — fix all findings.
+6. Run `/pm:issue-close <N>` to mark complete and update the **Current Status** table above.
+7. **Never use `--no-verify`** — the pre-commit hook runs lint + tests automatically.
+8. After closing the last task (#57), run the full-epic Opus review before `/pm:epic-close monetisation`.
