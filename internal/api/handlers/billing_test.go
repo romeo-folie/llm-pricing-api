@@ -211,7 +211,7 @@ func lsRequest(app *fiber.App, body []byte, sig string) (int, []byte) {
 	if sig != "" {
 		req.Header.Set("X-Signature", sig)
 	}
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, 5000)
 	if err != nil {
 		panic("app.Test: " + err.Error())
 	}
@@ -618,7 +618,7 @@ func newFreeSignupApp(t *testing.T, keys billing.KeyManager, emailer billing.Ema
 func freeSignupPost(app *fiber.App, body string) (int, []byte) {
 	req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, 5000)
 	if err != nil {
 		panic("app.Test: " + err.Error())
 	}
@@ -631,7 +631,7 @@ func freeSignupPost(app *fiber.App, body string) (int, []byte) {
 func freeSignupPostHeaders(app *fiber.App, body string) (int, []byte, map[string]string) {
 	req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, 5000)
 	if err != nil {
 		panic("app.Test: " + err.Error())
 	}
@@ -692,7 +692,7 @@ func TestFreeSignupHandler(t *testing.T) {
 		app := newFreeSignupApp(t, &mockFreeKeys{}, &mockFreeEmail{}, mr.Addr())
 		req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(`{"email":"notanemail"}`))
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := app.Test(req, -1)
+		resp, err := app.Test(req, 5000)
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
@@ -795,6 +795,78 @@ func TestFreeSignupHandler(t *testing.T) {
 		}
 		if strings.Contains(string(body), issuedKey) {
 			t.Errorf("response body must not contain the key value %q; body: %s", issuedKey, body)
+		}
+	})
+
+	t.Run("redis failure on INCR returns 500", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		// Capture address before closing so we can build the app pointing at the
+		// now-dead server — all Redis calls will fail with a connection error.
+		addr := mr.Addr()
+		mr.Close()
+
+		app := newFreeSignupApp(t, &mockFreeKeys{}, &mockFreeEmail{}, addr)
+		status, body := freeSignupPost(app, `{"email":"user@example.com"}`)
+
+		if status != 500 {
+			t.Fatalf("expected 500 when Redis is unavailable, got %d; body: %s", status, body)
+		}
+	})
+
+	t.Run("auth-free group route reaches handler without API key", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		// newFreeSignupApp registers the handler on an open app with no auth middleware,
+		// mirroring how RegisterFreeSignup wires it onto a v1Open group in production.
+		app := newFreeSignupApp(t, &mockFreeKeys{}, &mockFreeEmail{}, mr.Addr())
+		status, body := freeSignupPost(app, `{"email":"reach@example.com"}`)
+
+		// The handler is reachable and processes the request (not 401/403/404).
+		if status != 200 {
+			t.Fatalf("expected 200 on auth-free route, got %d; body: %s", status, body)
+		}
+	})
+
+	t.Run("auth-gated v1 group returns 401 for same path without API key", func(t *testing.T) {
+		// Simulate how the authenticated v1 group would behave: mount the handler
+		// behind a middleware that always rejects unauthenticated requests.
+		app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+		authGuard := func(c *fiber.Ctx) error {
+			if c.Get("Authorization") == "" {
+				return api.NewUnauthorized("missing API key")
+			}
+			return c.Next()
+		}
+		v1Auth := app.Group("/v1", authGuard)
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		t.Cleanup(func() { _ = rdb.Close() })
+		h := handlers.NewFreeSignupHandler(&mockFreeKeys{}, &mockFreeEmail{}, rdb, zerolog.Nop())
+		v1Auth.Post("/signup/free", h.Handle)
+
+		req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(`{"email":"user@example.com"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, testErr := app.Test(req, 5000)
+		if testErr != nil {
+			t.Fatalf("app.Test: %v", testErr)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 401 {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 401 when endpoint is behind auth middleware, got %d; body: %s", resp.StatusCode, body)
 		}
 	})
 }

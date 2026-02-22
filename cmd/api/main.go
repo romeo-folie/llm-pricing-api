@@ -168,6 +168,8 @@ func main() {
 
 	// Register the Lemon Squeezy webhook receiver outside the auth group.
 	// The route requires no API key; it verifies requests via HMAC-SHA256.
+	// Register the free-tier signup endpoint on a separate /v1 group with no
+	// auth middleware — it must be reachable without an API key.
 	if billingSvc != nil {
 		handlers.RegisterLemonSqueezy(
 			app, db, billingSvc,
@@ -175,6 +177,8 @@ func main() {
 			cfg.LSSigningSecret, cfg.LSVariantDev, cfg.LSVariantPro,
 			log,
 		)
+		v1Open := app.Group("/v1")
+		handlers.RegisterFreeSignup(v1Open, redisClient, billingSvc, log)
 	}
 
 	// Register all /v1/ endpoint groups.

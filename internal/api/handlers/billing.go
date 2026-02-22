@@ -534,6 +534,10 @@ func (h *LemonSqueezyHandler) handleResumed(ctx context.Context, lsSubID string)
 // FreeSignupHandler
 // ---------------------------------------------------------------------------
 
+// emailRe is a simple email format validator.
+// It rejects empty local parts, empty domains, and domains without a TLD.
+var emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+
 // FreeSignupHandler handles POST /v1/signup/free.
 // It is unauthenticated. It validates email, enforces per-IP rate limiting
 // via Redis, creates a Free-tier Unkey key, and delivers it by email.
@@ -571,19 +575,28 @@ func (h *FreeSignupHandler) Handle(c *fiber.Ctx) error {
 		return api.NewBadRequest("invalid email address")
 	}
 
-	// 3. Per-IP rate limiting using Redis INCR + EXPIRE pattern.
+	// 3. Per-IP rate limiting.
 	// Key is built from a SHA-256 hash of the IP to avoid storing raw IPs.
+	// SetNX atomically creates the key with a 24h TTL on first use, eliminating
+	// the INCR→EXPIRE race where a crash between the two calls would leave the
+	// key without a TTL and permanently lock out the IP.
 	ipHash := sha256.Sum256([]byte(c.IP()))
 	rlKey := fmt.Sprintf("signup:free:%x", ipHash)
+
+	// SET key 0 NX EX 86400 — atomically creates the key with TTL on first use.
+	// redis.Nil is returned when the key already exists (NX condition not met) — not an error.
+	if err := h.rdb.SetArgs(c.Context(), rlKey, 0, redis.SetArgs{
+		Mode: "NX",
+		TTL:  86400 * time.Second,
+	}).Err(); err != nil && err != redis.Nil {
+		h.log.Error().Err(err).Msg("free signup: redis SET NX failed")
+		return api.NewInternalError("could not provision API key")
+	}
 
 	count, err := h.rdb.Incr(c.Context(), rlKey).Result()
 	if err != nil {
 		h.log.Error().Err(err).Msg("free signup: redis INCR failed")
 		return api.NewInternalError("could not provision API key")
-	}
-	if count == 1 {
-		// First request — set the 24-hour expiry.
-		h.rdb.Expire(c.Context(), rlKey, 86400*time.Second) //nolint:errcheck
 	}
 	if count > 3 {
 		c.Set("Retry-After", "86400")
@@ -610,7 +623,3 @@ func (h *FreeSignupHandler) Handle(c *fiber.Ctx) error {
 	// 6. Return a success response that does NOT include the key value.
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "API key sent to your email"})
 }
-
-// emailRe is a simple email format validator.
-// It rejects empty local parts, empty domains, and domains without a TLD.
-var emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
