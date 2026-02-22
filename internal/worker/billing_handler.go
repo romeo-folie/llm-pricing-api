@@ -3,11 +3,14 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	sdkerrors "github.com/unkeyed/unkey-go/models/sdkerrors"
 
 	"llm-pricing-api/internal/billing"
 )
@@ -42,19 +45,29 @@ func (s *pgxBillingRevokeKeyStore) GetSubscriptionKeyID(ctx context.Context, lsS
 		`SELECT unkey_key_id FROM billing_subscriptions WHERE ls_subscription_id = $1`,
 		lsSubID,
 	).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No subscription row — retrying will not help; skip directly to dead-letter.
+			return "", fmt.Errorf("get subscription key id: subscription not found %q: %w",
+				lsSubID, asynq.SkipRetry)
+		}
 		return "", fmt.Errorf("get subscription key id: %w", err)
 	}
 	return id, nil
 }
 
 func (s *pgxBillingRevokeKeyStore) ExpireSubscription(ctx context.Context, lsSubID string) error {
-	_, err := s.db.Exec(ctx, `
+	ct, err := s.db.Exec(ctx, `
 		UPDATE billing_subscriptions
 		SET status = 'expired', updated_at = NOW()
 		WHERE ls_subscription_id = $1
 	`, lsSubID)
 	if err != nil {
 		return fmt.Errorf("expire subscription: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		// No matching row — the subscription was never recorded or was already deleted.
+		// Skip retries: the row will not appear on subsequent attempts.
+		return fmt.Errorf("expire subscription: no row found for %q: %w", lsSubID, asynq.SkipRetry)
 	}
 	return nil
 }
@@ -95,7 +108,17 @@ func (h *BillingRevokeKeyHandler) Handle(ctx context.Context, t *asynq.Task) err
 	}
 
 	if err := h.keys.RevokeKey(ctx, unkeyKeyID); err != nil {
-		return fmt.Errorf("billing:revoke-key: revoke key %q: %w", unkeyKeyID, err)
+		// If the key is already deleted (e.g. a prior retry succeeded at RevokeKey
+		// but then failed at ExpireSubscription), the security goal is already met —
+		// treat it as a no-op and continue so the DB row is correctly expired.
+		var notFound *sdkerrors.ErrNotFound
+		if !errors.As(err, &notFound) {
+			return fmt.Errorf("billing:revoke-key: revoke key %q: %w", unkeyKeyID, err)
+		}
+		h.log.Warn().
+			Str("unkey_key_id", unkeyKeyID).
+			Str("ls_sub_id", p.LSSubscriptionID).
+			Msg("billing:revoke-key: key already revoked; proceeding to expire subscription")
 	}
 
 	if err := h.store.ExpireSubscription(ctx, p.LSSubscriptionID); err != nil {

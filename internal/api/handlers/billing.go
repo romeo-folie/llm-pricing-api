@@ -452,7 +452,7 @@ func (h *LemonSqueezyHandler) handleCancelled(ctx context.Context, lsSubID strin
 	task := asynq.NewTask(TypeBillingRevokeKey, payload)
 	// Always specify the queue explicitly so enqueue and delete reference the
 	// same billingQueue constant — avoids silent misrouting if queue names change.
-	opts := []asynq.Option{asynq.Queue(billingQueue)}
+	opts := []asynq.Option{asynq.Queue(billingQueue), asynq.MaxRetry(3), asynq.Timeout(30 * time.Second)}
 	if endsAt != nil && endsAt.After(time.Now()) {
 		opts = append(opts, asynq.ProcessAt(*endsAt))
 	}

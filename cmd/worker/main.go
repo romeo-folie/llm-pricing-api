@@ -136,7 +136,10 @@ func main() {
 		ResendFromEmail: cfg.ResendFromEmail,
 	})
 	if billingErr != nil {
-		log.Warn().Err(billingErr).Msg("billing service unavailable; billing:revoke-key tasks will not execute")
+		// billing:revoke-key tasks will not be routed — any such tasks queued while
+		// the billing service is unavailable will be dead-lettered by asynq immediately.
+		// This is an operational error that requires intervention (check env vars).
+		log.Error().Err(billingErr).Msg("billing service unavailable; billing:revoke-key tasks will NOT execute — check UNKEY_ROOT_KEY, RESEND_API_KEY")
 	} else {
 		billingRevokeHandler := worker.NewBillingRevokeKeyHandler(db, billingSvc.Keys, log)
 		mux.HandleFunc(worker.TypeBillingRevokeKey, billingRevokeHandler.Handle)

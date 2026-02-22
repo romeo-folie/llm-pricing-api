@@ -79,10 +79,15 @@ Scrapers never write to the database directly; all writes go through the reconci
 **`Handle(ctx, task)` steps:**
 1. Unmarshal `billingRevokeKeyPayload` (`unkey_key_id`, `ls_subscription_id`) from the task payload.
 2. Validate `ls_subscription_id` is non-empty.
-3. If `unkey_key_id` is missing from the payload, look it up from `billing_subscriptions` via `BillingRevokeKeyStore.GetSubscriptionKeyID`.
-4. Call `keys.RevokeKey(ctx, unkeyKeyID)` — permanently revokes access.
-5. Call `store.ExpireSubscription(ctx, lsSubID)` — sets `status = 'expired'` in the DB.
+3. If `unkey_key_id` is missing from the payload, look it up from `billing_subscriptions` via `BillingRevokeKeyStore.GetSubscriptionKeyID`. A missing row wraps `asynq.SkipRetry` — retrying cannot fix a non-existent subscription.
+4. Call `keys.RevokeKey(ctx, unkeyKeyID)` — permanently revokes access. If the key is already deleted (`*sdkerrors.ErrNotFound`), the revocation goal is met; the handler continues to step 5 rather than erroring, enabling idempotent retries after a partial failure.
+5. Call `store.ExpireSubscription(ctx, lsSubID)` — sets `status = 'expired'` in the DB. Zero rows affected wraps `asynq.SkipRetry`.
 6. Log the outcome.
+
+**Retry behaviour:**
+- `MaxRetry(3)` and `Timeout(30s)` are set at enqueue time in `handleCancelled`.
+- `asynq.SkipRetry` is used for permanent failures (missing subscription, zero rows affected) to avoid wasting all three retries.
+- `*sdkerrors.ErrNotFound` from `RevokeKey` is treated as a no-op, ensuring retries succeed even when a prior attempt revoked the key but failed to update the DB.
 
 **`BillingRevokeKeyStore`** is a two-method interface abstracting the DB calls, keeping the handler testable without a live database:
 
@@ -178,3 +183,5 @@ go test ./internal/worker/...
 `handlers_test.go` uses a `mockStore` implementing `WorkerStore` and a `mockScraper` implementing `scraper.Scraper`. The reconciler is backed by a `mockReconcilerStore` (via `reconciler.NewWithStore`) so tests run without a database.
 
 `webhook_handler_test.go` spins up an `httptest.Server` to verify HMAC signature correctness and that non-2xx responses return an error.
+
+`billing_handler_test.go` uses mock implementations of `BillingRevokeKeyStore` and `billing.KeyManager`. It covers: happy paths (key in payload vs DB fallback), missing subscription ID, invalid JSON, non-ErrNotFound RevokeKey errors, the already-revoked idempotency path (both direct and `fmt.Errorf`-wrapped `*sdkerrors.ErrNotFound`), and DB update failures.
