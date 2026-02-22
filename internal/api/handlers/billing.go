@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"regexp"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,11 +12,13 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/redis/go-redis/v9"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/billing"
 )
 
@@ -526,3 +529,88 @@ func (h *LemonSqueezyHandler) handleResumed(ctx context.Context, lsSubID string)
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// FreeSignupHandler
+// ---------------------------------------------------------------------------
+
+// FreeSignupHandler handles POST /v1/signup/free.
+// It is unauthenticated. It validates email, enforces per-IP rate limiting
+// via Redis, creates a Free-tier Unkey key, and delivers it by email.
+// The key value is never included in the HTTP response.
+type FreeSignupHandler struct {
+	keys  billing.KeyManager
+	email billing.Emailer
+	rdb   *redis.Client
+	log   zerolog.Logger
+}
+
+// NewFreeSignupHandler constructs a FreeSignupHandler.
+func NewFreeSignupHandler(keys billing.KeyManager, email billing.Emailer, rdb *redis.Client, log zerolog.Logger) *FreeSignupHandler {
+	return &FreeSignupHandler{
+		keys:  keys,
+		email: email,
+		rdb:   rdb,
+		log:   log,
+	}
+}
+
+// Handle is the Fiber handler for POST /v1/signup/free.
+func (h *FreeSignupHandler) Handle(c *fiber.Ctx) error {
+	// 1. Parse request body.
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return api.NewBadRequest("invalid request body")
+	}
+
+	// 2. Validate email.
+	email := body.Email
+	if email == "" || !emailRe.MatchString(email) {
+		return api.NewBadRequest("invalid email address")
+	}
+
+	// 3. Per-IP rate limiting using Redis INCR + EXPIRE pattern.
+	// Key is built from a SHA-256 hash of the IP to avoid storing raw IPs.
+	ipHash := sha256.Sum256([]byte(c.IP()))
+	rlKey := fmt.Sprintf("signup:free:%x", ipHash)
+
+	count, err := h.rdb.Incr(c.Context(), rlKey).Result()
+	if err != nil {
+		h.log.Error().Err(err).Msg("free signup: redis INCR failed")
+		return api.NewInternalError("could not provision API key")
+	}
+	if count == 1 {
+		// First request — set the 24-hour expiry.
+		h.rdb.Expire(c.Context(), rlKey, 86400*time.Second) //nolint:errcheck
+	}
+	if count > 3 {
+		c.Set("Retry-After", "86400")
+		return api.NewTooManyRequests("signup rate limit exceeded — try again in 24 hours")
+	}
+
+	// 4. Create Free-tier Unkey key.
+	_, keyValue, err := h.keys.CreateKey(c.Context(), email, "free")
+	if err != nil {
+		h.log.Error().Err(err).Str("email", email).Msg("free signup: key creation failed")
+		return api.NewInternalError("could not provision API key")
+	}
+
+	// 5. Deliver key by email in a background goroutine.
+	// keyValue is captured in the closure but is never logged or returned in the HTTP response.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
+		defer cancel()
+		if err := h.email.SendKeyDelivery(ctx, email, "free", keyValue); err != nil {
+			h.log.Error().Err(err).Str("email", email).Msg("free signup: email delivery failed")
+		}
+	}()
+
+	// 6. Return a success response that does NOT include the key value.
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "API key sent to your email"})
+}
+
+// emailRe is a simple email format validator.
+// It rejects empty local parts, empty domains, and domains without a TLD.
+var emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)

@@ -170,3 +170,14 @@ func RegisterPro(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client, webhookSecr
 	v1.Post("/webhooks", middleware.RequireTier(middleware.TierPro), wh.Create)
 	v1.Delete("/webhooks/:id", middleware.RequireTier(middleware.TierPro), wh.Delete)
 }
+
+// RegisterFreeSignup registers the unauthenticated free-tier signup endpoint.
+// The route is inside the /v1 prefix but outside any auth middleware group.
+//
+// Route registered:
+//
+//	POST /v1/signup/free
+func RegisterFreeSignup(v1 fiber.Router, rdb *redis.Client, billingSvc *billing.Service, log zerolog.Logger) {
+	h := NewFreeSignupHandler(billingSvc.Keys, billingSvc.Email, rdb, log)
+	v1.Post("/signup/free", h.Handle)
+}
