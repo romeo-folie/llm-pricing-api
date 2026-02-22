@@ -74,6 +74,24 @@ func TestNewService_MissingLSAPIKey(t *testing.T) {
 	}
 }
 
+func TestNewService_MissingResendAPIKey(t *testing.T) {
+	cfg := validConfig()
+	cfg.ResendAPIKey = ""
+	_, err := billing.NewService(cfg)
+	if err == nil {
+		t.Fatal("NewService: expected error for missing ResendAPIKey, got nil")
+	}
+}
+
+func TestNewService_MissingResendFromEmail(t *testing.T) {
+	cfg := validConfig()
+	cfg.ResendFromEmail = ""
+	_, err := billing.NewService(cfg)
+	if err == nil {
+		t.Fatal("NewService: expected error for missing ResendFromEmail, got nil")
+	}
+}
+
 func TestNewService_DefaultDocsURL(t *testing.T) {
 	cfg := validConfig()
 	cfg.DocsURL = "" // should default to llmrates.com/docs — no error

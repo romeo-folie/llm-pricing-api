@@ -62,6 +62,12 @@ func NewService(cfg Config) (*Service, error) {
 	if cfg.LSAPIKey == "" {
 		return nil, fmt.Errorf("billing: LSAPIKey is required")
 	}
+	if cfg.ResendAPIKey == "" {
+		return nil, fmt.Errorf("billing: ResendAPIKey is required")
+	}
+	if cfg.ResendFromEmail == "" {
+		return nil, fmt.Errorf("billing: ResendFromEmail is required")
+	}
 
 	docsURL := cfg.DocsURL
 	if docsURL == "" {
@@ -73,7 +79,7 @@ func NewService(cfg Config) (*Service, error) {
 		return nil, fmt.Errorf("billing: init email client: %w", err)
 	}
 	return &Service{
-		LS:    NewLemonSqueezyClient(cfg.LSAPIKey, cfg.LSStoreID),
+		LS:    NewLemonSqueezyClient(cfg.LSAPIKey),
 		Keys:  NewUnkeyClient(cfg.UnkeyRootKey, cfg.UnkeyAPIID),
 		Email: emailClient,
 	}, nil

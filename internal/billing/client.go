@@ -20,7 +20,6 @@ const (
 // It must be constructed via NewLemonSqueezyClient; the zero value is not usable.
 type LemonSqueezyClient struct {
 	apiKey     string
-	storeID    string
 	httpClient *http.Client
 }
 
@@ -42,12 +41,10 @@ type Subscription struct {
 	CustomerPortalURL string
 }
 
-// NewLemonSqueezyClient constructs a LemonSqueezyClient with the supplied credentials.
-// apiKey is the Lemon Squeezy API key; storeID is the numeric store identifier.
-func NewLemonSqueezyClient(apiKey, storeID string) *LemonSqueezyClient {
+// NewLemonSqueezyClient constructs a LemonSqueezyClient with the supplied API key.
+func NewLemonSqueezyClient(apiKey string) *LemonSqueezyClient {
 	return &LemonSqueezyClient{
-		apiKey:  apiKey,
-		storeID: storeID,
+		apiKey: apiKey,
 		httpClient: &http.Client{
 			Timeout: lsTimeout,
 		},
@@ -58,6 +55,10 @@ func NewLemonSqueezyClient(apiKey, storeID string) *LemonSqueezyClient {
 // It returns the normalised Subscription or an error with the HTTP status code when
 // the upstream call fails.
 func (c *LemonSqueezyClient) GetSubscription(ctx context.Context, lsSubscriptionID string) (*Subscription, error) {
+	if err := validateSubscriptionID(lsSubscriptionID); err != nil {
+		return nil, fmt.Errorf("billing: get subscription: %w", err)
+	}
+
 	url := fmt.Sprintf("%s/subscriptions/%s", lsBaseURL, lsSubscriptionID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -93,6 +94,10 @@ func (c *LemonSqueezyClient) GetSubscription(ctx context.Context, lsSubscription
 // for the given subscription. This URL allows the customer to manage billing
 // details, upgrade, downgrade, or cancel their subscription.
 func (c *LemonSqueezyClient) GetCustomerPortalURL(ctx context.Context, lsSubscriptionID string) (string, error) {
+	if err := validateSubscriptionID(lsSubscriptionID); err != nil {
+		return "", fmt.Errorf("billing: get customer portal URL: %w", err)
+	}
+
 	url := fmt.Sprintf("%s/subscriptions/%s/customer-portal-session", lsBaseURL, lsSubscriptionID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
@@ -129,18 +134,29 @@ func (c *LemonSqueezyClient) GetCustomerPortalURL(ctx context.Context, lsSubscri
 	return portalResp.Data.Attributes.URL, nil
 }
 
+// validateSubscriptionID rejects values that could inject unexpected path segments
+// or query parameters into the Lemon Squeezy API URL.
+func validateSubscriptionID(id string) error {
+	if id == "" || strings.ContainsAny(id, "/?#&%") {
+		return fmt.Errorf("invalid subscription ID %q", id)
+	}
+	return nil
+}
+
 // setHeaders attaches the required Lemon Squeezy authentication and accept headers to r.
 func (c *LemonSqueezyClient) setHeaders(r *http.Request) {
 	r.Header.Set("Authorization", "Bearer "+c.apiKey)
 	r.Header.Set("Accept", "application/vnd.api+json")
 }
 
-// truncate returns at most n bytes of b as a string, for use in error messages.
+// truncate returns at most n runes of b as a string, for safe use in error messages.
+// It slices on rune boundaries to avoid producing invalid UTF-8.
 func truncate(b []byte, n int) string {
-	if len(b) <= n {
-		return string(b)
+	runes := []rune(string(b))
+	if len(runes) <= n {
+		return string(runes)
 	}
-	return string(b[:n]) + "..."
+	return string(runes[:n]) + "..."
 }
 
 // ---------------------------------------------------------------------------

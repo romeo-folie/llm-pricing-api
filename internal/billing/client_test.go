@@ -3,8 +3,10 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -13,11 +15,10 @@ import (
 // configured to redirect all requests to the provided test server.
 // It works by setting a custom http.Client with a transport that rewrites
 // the host to point at the test server, keeping the path intact.
-func newTestClient(serverURL, apiKey, storeID string) *LemonSqueezyClient {
+func newTestClient(serverURL, apiKey string) *LemonSqueezyClient {
 	transport := &testTransport{serverURL: serverURL}
 	return &LemonSqueezyClient{
-		apiKey:  apiKey,
-		storeID: storeID,
+		apiKey: apiKey,
 		httpClient: &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: transport,
@@ -32,18 +33,14 @@ type testTransport struct {
 }
 
 func (t *testTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Build a new URL that points to the test server but keeps the original path.
-	newReq := req.Clone(req.Context())
-	newReq.URL.Scheme = "http"
-	newReq.URL.Host = req.Host
-
-	// Parse the test server URL to get host.
-	parsed, err := http.NewRequest(http.MethodGet, t.serverURL, nil)
+	// Redirect the request to the test server, preserving the original path.
+	parsed, err := url.Parse(t.serverURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("testTransport: parse server URL %q: %w", t.serverURL, err)
 	}
-	newReq.URL.Host = parsed.URL.Host
-	newReq.URL.Scheme = parsed.URL.Scheme
+	newReq := req.Clone(req.Context())
+	newReq.URL.Host = parsed.Host
+	newReq.URL.Scheme = parsed.Scheme
 	return http.DefaultTransport.RoundTrip(newReq)
 }
 
@@ -78,7 +75,7 @@ func TestGetSubscription_HappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newTestClient(srv.URL, "test-key", "store-1")
+	client := newTestClient(srv.URL, "test-key")
 	sub, err := client.GetSubscription(context.Background(), expectedID)
 	if err != nil {
 		t.Fatalf("GetSubscription returned unexpected error: %v", err)
@@ -117,7 +114,7 @@ func TestGetSubscription_NonOKStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newTestClient(srv.URL, "bad-key", "store-1")
+	client := newTestClient(srv.URL, "bad-key")
 	_, err := client.GetSubscription(context.Background(), "sub_999")
 	if err == nil {
 		t.Fatal("GetSubscription: expected error for non-OK status, got nil")
@@ -145,7 +142,7 @@ func TestGetCustomerPortalURL_HappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newTestClient(srv.URL, "test-key", "store-1")
+	client := newTestClient(srv.URL, "test-key")
 	url, err := client.GetCustomerPortalURL(context.Background(), "sub_123")
 	if err != nil {
 		t.Fatalf("GetCustomerPortalURL returned unexpected error: %v", err)
@@ -162,9 +159,29 @@ func TestGetCustomerPortalURL_NonOKStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newTestClient(srv.URL, "bad-key", "store-1")
+	client := newTestClient(srv.URL, "bad-key")
 	_, err := client.GetCustomerPortalURL(context.Background(), "sub_123")
 	if err == nil {
 		t.Fatal("GetCustomerPortalURL: expected error for non-OK status, got nil")
+	}
+}
+
+func TestGetSubscription_InvalidID(t *testing.T) {
+	client := newTestClient("http://unused", "test-key")
+	for _, badID := range []string{"", "sub/123", "sub?filter=x", "sub#anchor", "sub%2F123"} {
+		_, err := client.GetSubscription(context.Background(), badID)
+		if err == nil {
+			t.Errorf("GetSubscription(%q): expected error for invalid ID, got nil", badID)
+		}
+	}
+}
+
+func TestGetCustomerPortalURL_InvalidID(t *testing.T) {
+	client := newTestClient("http://unused", "test-key")
+	for _, badID := range []string{"", "sub/123", "sub?filter=x", "sub#anchor", "sub%2F123"} {
+		_, err := client.GetCustomerPortalURL(context.Background(), badID)
+		if err == nil {
+			t.Errorf("GetCustomerPortalURL(%q): expected error for invalid ID, got nil", badID)
+		}
 	}
 }

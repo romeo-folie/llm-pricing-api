@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"llm-pricing-api/internal/billing"
 )
@@ -26,7 +27,8 @@ func TestUnkeyClient_CreateKey_Integration(t *testing.T) {
 	}
 
 	client := billing.NewUnkeyClient(rootKey, apiID)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
 
 	keyID, keyValue, err := client.CreateKey(ctx, "integration-test@example.com", "free")
 	if err != nil {
@@ -58,7 +60,8 @@ func TestUnkeyClient_UpdateKeyTier_Integration(t *testing.T) {
 	}
 
 	client := billing.NewUnkeyClient(rootKey, apiID)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
 
 	// Create a key to update.
 	keyID, _, err := client.CreateKey(ctx, "tier-update-test@example.com", "free")
@@ -85,7 +88,8 @@ func TestUnkeyClient_RevokeKey_Integration(t *testing.T) {
 	}
 
 	client := billing.NewUnkeyClient(rootKey, apiID)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
 
 	// Create a key specifically to revoke.
 	keyID, _, err := client.CreateKey(ctx, "revoke-test@example.com", "free")

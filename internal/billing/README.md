@@ -18,7 +18,7 @@ All external billing SDK calls are contained in this package. Handlers and asynq
 | `billing_test.go` | Tests for `Service` construction and interface satisfaction |
 | `client_test.go` | `httptest`-backed unit tests for `LemonSqueezyClient` |
 | `unkey_test.go` | Constructor test + integration tests (guarded by env vars) |
-| `email_test.go` | Template parse test + send-error tests with invalid API key |
+| `email_test.go` | Template parse test + send-success and send-error tests via mock HTTP server |
 
 ## Key Components
 
@@ -52,14 +52,14 @@ if err != nil {
 }
 
 // Create a Free-tier key and email it.
-keyID, keyValue, err := svc.Keys.CreateKey(email, "free")
+keyID, keyValue, err := svc.Keys.CreateKey(ctx, email, "free")
 if err != nil {
     return err
 }
-go svc.Email.SendKeyDelivery(email, "free", keyValue) // non-blocking fire-and-forget
+go svc.Email.SendKeyDelivery(ctx, email, "free", keyValue) // non-blocking fire-and-forget
 
 // Upgrade a key tier after a subscription change.
-if err := svc.Keys.UpdateKeyTier(unkeyKeyID, "developer"); err != nil {
+if err := svc.Keys.UpdateKeyTier(ctx, unkeyKeyID, "developer"); err != nil {
     return err
 }
 

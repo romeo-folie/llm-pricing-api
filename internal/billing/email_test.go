@@ -32,6 +32,47 @@ func TestNewEmailClient_Success(t *testing.T) {
 	}
 }
 
+func TestSendKeyDelivery_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"email-id-123"}`))
+	}))
+	defer srv.Close()
+
+	client := newMockEmailClient(t, srv)
+	if err := client.SendKeyDelivery(context.Background(), "to@example.com", "Developer", "test_key_value"); err != nil {
+		t.Fatalf("SendKeyDelivery: unexpected error: %v", err)
+	}
+}
+
+func TestSendPlanChange_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"email-id-456"}`))
+	}))
+	defer srv.Close()
+
+	client := newMockEmailClient(t, srv)
+	renewsAt := time.Now().Add(30 * 24 * time.Hour)
+	if err := client.SendPlanChange(context.Background(), "to@example.com", "Developer", "Pro", renewsAt); err != nil {
+		t.Fatalf("SendPlanChange: unexpected error: %v", err)
+	}
+}
+
+func TestSendCancellation_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"email-id-789"}`))
+	}))
+	defer srv.Close()
+
+	client := newMockEmailClient(t, srv)
+	accessUntil := time.Now().Add(30 * 24 * time.Hour)
+	if err := client.SendCancellation(context.Background(), "to@example.com", accessUntil); err != nil {
+		t.Fatalf("SendCancellation: unexpected error: %v", err)
+	}
+}
+
 func TestSendKeyDelivery_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
