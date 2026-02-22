@@ -57,10 +57,10 @@ func NewLemonSqueezyClient(apiKey, storeID string) *LemonSqueezyClient {
 // GetSubscription fetches a subscription by its Lemon Squeezy subscription ID.
 // It returns the normalised Subscription or an error with the HTTP status code when
 // the upstream call fails.
-func (c *LemonSqueezyClient) GetSubscription(lsSubscriptionID string) (*Subscription, error) {
+func (c *LemonSqueezyClient) GetSubscription(ctx context.Context, lsSubscriptionID string) (*Subscription, error) {
 	url := fmt.Sprintf("%s/subscriptions/%s", lsBaseURL, lsSubscriptionID)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("billing: get subscription: build request: %w", err)
 	}
@@ -92,10 +92,10 @@ func (c *LemonSqueezyClient) GetSubscription(lsSubscriptionID string) (*Subscrip
 // GetCustomerPortalURL returns the 24-hour Lemon Squeezy self-serve portal URL
 // for the given subscription. This URL allows the customer to manage billing
 // details, upgrade, downgrade, or cancel their subscription.
-func (c *LemonSqueezyClient) GetCustomerPortalURL(lsSubscriptionID string) (string, error) {
+func (c *LemonSqueezyClient) GetCustomerPortalURL(ctx context.Context, lsSubscriptionID string) (string, error) {
 	url := fmt.Sprintf("%s/subscriptions/%s/customer-portal-session", lsBaseURL, lsSubscriptionID)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, strings.NewReader("{}"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
 	if err != nil {
 		return "", fmt.Errorf("billing: get customer portal URL: build request: %w", err)
 	}
