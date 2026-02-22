@@ -16,8 +16,12 @@ import (
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/rs/zerolog"
 
+	"github.com/hibiken/asynq"
+	goredis "github.com/redis/go-redis/v9"
+
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
+	"llm-pricing-api/internal/billing"
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
@@ -83,6 +87,29 @@ func main() {
 		log.Fatal().Err(err).Msg("could not instrument redis with OTel tracing")
 	}
 
+	// Build a billing.Service for Lemon Squeezy webhook handling.
+	// If credentials are missing (e.g. in dev environments), the service is nil
+	// and the /webhooks/lemon-squeezy route is skipped with a warning.
+	billingSvc, billingErr := billing.NewService(billing.Config{
+		LSAPIKey:        cfg.LSAPIKey,
+		LSStoreID:       cfg.LSStoreID,
+		UnkeyRootKey:    cfg.UnkeyRootKey,
+		UnkeyAPIID:      cfg.UnkeyAPIID,
+		ResendAPIKey:    cfg.ResendAPIKey,
+		ResendFromEmail: cfg.ResendFromEmail,
+	})
+	if billingErr != nil {
+		log.Warn().Err(billingErr).Msg("billing service unavailable; /webhooks/lemon-squeezy will not be registered")
+	}
+
+	// Build asynq client and inspector for the webhook handler.
+	// These are only used when billingSvc is available.
+	asynqOpts := asynqOptsFromURL(cfg.RedisURL)
+	asynqClient := asynq.NewClient(asynqOpts)
+	defer asynqClient.Close()
+	asynqInspector := asynq.NewInspector(asynqOpts)
+	defer asynqInspector.Close()
+
 	reviewStore := review.NewPgxStore(db)
 	reviewHandler := review.NewHandler(reviewStore)
 
@@ -139,6 +166,17 @@ func main() {
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)
 
+	// Register the Lemon Squeezy webhook receiver outside the auth group.
+	// The route requires no API key; it verifies requests via HMAC-SHA256.
+	if billingSvc != nil {
+		handlers.RegisterLemonSqueezy(
+			app, db, billingSvc,
+			asynqClient, asynqInspector,
+			cfg.LSSigningSecret, cfg.LSVariantDev, cfg.LSVariantPro,
+			log,
+		)
+	}
+
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
 	if err := handlers.RegisterDev(v1, db, redisClient); err != nil {
@@ -182,6 +220,22 @@ func main() {
 		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
 			log.Error().Err(err).Msg("shutdown error")
 		}
+	}
+}
+
+// asynqOptsFromURL converts a Redis URL (redis://[user:pass@]host:port/db)
+// or a bare host:port string into an asynq.RedisClientOpt, preserving
+// credentials and database number.
+func asynqOptsFromURL(rawURL string) asynq.RedisClientOpt {
+	opts, err := goredis.ParseURL(rawURL)
+	if err != nil {
+		return asynq.RedisClientOpt{Addr: rawURL}
+	}
+	return asynq.RedisClientOpt{
+		Addr:     opts.Addr,
+		Username: opts.Username,
+		Password: opts.Password,
+		DB:       opts.DB,
 	}
 }
 

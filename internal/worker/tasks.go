@@ -1,6 +1,9 @@
 package worker
 
-import "llm-pricing-api/internal/webhooks"
+import (
+	"llm-pricing-api/internal/billing"
+	"llm-pricing-api/internal/webhooks"
+)
 
 // Task name constants for asynq job registration.
 // These strings are used as the task type identifier when enqueuing
@@ -16,6 +19,12 @@ const (
 	TaskLiteLLMScrape     = "scrape:litellm"
 	TaskHuggingFaceScrape = "scrape:huggingface"
 )
+
+// TypeBillingRevokeKey re-exports the canonical constant from internal/billing
+// so cmd/worker/main.go can reference it via the worker package.
+// The canonical definition lives in internal/billing to allow both the handler
+// and worker packages to import it without creating an import cycle.
+const TypeBillingRevokeKey = billing.TaskBillingRevokeKey
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks
 // for callers that already import the worker package (e.g. cmd/worker/main.go).

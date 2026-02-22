@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/billing"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	"llm-pricing-api/internal/logger"
@@ -122,6 +123,24 @@ func main() {
 	// task execution time — secrets are stored encrypted at rest.
 	webhookHandler := worker.NewWebhookDeliveryHandler(cfg.WebhookSecretKey)
 	mux.HandleFunc(worker.TypeWebhookDeliver, webhookHandler.Handle)
+
+	// BillingRevokeKeyHandler revokes Unkey API keys for cancelled subscriptions.
+	// The task is enqueued by the Lemon Squeezy webhook handler, scheduled at
+	// ends_at (the subscription expiry date for cancelled subscriptions).
+	billingSvc, billingErr := billing.NewService(billing.Config{
+		LSAPIKey:        cfg.LSAPIKey,
+		LSStoreID:       cfg.LSStoreID,
+		UnkeyRootKey:    cfg.UnkeyRootKey,
+		UnkeyAPIID:      cfg.UnkeyAPIID,
+		ResendAPIKey:    cfg.ResendAPIKey,
+		ResendFromEmail: cfg.ResendFromEmail,
+	})
+	if billingErr != nil {
+		log.Warn().Err(billingErr).Msg("billing service unavailable; billing:revoke-key tasks will not execute")
+	} else {
+		billingRevokeHandler := worker.NewBillingRevokeKeyHandler(db, billingSvc.Keys, log)
+		mux.HandleFunc(worker.TypeBillingRevokeKey, billingRevokeHandler.Handle)
+	}
 
 	// Start cron scheduler using the same Redis options as the server.
 	scheduler := asynq.NewScheduler(redisOpt, nil)

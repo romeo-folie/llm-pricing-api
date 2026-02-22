@@ -11,6 +11,7 @@ All external billing SDK calls are contained in this package. Handlers and asynq
 | File | Role |
 |------|------|
 | `billing.go` | `Config`, `Service`, and the three client interfaces (`SubscriptionManager`, `KeyManager`, `Emailer`) |
+| `tasks.go` | `TaskBillingRevokeKey` — canonical asynq task type constant shared by both the webhook handler and the worker |
 | `client.go` | `LemonSqueezyClient` — subscription fetch and customer portal URL |
 | `unkey.go` | `UnkeyClient` — key creation, tier update, revocation |
 | `email.go` | `EmailClient` — Resend transactional email via embedded HTML templates |

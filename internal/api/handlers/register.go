@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/billing"
 	"llm-pricing-api/internal/middleware"
 )
 
@@ -105,6 +107,41 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 	}
 	v1.Get("/stream/changes", middleware.RequireTier(middleware.TierDeveloper), sse.StreamChanges)
 	return nil
+}
+
+// RegisterLemonSqueezy registers the Lemon Squeezy webhook handler on the root
+// Fiber app. The route is intentionally placed outside the /v1 auth group:
+// Lemon Squeezy calls this endpoint directly and does not send an API key.
+//
+// Route registered:
+//
+//	POST /webhooks/lemon-squeezy
+func RegisterLemonSqueezy(
+	app *fiber.App,
+	db *pgxpool.Pool,
+	billingSvc *billing.Service,
+	asynqClient *asynq.Client,
+	asynqInspector *asynq.Inspector,
+	signingSecret, variantDev, variantPro string,
+	log zerolog.Logger,
+) {
+	store := NewLemonSqueezyStore(db)
+	h := NewLemonSqueezyHandler(LemonSqueezyHandlerConfig{
+		Store: store,
+		Keys:  billingSvc.Keys,
+		Email: billingSvc.Email,
+		EnqueueTask: func(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
+			return asynqClient.Enqueue(task, opts...)
+		},
+		DeleteTask: func(queue, taskID string) error {
+			return asynqInspector.DeleteTask(queue, taskID)
+		},
+		SigningSecret: signingSecret,
+		VariantDev:    variantDev,
+		VariantPro:    variantPro,
+		Log:           log,
+	})
+	app.Post("/webhooks/lemon-squeezy", h.Handle)
 }
 
 // RegisterPro registers Pro-tier endpoint handlers on the v1 router.

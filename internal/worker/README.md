@@ -17,10 +17,11 @@ This package is the bridge between the asynq job queue and the scrape→diff→r
 
 ```
 internal/worker/
-  tasks.go              # String constants for asynq task names (including TypeWebhookDeliver)
+  tasks.go              # String constants for asynq task names (including TypeWebhookDeliver, TypeBillingRevokeKey)
   store.go              # WorkerStore interface + pgxWorkerStore implementation
   handlers.go           # Handlers struct, runPipeline helper, scraper handler methods
   webhook_handler.go    # WebhookPayload, WebhookTaskPayload, NewWebhookDeliverTask, HandleWebhookDeliver
+  billing_handler.go    # BillingRevokeKeyHandler, BillingRevokeKeyStore interface + pgx implementation
   handlers_test.go      # Unit tests using mock store and mock scraper
   webhook_handler_test.go # Unit tests for HMAC signing and non-2xx retry
   README.md             # This file
@@ -38,6 +39,7 @@ String constants used as the asynq task type. The same constants are used in `cm
 | `TaskLiteLLMScrape` | `"scrape:litellm"` | Every 24 hours |
 | `TaskHuggingFaceScrape` | `"scrape:huggingface"` | Every 24 hours |
 | `TypeWebhookDeliver` | `"webhook:deliver"` | On-demand (enqueued by reconciler) |
+| `TypeBillingRevokeKey` | `"billing:revoke-key"` | On-demand, scheduled at `ends_at` (enqueued by LS webhook handler on `subscription_cancelled`) |
 
 ### WorkerStore (`store.go`)
 
@@ -69,6 +71,31 @@ type WorkerStore interface {
 9. Return any error (signals asynq to retry the task)
 
 Scrapers never write to the database directly; all writes go through the reconciler.
+
+### Billing key revocation (`billing_handler.go`)
+
+`BillingRevokeKeyHandler` processes `billing:revoke-key` asynq tasks. These are enqueued by the Lemon Squeezy webhook handler when a subscription is cancelled, scheduled to fire at the subscription's `ends_at` date.
+
+**`Handle(ctx, task)` steps:**
+1. Unmarshal `billingRevokeKeyPayload` (`unkey_key_id`, `ls_subscription_id`) from the task payload.
+2. Validate `ls_subscription_id` is non-empty.
+3. If `unkey_key_id` is missing from the payload, look it up from `billing_subscriptions` via `BillingRevokeKeyStore.GetSubscriptionKeyID`.
+4. Call `keys.RevokeKey(ctx, unkeyKeyID)` — permanently revokes access.
+5. Call `store.ExpireSubscription(ctx, lsSubID)` — sets `status = 'expired'` in the DB.
+6. Log the outcome.
+
+**`BillingRevokeKeyStore`** is a two-method interface abstracting the DB calls, keeping the handler testable without a live database:
+
+```go
+type BillingRevokeKeyStore interface {
+    GetSubscriptionKeyID(ctx context.Context, lsSubID string) (string, error)
+    ExpireSubscription(ctx context.Context, lsSubID string) error
+}
+```
+
+`NewBillingRevokeKeyStore(db *pgxpool.Pool) BillingRevokeKeyStore` returns the production pgx implementation.
+
+**Constructor**: `NewBillingRevokeKeyHandler(db *pgxpool.Pool, keys billing.KeyManager, log zerolog.Logger) *BillingRevokeKeyHandler` — creates the store internally from the pool so `cmd/worker/main.go` only needs to pass the raw pool.
 
 ### Webhook delivery (`webhook_handler.go`)
 
@@ -108,6 +135,7 @@ type WebhookTaskPayload struct {
 
 | Package | Role |
 |---|---|
+| `internal/billing` | `KeyManager` interface used by `BillingRevokeKeyHandler` |
 | `internal/scraper` | `Scraper` interface accepted by `runPipeline` |
 | `internal/scraper/openrouter` | OpenRouter API scraper |
 | `internal/scraper/litellm` | LiteLLM GitHub JSON scraper |
@@ -131,6 +159,10 @@ mux.HandleFunc(worker.TaskOpenRouterScrape,  h.HandleOpenRouterScrape)
 mux.HandleFunc(worker.TaskLiteLLMScrape,     h.HandleLiteLLMScrape)
 mux.HandleFunc(worker.TaskHuggingFaceScrape, h.HandleHuggingFaceScrape)
 mux.HandleFunc(worker.TypeWebhookDeliver,    worker.HandleWebhookDeliver)
+
+// Billing revoke-key handler (conditional on billing service availability)
+billingRevokeHandler := worker.NewBillingRevokeKeyHandler(db, billingSvc.Keys, log)
+mux.HandleFunc(worker.TypeBillingRevokeKey, billingRevokeHandler.Handle)
 
 scheduler.Register("@every 6h",  asynq.NewTask(worker.TaskOpenRouterScrape, nil))
 scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil))

@@ -20,12 +20,14 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `discovery.go` | `GET /openapi.json`, `GET /.well-known/ai-plugin.json`, `GET /llms.txt` (public) |
 | `sse.go` | `GET /v1/stream/changes` (SSE price-change stream; Developer+ only) |
 | `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (Pro only); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
+| `billing.go` | `POST /webhooks/lemon-squeezy` handler; `LemonSqueezyHandler`, `LemonSqueezyStore` interface + `pgxLemonSqueezyStore`; `BillingRevokeKeyPayload`; HMAC verification; background goroutine dispatch |
 | `handlers_test.go` | Unit tests for Free-tier handlers using Fiber's `app.Test()` and an in-memory mock store |
 | `dev_handlers_test.go` | Unit tests for Developer+ handlers (history, recommend, context + markdown/metadata) with tier-gate coverage |
 | `ask_test.go` | 46 unit tests for `/v1/ask`: intent classification, alias normalisation, param extraction, response shape |
 | `sse_test.go` | Unit tests for SSE stream handler |
 | `discovery_test.go` | Unit tests for discovery endpoints |
 | `webhooks_test.go` | Unit tests for Pro-tier webhook create/delete handlers with tier-gate and ownership coverage |
+| `billing_test.go` | 13 unit tests for `LemonSqueezyHandler`: HMAC verification (valid/bad/missing), idempotency, all 5 event types, same-tier no-op, orphan-key compensation |
 | `README.md` | This file |
 
 ## Key Components
@@ -56,6 +58,45 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 `RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (Developer+ only). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
 
 `RegisterPro(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client, webhookSecretKey string, log zerolog.Logger)` wires webhook CRUD (`POST /v1/webhooks`, `DELETE /v1/webhooks/:id`) gated behind the Pro tier. `webhookSecretKey` is the hex-encoded 32-byte AES-256-GCM key for encrypting webhook secrets at rest; pass an empty string to use an ephemeral key (secrets will not survive restarts).
+
+`RegisterLemonSqueezy(app *fiber.App, db *pgxpool.Pool, billingSvc *billing.Service, asynqClient *asynq.Client, asynqInspector *asynq.Inspector, signingSecret, variantDev, variantPro string, log zerolog.Logger)` registers `POST /webhooks/lemon-squeezy` on the root Fiber app (outside `/v1` — no API key auth). `billingSvc.Keys` and `billingSvc.Email` are injected for key management and transactional email. `asynqClient` is used to enqueue delayed revoke-key tasks; `asynqInspector` is used to delete pending revoke-key tasks when a subscription is resumed. `signingSecret` is the HMAC-SHA256 key from `LEMONSQUEEZY_SIGNING_SECRET`; an empty string causes all requests to be rejected (fail-closed). `variantDev` / `variantPro` are the Lemon Squeezy variant IDs for the Developer and Pro tiers respectively.
+
+### LemonSqueezyHandler (`billing.go`)
+
+`LemonSqueezyHandler` handles `POST /webhooks/lemon-squeezy`. Key behaviours:
+
+- **HMAC verification**: reads the raw body before any JSON parsing, computes `HMAC-SHA256(signingSecret, body)`, and compares with `X-Signature` using `hmac.Equal` (constant-time). Fails closed: an empty `signingSecret` rejects all requests.
+- **Idempotency**: checks `webhook_events` by `webhook_id` (Lemon Squeezy's delivery ID). Duplicate deliveries return 200 immediately with no side effects.
+- **Background dispatch**: after recording the event, spawns a goroutine with a 30-second context timeout to run the billing action. The HTTP handler returns 200 immediately regardless of dispatch outcome — errors are logged.
+- **Event routing** (`dispatch` method):
+
+| Event | Action |
+| --- | --- |
+| `subscription_created` | `keys.CreateKey` → `store.CreateSubscription` → `email.SendKeyDelivery`; orphaned key revoked if store fails |
+| `subscription_updated` | Resolves current tier; skips entirely if tier unchanged; `keys.UpdateKeyTier` → `store.UpdateSubscriptionTier` → `email.SendPlanChange` |
+| `subscription_cancelled` | `store.GetSubscription` → enqueue `billing:revoke-key` at `ends_at` → `store.CancelSubscription` |
+| `subscription_expired` | `keys.RevokeKey` → `store.ExpireSubscription` |
+| `subscription_resumed` | Cancel pending revoke-key task (best-effort); if subscription was already `expired` (revoke job ran first), `keys.CreateKey` + `store.UpdateSubscriptionKey` + `email.SendKeyDelivery` to restore access → `store.ResumeSubscription` |
+| anything else | No-op (returns 200) |
+
+### LemonSqueezyStore (`billing.go`)
+
+```go
+type LemonSqueezyStore interface {
+    TryInsertWebhookEvent(ctx, eventID, eventType string) (inserted bool, err error)
+    CreateSubscription(ctx, lsSubID, email, tier, unkeyKeyID string) error
+    GetSubscription(ctx, lsSubID string) (BillingSubscription, error)
+    UpdateSubscriptionTier(ctx, lsSubID, tier string) error
+    UpdateSubscriptionKey(ctx, lsSubID, unkeyKeyID string) error
+    CancelSubscription(ctx, lsSubID, revokeJobID string) error
+    ExpireSubscription(ctx, lsSubID string) error
+    ResumeSubscription(ctx, lsSubID string) error
+}
+```
+
+`TryInsertWebhookEvent` uses `INSERT ... ON CONFLICT DO NOTHING` backed by the unique constraint on `event_id`, making idempotency enforcement a single atomic DB round-trip. Returns `(true, nil)` for new events, `(false, nil)` for duplicates.
+
+`NewLemonSqueezyStore(db *pgxpool.Pool) LemonSqueezyStore` returns the production pgx implementation, which maps to the `webhook_events` and `billing_subscriptions` DB tables.
 
 ### Trust metadata
 
@@ -108,9 +149,11 @@ The Fiber `ErrorHandler` in `internal/api/problem.go` serialises all returned er
 ## Dependencies
 
 - `internal/api` — `ProblemDetail`, `TrustMeta`, `ComputeTrustMeta`, `OK`, `Envelope`
+- `internal/billing` — `KeyManager`, `Emailer` interfaces consumed by `LemonSqueezyHandler`
 - `internal/models` — `Confidence` constants
 - `github.com/gofiber/fiber/v2` — HTTP framework
-- `github.com/jackc/pgx/v5/pgxpool` — production DB pool (only in `store.go` and `register.go`)
+- `github.com/hibiken/asynq` — used by `LemonSqueezyHandler` for billing task enqueueing/deletion
+- `github.com/jackc/pgx/v5/pgxpool` — production DB pool (only in `store.go`, `register.go`, and `billing.go`)
 - `github.com/redis/go-redis/v9` — passed through `RegisterFree`/`RegisterDev` for future use (currently unused in handler logic, caching is handled at middleware layer)
 
 ## Usage
@@ -133,6 +176,16 @@ handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, logger)
 
 // Discovery routes — no auth, registered on the root app, not the v1 group.
 handlers.RegisterDiscovery(app, db, redisClient)
+
+// Lemon Squeezy webhook — no API key auth; HMAC-verified; outside /v1 group.
+if billingSvc != nil {
+    handlers.RegisterLemonSqueezy(
+        app, db, billingSvc,
+        asynqClient, asynqInspector,
+        cfg.LSSigningSecret, cfg.LSVariantDev, cfg.LSVariantPro,
+        log,
+    )
+}
 ```
 
 ### Developer+ endpoints
