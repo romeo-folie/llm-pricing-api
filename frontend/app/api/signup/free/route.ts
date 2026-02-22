@@ -31,17 +31,15 @@ export async function POST(req: Request) {
       body:    JSON.stringify({ email }),
     })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error"
-    return NextResponse.json({ error: `Upstream error: ${msg}` }, { status: 502 })
+    console.error("[signup/free] upstream fetch failed:", e)
+    return NextResponse.json({ error: "Service temporarily unavailable" }, { status: 502 })
   }
 
   // Pass through the upstream status code verbatim (including 429 rate limit).
   if (!goRes.ok) {
     const detail = await goRes.text().catch(() => "")
-    return NextResponse.json(
-      { error: "Signup failed", detail },
-      { status: goRes.status }
-    )
+    console.error("[signup/free] upstream error", goRes.status, detail)
+    return NextResponse.json({ error: "Signup failed" }, { status: goRes.status })
   }
 
   return NextResponse.json({ ok: true }, { status: 200 })
