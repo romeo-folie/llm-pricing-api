@@ -211,17 +211,28 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
 
    ````
 
-2. **Pause and prompt the user to switch directories.** Do not proceed with planning, decomposition, or any file writes until the user confirms they have switched their shell to the worktree:
+2. **Copy the epic task files from the main worktree into the new worktree.** A fresh worktree only contains tracked git files — the `.claude/epics/<name>/` directory (task files, analysis files, github mapping) lives in the main worktree and must be copied over so agents have full context without re-fetching from GitHub:
+
+   ```bash
+   # From inside the new worktree
+   cp -r ../llm-pricing-api/.claude/epics/<name> .claude/epics/<name>
+   # Or, more generally, from the main worktree root:
+   cp -r <main-worktree>/.claude/epics/<name> <new-worktree>/.claude/epics/<name>
+   ```
+
+   Do this immediately after writing `summary.md`, before prompting the user to switch directories.
+
+3. **Pause and prompt the user to switch directories.** Do not proceed with planning, decomposition, or any file writes until the user confirms they have switched their shell to the worktree:
 
    > "Worktree created at `../epic-<name>`. **Please switch to that directory now** (`cd ../epic-<name>`) and confirm before I continue. Sub-agents will write files relative to your shell's CWD, so they must be launched from inside the worktree."
 
    Wait for explicit confirmation before continuing.
 
-3. **Keep `summary.md` current.** After each issue is closed, update the status table row for that issue (`done`) and set the new **Next action** line to the next open task. The file must always reflect ground truth — a stale summary defeats its purpose.
+4. **Keep `summary.md` current.** After each issue is closed, update the status table row for that issue (`done`) and set the new **Next action** line to the next open task. The file must always reflect ground truth — a stale summary defeats its purpose.
 
-4. **`summary.md` is never committed.** It is a session-specific context file, not source code. It is listed in `.gitignore` (`summary.md`). Never stage or commit it.
+5. **`summary.md` is never committed.** It is a session-specific context file, not source code. It is listed in `.gitignore` (`summary.md`). Never stage or commit it.
 
-5. **Copy gitignored runtime files from the main worktree.** A fresh `git worktree add` produces a clean checkout — gitignored files (`.env`, any `.env.*` variants, local config, etc.) are not copied automatically. After the worktree is created and before running any server or tests, copy them over:
+6. **Copy gitignored runtime files from the main worktree.** A fresh `git worktree add` produces a clean checkout — gitignored files (`.env`, any `.env.*` variants, local config, etc.) are not copied automatically. After the worktree is created and before running any server or tests, copy them over:
 
    ```bash
    # From the main repo root — adjust the source path to wherever your secrets live
