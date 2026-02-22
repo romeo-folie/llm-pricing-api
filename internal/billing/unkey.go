@@ -33,7 +33,7 @@ func NewUnkeyClient(rootKey, apiID string) *UnkeyClient {
 //
 // The key is created with Meta["tier"] = tier, matching the expectation of the
 // auth middleware in internal/middleware/auth.go.
-func (c *UnkeyClient) CreateKey(email, tier string) (keyID string, keyValue string, err error) {
+func (c *UnkeyClient) CreateKey(ctx context.Context, email, tier string) (keyID string, keyValue string, err error) {
 	name := unkeygo.String(email)
 	req := operations.CreateKeyRequestBody{
 		APIID: c.apiID,
@@ -43,7 +43,7 @@ func (c *UnkeyClient) CreateKey(email, tier string) (keyID string, keyValue stri
 		},
 	}
 
-	res, err := c.sdk.Keys.CreateKey(context.Background(), req)
+	res, err := c.sdk.Keys.CreateKey(ctx, req)
 	if err != nil {
 		return "", "", fmt.Errorf("billing: create key: %w", err)
 	}
@@ -59,7 +59,7 @@ func (c *UnkeyClient) CreateKey(email, tier string) (keyID string, keyValue stri
 // unkeyKeyID is the key's stable ID (returned by CreateKey, not the secret value).
 // The entire meta map is replaced with {"tier": tier}, so any prior meta is
 // intentionally discarded — tier is the only metadata this platform requires.
-func (c *UnkeyClient) UpdateKeyTier(unkeyKeyID, tier string) error {
+func (c *UnkeyClient) UpdateKeyTier(ctx context.Context, unkeyKeyID, tier string) error {
 	req := operations.UpdateKeyRequestBody{
 		KeyID: unkeyKeyID,
 		Meta: map[string]any{
@@ -67,7 +67,7 @@ func (c *UnkeyClient) UpdateKeyTier(unkeyKeyID, tier string) error {
 		},
 	}
 
-	_, err := c.sdk.Keys.UpdateKey(context.Background(), req)
+	_, err := c.sdk.Keys.UpdateKey(ctx, req)
 	if err != nil {
 		return fmt.Errorf("billing: update key tier: %w", err)
 	}
@@ -78,12 +78,12 @@ func (c *UnkeyClient) UpdateKeyTier(unkeyKeyID, tier string) error {
 // RevokeKey permanently revokes an API key so it can no longer be used for
 // authentication. unkeyKeyID is the stable key ID returned by CreateKey.
 // Revocation may take up to 30 seconds to propagate across all Unkey regions.
-func (c *UnkeyClient) RevokeKey(unkeyKeyID string) error {
+func (c *UnkeyClient) RevokeKey(ctx context.Context, unkeyKeyID string) error {
 	req := operations.DeleteKeyRequestBody{
 		KeyID: unkeyKeyID,
 	}
 
-	_, err := c.sdk.Keys.DeleteKey(context.Background(), req)
+	_, err := c.sdk.Keys.DeleteKey(ctx, req)
 	if err != nil {
 		return fmt.Errorf("billing: revoke key: %w", err)
 	}

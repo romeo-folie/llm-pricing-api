@@ -2,9 +2,11 @@ package billing
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"html/template"
+	"net/http"
 	"time"
 
 	resend "github.com/resendlabs/resend-go"
@@ -17,20 +19,29 @@ var emailTemplates embed.FS
 type EmailClient struct {
 	client    *resend.Client
 	fromEmail string
+	docsURL   string
 	templates *template.Template
 }
 
-// NewEmailClient creates a new EmailClient using the provided Resend API key
-// and sender address (e.g. "LLM Pricing <no-reply@llmpricing.dev>").
-func NewEmailClient(apiKey, fromEmail string) (*EmailClient, error) {
+// NewEmailClient creates a new EmailClient using the provided Resend API key,
+// sender address (e.g. "LLM Pricing <keys@llmrates.com>"), and docs URL linked
+// in key delivery emails.
+func NewEmailClient(apiKey, fromEmail, docsURL string) (*EmailClient, error) {
+	return newEmailClient(http.DefaultClient, apiKey, fromEmail, docsURL)
+}
+
+// newEmailClient is the internal constructor that accepts a custom http.Client
+// for test injection via resend.NewCustomClient.
+func newEmailClient(httpClient *http.Client, apiKey, fromEmail, docsURL string) (*EmailClient, error) {
 	tmpl, err := template.ParseFS(emailTemplates, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("billing: parse email templates: %w", err)
 	}
 
 	return &EmailClient{
-		client:    resend.NewClient(apiKey),
+		client:    resend.NewCustomClient(httpClient, apiKey),
 		fromEmail: fromEmail,
+		docsURL:   docsURL,
 		templates: tmpl,
 	}, nil
 }
@@ -57,11 +68,14 @@ type cancellationData struct {
 
 // SendKeyDelivery sends a welcome email containing the new API key to the
 // subscriber. The key value is shown once — the recipient must save it.
-func (c *EmailClient) SendKeyDelivery(email, tier, keyValue string) error {
+//
+// ctx is accepted for interface consistency; the underlying Resend SDK (v1.7.0)
+// does not propagate context into its HTTP calls.
+func (c *EmailClient) SendKeyDelivery(_ context.Context, email, tier, keyValue string) error {
 	data := keyDeliveryData{
 		Tier:     tier,
 		KeyValue: keyValue,
-		DocsURL:  "https://llmpricing.dev/docs",
+		DocsURL:  c.docsURL,
 	}
 
 	body, err := c.render("key_delivery.html", data)
@@ -75,7 +89,10 @@ func (c *EmailClient) SendKeyDelivery(email, tier, keyValue string) error {
 
 // SendPlanChange sends a notification when a subscription tier changes, listing
 // the old and new tiers and the next renewal date.
-func (c *EmailClient) SendPlanChange(email, oldTier, newTier string, renewsAt time.Time) error {
+//
+// ctx is accepted for interface consistency; the underlying Resend SDK (v1.7.0)
+// does not propagate context into its HTTP calls.
+func (c *EmailClient) SendPlanChange(_ context.Context, email, oldTier, newTier string, renewsAt time.Time) error {
 	data := planChangeData{
 		OldTier:  oldTier,
 		NewTier:  newTier,
@@ -93,7 +110,10 @@ func (c *EmailClient) SendPlanChange(email, oldTier, newTier string, renewsAt ti
 
 // SendCancellation sends a notification when a subscription is cancelled.
 // Access continues until the renewsAt date already paid for.
-func (c *EmailClient) SendCancellation(email string, renewsAt time.Time) error {
+//
+// ctx is accepted for interface consistency; the underlying Resend SDK (v1.7.0)
+// does not propagate context into its HTTP calls.
+func (c *EmailClient) SendCancellation(_ context.Context, email string, renewsAt time.Time) error {
 	data := cancellationData{
 		Email:       email,
 		AccessUntil: renewsAt,

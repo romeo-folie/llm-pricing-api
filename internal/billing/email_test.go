@@ -1,60 +1,77 @@
-package billing_test
+package billing
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
-
-	"llm-pricing-api/internal/billing"
 )
 
-func TestNewEmailClient_Success(t *testing.T) {
-	// NewEmailClient should succeed because the embedded HTML templates are
-	// bundled at compile time and will always be present.
-	client, err := billing.NewEmailClient("dummy-resend-key", "from@example.com")
+// newMockEmailClient creates an EmailClient whose HTTP calls are redirected to
+// the provided test server, so no real network traffic is generated. The
+// testTransport type is defined in client_test.go (same package).
+func newMockEmailClient(t *testing.T, srv *httptest.Server) *EmailClient {
+	t.Helper()
+	transport := &testTransport{serverURL: srv.URL}
+	client, err := newEmailClient(&http.Client{Transport: transport}, "dummy-key", "from@example.com", "https://example.com/docs")
 	if err != nil {
-		t.Fatalf("NewEmailClient returned unexpected error: %v", err)
+		t.Fatalf("newEmailClient returned unexpected error: %v", err)
+	}
+	return client
+}
+
+func TestNewEmailClient_Success(t *testing.T) {
+	// Template parsing happens at construction time; no network call is made.
+	client, err := newEmailClient(http.DefaultClient, "dummy-key", "from@example.com", "https://example.com/docs")
+	if err != nil {
+		t.Fatalf("newEmailClient returned unexpected error: %v", err)
 	}
 	if client == nil {
-		t.Fatal("NewEmailClient returned nil client")
+		t.Fatal("newEmailClient returned nil client")
 	}
 }
 
-func TestSendKeyDelivery_InvalidAPIKey(t *testing.T) {
-	client, err := billing.NewEmailClient("invalid-key", "from@example.com")
-	if err != nil {
-		t.Fatalf("NewEmailClient returned unexpected error: %v", err)
-	}
+func TestSendKeyDelivery_APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"statusCode":401,"error":"Unauthorized","message":"API key is invalid"}`))
+	}))
+	defer srv.Close()
 
-	// Calling Send with an invalid API key should cause the Resend client to
-	// return an error. No real email is sent.
-	err = client.SendKeyDelivery("to@example.com", "free", "test_api_key_value")
+	client := newMockEmailClient(t, srv)
+	err := client.SendKeyDelivery(context.Background(), "to@example.com", "Developer", "test_key_value")
 	if err == nil {
-		t.Fatal("SendKeyDelivery: expected error with invalid API key, got nil")
+		t.Fatal("SendKeyDelivery: expected error for 401 response, got nil")
 	}
 }
 
-func TestSendPlanChange_InvalidAPIKey(t *testing.T) {
-	client, err := billing.NewEmailClient("invalid-key", "from@example.com")
-	if err != nil {
-		t.Fatalf("NewEmailClient returned unexpected error: %v", err)
-	}
+func TestSendPlanChange_APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"statusCode":401,"error":"Unauthorized","message":"API key is invalid"}`))
+	}))
+	defer srv.Close()
 
+	client := newMockEmailClient(t, srv)
 	renewsAt := time.Now().Add(30 * 24 * time.Hour)
-	err = client.SendPlanChange("to@example.com", "free", "developer", renewsAt)
+	err := client.SendPlanChange(context.Background(), "to@example.com", "Developer", "Pro", renewsAt)
 	if err == nil {
-		t.Fatal("SendPlanChange: expected error with invalid API key, got nil")
+		t.Fatal("SendPlanChange: expected error for 401 response, got nil")
 	}
 }
 
-func TestSendCancellation_InvalidAPIKey(t *testing.T) {
-	client, err := billing.NewEmailClient("invalid-key", "from@example.com")
-	if err != nil {
-		t.Fatalf("NewEmailClient returned unexpected error: %v", err)
-	}
+func TestSendCancellation_APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"statusCode":401,"error":"Unauthorized","message":"API key is invalid"}`))
+	}))
+	defer srv.Close()
 
+	client := newMockEmailClient(t, srv)
 	accessUntil := time.Now().Add(30 * 24 * time.Hour)
-	err = client.SendCancellation("to@example.com", accessUntil)
+	err := client.SendCancellation(context.Background(), "to@example.com", accessUntil)
 	if err == nil {
-		t.Fatal("SendCancellation: expected error with invalid API key, got nil")
+		t.Fatal("SendCancellation: expected error for 401 response, got nil")
 	}
 }

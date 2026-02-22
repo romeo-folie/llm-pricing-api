@@ -49,6 +49,7 @@ func (t *testTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestGetSubscription_HappyPath(t *testing.T) {
 	renewsAt := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	endsAt := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	expectedID := "sub_123"
 	expectedEmail := "user@example.com"
 	expectedStatus := "active"
@@ -66,6 +67,7 @@ func TestGetSubscription_HappyPath(t *testing.T) {
 					"user_email": expectedEmail,
 					"variant_id": expectedVariantID,
 					"renews_at":  renewsAt.Format(time.RFC3339),
+					"ends_at":    endsAt.Format(time.RFC3339),
 					"urls": map[string]any{
 						"customer_portal": expectedPortal,
 					},
@@ -100,6 +102,11 @@ func TestGetSubscription_HappyPath(t *testing.T) {
 		t.Error("RenewsAt: got nil, want non-nil")
 	} else if !sub.RenewsAt.UTC().Equal(renewsAt) {
 		t.Errorf("RenewsAt: got %v, want %v", sub.RenewsAt, renewsAt)
+	}
+	if sub.EndsAt == nil {
+		t.Error("EndsAt: got nil, want non-nil")
+	} else if !sub.EndsAt.UTC().Equal(endsAt) {
+		t.Errorf("EndsAt: got %v, want %v", sub.EndsAt, endsAt)
 	}
 }
 

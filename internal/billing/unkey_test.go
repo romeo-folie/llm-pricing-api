@@ -1,6 +1,7 @@
 package billing_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -25,8 +26,9 @@ func TestUnkeyClient_CreateKey_Integration(t *testing.T) {
 	}
 
 	client := billing.NewUnkeyClient(rootKey, apiID)
+	ctx := context.Background()
 
-	keyID, keyValue, err := client.CreateKey("integration-test@example.com", "free")
+	keyID, keyValue, err := client.CreateKey(ctx, "integration-test@example.com", "free")
 	if err != nil {
 		t.Fatalf("CreateKey returned unexpected error: %v", err)
 	}
@@ -39,7 +41,7 @@ func TestUnkeyClient_CreateKey_Integration(t *testing.T) {
 
 	// Clean up: revoke the test key we just created.
 	t.Cleanup(func() {
-		if rErr := client.RevokeKey(keyID); rErr != nil {
+		if rErr := client.RevokeKey(ctx, keyID); rErr != nil {
 			t.Logf("cleanup: RevokeKey(%q) error (non-fatal): %v", keyID, rErr)
 		}
 	})
@@ -56,17 +58,18 @@ func TestUnkeyClient_UpdateKeyTier_Integration(t *testing.T) {
 	}
 
 	client := billing.NewUnkeyClient(rootKey, apiID)
+	ctx := context.Background()
 
 	// Create a key to update.
-	keyID, _, err := client.CreateKey("tier-update-test@example.com", "free")
+	keyID, _, err := client.CreateKey(ctx, "tier-update-test@example.com", "free")
 	if err != nil {
 		t.Fatalf("CreateKey returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = client.RevokeKey(keyID)
+		_ = client.RevokeKey(ctx, keyID)
 	})
 
-	if err := client.UpdateKeyTier(keyID, "developer"); err != nil {
+	if err := client.UpdateKeyTier(ctx, keyID, "developer"); err != nil {
 		t.Fatalf("UpdateKeyTier returned unexpected error: %v", err)
 	}
 }
@@ -82,14 +85,15 @@ func TestUnkeyClient_RevokeKey_Integration(t *testing.T) {
 	}
 
 	client := billing.NewUnkeyClient(rootKey, apiID)
+	ctx := context.Background()
 
 	// Create a key specifically to revoke.
-	keyID, _, err := client.CreateKey("revoke-test@example.com", "free")
+	keyID, _, err := client.CreateKey(ctx, "revoke-test@example.com", "free")
 	if err != nil {
 		t.Fatalf("CreateKey returned unexpected error: %v", err)
 	}
 
-	if err := client.RevokeKey(keyID); err != nil {
+	if err := client.RevokeKey(ctx, keyID); err != nil {
 		t.Fatalf("RevokeKey returned unexpected error: %v", err)
 	}
 }

@@ -16,49 +16,26 @@ var (
 	_ billing.Emailer             = (*billing.EmailClient)(nil)
 )
 
-func TestNewService_Success(t *testing.T) {
-	cfg := billing.Config{
+func validConfig() billing.Config {
+	return billing.Config{
 		LSAPIKey:        "dummy-ls-key",
 		LSStoreID:       "12345",
 		UnkeyRootKey:    "dummy-unkey-root",
 		UnkeyAPIID:      "dummy-unkey-api",
 		ResendAPIKey:    "dummy-resend-key",
 		ResendFromEmail: "test@example.com",
+		DocsURL:         "https://llmrates.com/docs",
 	}
+}
 
-	svc, err := billing.NewService(cfg)
+func TestNewService_Success(t *testing.T) {
+	svc, err := billing.NewService(validConfig())
 	if err != nil {
 		t.Fatalf("NewService returned unexpected error: %v", err)
 	}
 	if svc == nil {
 		t.Fatal("NewService returned nil service")
 	}
-	if svc.LS == nil {
-		t.Error("Service.LS is nil")
-	}
-	if svc.Keys == nil {
-		t.Error("Service.Keys is nil")
-	}
-	if svc.Email == nil {
-		t.Error("Service.Email is nil")
-	}
-}
-
-func TestNewService_ReturnsNonNilFields(t *testing.T) {
-	cfg := billing.Config{
-		LSAPIKey:        "x",
-		LSStoreID:       "1",
-		UnkeyRootKey:    "x",
-		UnkeyAPIID:      "x",
-		ResendAPIKey:    "x",
-		ResendFromEmail: "from@example.com",
-	}
-
-	svc, err := billing.NewService(cfg)
-	if err != nil {
-		t.Fatalf("NewService returned unexpected error: %v", err)
-	}
-
 	if svc.LS == nil {
 		t.Error("Service.LS is nil — SubscriptionManager not wired")
 	}
@@ -67,5 +44,41 @@ func TestNewService_ReturnsNonNilFields(t *testing.T) {
 	}
 	if svc.Email == nil {
 		t.Error("Service.Email is nil — Emailer not wired")
+	}
+}
+
+func TestNewService_MissingUnkeyRootKey(t *testing.T) {
+	cfg := validConfig()
+	cfg.UnkeyRootKey = ""
+	_, err := billing.NewService(cfg)
+	if err == nil {
+		t.Fatal("NewService: expected error for missing UnkeyRootKey, got nil")
+	}
+}
+
+func TestNewService_MissingUnkeyAPIID(t *testing.T) {
+	cfg := validConfig()
+	cfg.UnkeyAPIID = ""
+	_, err := billing.NewService(cfg)
+	if err == nil {
+		t.Fatal("NewService: expected error for missing UnkeyAPIID, got nil")
+	}
+}
+
+func TestNewService_MissingLSAPIKey(t *testing.T) {
+	cfg := validConfig()
+	cfg.LSAPIKey = ""
+	_, err := billing.NewService(cfg)
+	if err == nil {
+		t.Fatal("NewService: expected error for missing LSAPIKey, got nil")
+	}
+}
+
+func TestNewService_DefaultDocsURL(t *testing.T) {
+	cfg := validConfig()
+	cfg.DocsURL = "" // should default to llmrates.com/docs — no error
+	_, err := billing.NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService: unexpected error with empty DocsURL: %v", err)
 	}
 }
