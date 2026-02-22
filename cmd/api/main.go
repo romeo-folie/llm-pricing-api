@@ -99,7 +99,7 @@ func main() {
 		ResendFromEmail: cfg.ResendFromEmail,
 	})
 	if billingErr != nil {
-		log.Warn().Err(billingErr).Msg("billing service unavailable; /webhooks/lemon-squeezy will not be registered")
+		log.Warn().Err(billingErr).Msg("billing service unavailable; /webhooks/lemon-squeezy and POST /v1/signup/free will not be registered")
 	}
 
 	// Build asynq client and inspector for the webhook handler.
@@ -152,24 +152,16 @@ func main() {
 		})
 	})
 
-	// /v1 routes: require Unkey API key authentication, per-key rate limiting,
-	// and Redis response caching for cacheable GET endpoints.
-	// /health and discovery endpoints are registered outside this group so they
-	// are exempt from auth.
-	unkeyVerifier := middleware.NewUnkeyClient(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
-	v1 := app.Group("/v1",
-		middleware.Auth(unkeyVerifier, redisClient, cfg.UnkeyAPIID),
-		middleware.Cache(redisClient),
-		middleware.RateLimit(redisClient),
-	)
-
-	// Register public discovery routes outside the auth group.
+	// Register public discovery routes (no auth required).
 	handlers.RegisterDiscovery(app, db, redisClient)
 
-	// Register the Lemon Squeezy webhook receiver outside the auth group.
-	// The route requires no API key; it verifies requests via HMAC-SHA256.
-	// Register the free-tier signup endpoint on a separate /v1 group with no
-	// auth middleware — it must be reachable without an API key.
+	// Register unauthenticated /v1 routes BEFORE creating the auth group.
+	// In Fiber v2, app.Group(prefix, handlers...) registers those handlers via
+	// app.Use(prefix, ...), which applies them to ALL routes registered after
+	// that call. Routes registered beforehand are not affected.
+	// POST /v1/signup/free must be reachable without an API key, so it must be
+	// registered before the auth group below.
+	// POST /webhooks/lemon-squeezy lives under /webhooks and is unaffected.
 	if billingSvc != nil {
 		handlers.RegisterLemonSqueezy(
 			app, db, billingSvc,
@@ -180,6 +172,18 @@ func main() {
 		v1Open := app.Group("/v1")
 		handlers.RegisterFreeSignup(v1Open, redisClient, billingSvc, log)
 	}
+
+	// /v1 routes: require Unkey API key authentication, per-key rate limiting,
+	// and Redis response caching for cacheable GET endpoints.
+	// /health and discovery endpoints are registered outside this group so they
+	// are exempt from auth. Unauthenticated /v1 routes (e.g. /v1/signup/free)
+	// must be registered before this group (see above).
+	unkeyVerifier := middleware.NewUnkeyClient(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
+	v1 := app.Group("/v1",
+		middleware.Auth(unkeyVerifier, redisClient, cfg.UnkeyAPIID),
+		middleware.Cache(redisClient),
+		middleware.RateLimit(redisClient),
+	)
 
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)

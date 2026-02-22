@@ -576,11 +576,14 @@ func (h *FreeSignupHandler) Handle(c *fiber.Ctx) error {
 	}
 
 	// 3. Per-IP rate limiting.
-	// Key is built from a SHA-256 hash of the IP to avoid storing raw IPs.
-	// SetNX atomically creates the key with a 24h TTL on first use, eliminating
-	// the INCR→EXPIRE race where a crash between the two calls would leave the
-	// key without a TTL and permanently lock out the IP.
-	ipHash := sha256.Sum256([]byte(c.IP()))
+	// Use the raw TCP peer address (RemoteIP) rather than c.IP() to prevent
+	// X-Forwarded-For spoofing — callers cannot inject a fake IP via headers.
+	// The IP is hashed with SHA-256 so raw addresses are never stored in Redis.
+	//
+	// Invariant: SET NX seeds the counter at 0, so INCR starts at 1.
+	// Allowed requests: count ∈ {1,2,3}. Rejected: count > 3 (4th+ request).
+	// Changing the seed or the threshold independently will silently break the limit.
+	ipHash := sha256.Sum256([]byte(c.Context().RemoteIP().String()))
 	rlKey := fmt.Sprintf("signup:free:%x", ipHash)
 
 	// SET key 0 NX EX 86400 — atomically creates the key with TTL on first use.
@@ -606,7 +609,9 @@ func (h *FreeSignupHandler) Handle(c *fiber.Ctx) error {
 	// 4. Create Free-tier Unkey key.
 	_, keyValue, err := h.keys.CreateKey(c.Context(), email, "free")
 	if err != nil {
-		h.log.Error().Err(err).Str("email", email).Msg("free signup: key creation failed")
+		// Log a truncated hash of the email for debugging without storing PII.
+		emailHash := fmt.Sprintf("%x", sha256.Sum256([]byte(email)))[:16]
+		h.log.Error().Err(err).Str("email_hash", emailHash).Msg("free signup: key creation failed")
 		return api.NewInternalError("could not provision API key")
 	}
 
@@ -616,7 +621,8 @@ func (h *FreeSignupHandler) Handle(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
 		defer cancel()
 		if err := h.email.SendKeyDelivery(ctx, email, "free", keyValue); err != nil {
-			h.log.Error().Err(err).Str("email", email).Msg("free signup: email delivery failed")
+			emailHash := fmt.Sprintf("%x", sha256.Sum256([]byte(email)))[:16]
+			h.log.Error().Err(err).Str("email_hash", emailHash).Msg("free signup: email delivery failed")
 		}
 	}()
 

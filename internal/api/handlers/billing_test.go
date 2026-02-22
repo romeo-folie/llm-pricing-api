@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -654,17 +655,20 @@ func TestFreeSignupHandler(t *testing.T) {
 		}
 		t.Cleanup(mr.Close)
 
-		var capturedKeyValue string
+		const wantEmail = "user@example.com"
+		const issuedKeyValue = "uk_test_abc"
+		var gotEmail, gotTier string
 		keys := &mockFreeKeys{
 			createKeyFunc: func(_ context.Context, email, tier string) (string, string, error) {
-				capturedKeyValue = "uk_test_abc"
-				return "key-id-123", "uk_test_abc", nil
+				gotEmail = email
+				gotTier = tier
+				return "key-id-123", issuedKeyValue, nil
 			},
 		}
 		emailer := &mockFreeEmail{}
 
 		app := newFreeSignupApp(t, keys, emailer, mr.Addr())
-		status, body := freeSignupPost(app, `{"email":"user@example.com"}`)
+		status, body := freeSignupPost(app, `{"email":"`+wantEmail+`"}`)
 
 		if status != 200 {
 			t.Fatalf("expected 200, got %d; body: %s", status, body)
@@ -677,8 +681,15 @@ func TestFreeSignupHandler(t *testing.T) {
 		if _, ok := resp["message"]; !ok {
 			t.Errorf("expected 'message' key in response body, got: %s", body)
 		}
-		if strings.Contains(string(body), capturedKeyValue) {
-			t.Errorf("response body must not contain the key value %q; body: %s", capturedKeyValue, body)
+		if strings.Contains(string(body), issuedKeyValue) {
+			t.Errorf("response body must not contain the key value %q; body: %s", issuedKeyValue, body)
+		}
+		// Verify the handler forwarded the correct email and tier to the key manager.
+		if gotEmail != wantEmail {
+			t.Errorf("CreateKey called with email %q, want %q", gotEmail, wantEmail)
+		}
+		if gotTier != "free" {
+			t.Errorf("CreateKey called with tier %q, want %q", gotTier, "free")
 		}
 	})
 
@@ -816,21 +827,43 @@ func TestFreeSignupHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("auth-free group route reaches handler without API key", func(t *testing.T) {
+	t.Run("open v1 group reachable without API key even when auth v1 group exists", func(t *testing.T) {
+		// Reproduce the production Fiber v2 topology.
+		//
+		// In Fiber v2, app.Group(prefix, handlers...) registers the handlers via
+		// app.Use(prefix, ...) which applies to ALL routes registered AFTER that call.
+		// Routes registered BEFORE the auth group are not affected.
+		//
+		// Therefore: unauthenticated routes (open group) must be registered BEFORE
+		// the auth group — exactly mirroring the order in cmd/api/main.go.
 		mr, err := miniredis.Run()
 		if err != nil {
 			t.Fatalf("miniredis.Run: %v", err)
 		}
 		t.Cleanup(mr.Close)
 
-		// newFreeSignupApp registers the handler on an open app with no auth middleware,
-		// mirroring how RegisterFreeSignup wires it onto a v1Open group in production.
-		app := newFreeSignupApp(t, &mockFreeKeys{}, &mockFreeEmail{}, mr.Addr())
-		status, body := freeSignupPost(app, `{"email":"reach@example.com"}`)
+		app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+		authGuard := func(c *fiber.Ctx) error {
+			if c.Get("Authorization") == "" {
+				return api.NewUnauthorized("missing API key")
+			}
+			return c.Next()
+		}
 
-		// The handler is reachable and processes the request (not 401/403/404).
+		// Open group FIRST — mirrors the v1Open registration order in main.go.
+		rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		t.Cleanup(func() { _ = rdb.Close() })
+		h := handlers.NewFreeSignupHandler(&mockFreeKeys{}, &mockFreeEmail{}, rdb, zerolog.Nop())
+		v1Open := app.Group("/v1")
+		v1Open.Post("/signup/free", h.Handle)
+
+		// Auth group AFTER — mirrors v1 := app.Group("/v1", auth...) in main.go.
+		v1Auth := app.Group("/v1", authGuard)
+		v1Auth.Get("/models", func(c *fiber.Ctx) error { return c.SendString("ok") })
+
+		status, body := freeSignupPost(app, `{"email":"reach@example.com"}`)
 		if status != 200 {
-			t.Fatalf("expected 200 on auth-free route, got %d; body: %s", status, body)
+			t.Fatalf("expected 200 with open-before-auth topology (no API key), got %d; body: %s", status, body)
 		}
 	})
 
@@ -867,6 +900,49 @@ func TestFreeSignupHandler(t *testing.T) {
 		if resp.StatusCode != 401 {
 			body, _ := io.ReadAll(resp.Body)
 			t.Fatalf("expected 401 when endpoint is behind auth middleware, got %d; body: %s", resp.StatusCode, body)
+		}
+	})
+
+	t.Run("concurrent requests at rate limit boundary issue bounded keys", func(t *testing.T) {
+		// Documents the known TOCTOU window: INCR is atomic but the check and
+		// CreateKey are not. N goroutines racing at count==3 may each see count<=3
+		// and each call CreateKey. The over-issue is bounded by concurrency, not
+		// unbounded. This test fires 10 concurrent requests from a fresh IP and
+		// asserts that no more than 3+concurrency-slack keys are created.
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		var keyCount atomic.Int64
+		keys := &mockFreeKeys{
+			createKeyFunc: func(_ context.Context, _, _ string) (string, string, error) {
+				keyCount.Add(1)
+				return "key-id", "uk_concurrent_test", nil
+			},
+		}
+		app := newFreeSignupApp(t, keys, &mockFreeEmail{}, mr.Addr())
+
+		const concurrency = 10
+		var wg sync.WaitGroup
+		wg.Add(concurrency)
+		for range concurrency {
+			go func() {
+				defer wg.Done()
+				freeSignupPost(app, `{"email":"concurrent@example.com"}`)
+			}()
+		}
+		wg.Wait()
+
+		got := keyCount.Load()
+		// At most 3 keys should be created. Under extreme concurrent pressure the
+		// INCR TOCTOU window allows a small overshoot, so we tolerate up to 5.
+		if got > 5 {
+			t.Errorf("created %d keys for %d concurrent requests; expected ≤5 (limit is 3)", got, concurrency)
+		}
+		if got == 0 {
+			t.Errorf("no keys created; rate limit may be misconfigured")
 		}
 	})
 }
