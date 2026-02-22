@@ -10,13 +10,18 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
 	"llm-pricing-api/internal/billing"
 )
@@ -555,4 +560,241 @@ func TestLemonSqueezy_SubscriptionCreated_StoreFailure_RevokesOrphanedKey(t *tes
 	if !waitDispatch(func() bool { return revokeKeyCalled.Load() }) {
 		t.Error("expected RevokeKey to be called to compensate for orphaned key after store failure")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// FreeSignupHandler tests
+// ---------------------------------------------------------------------------
+
+// mockFreeKeys implements billing.KeyManager for FreeSignupHandler tests.
+type mockFreeKeys struct {
+	createKeyFunc func(ctx context.Context, email, tier string) (string, string, error)
+}
+
+func (m *mockFreeKeys) CreateKey(ctx context.Context, email, tier string) (string, string, error) {
+	if m.createKeyFunc != nil {
+		return m.createKeyFunc(ctx, email, tier)
+	}
+	return "key-id", "uk_free_test", nil
+}
+
+func (m *mockFreeKeys) UpdateKeyTier(ctx context.Context, id, tier string) error { return nil }
+func (m *mockFreeKeys) RevokeKey(ctx context.Context, id string) error            { return nil }
+
+// mockFreeEmail implements billing.Emailer for FreeSignupHandler tests.
+type mockFreeEmail struct {
+	sendKeyFunc func(ctx context.Context, email, tier, keyValue string) error
+}
+
+func (m *mockFreeEmail) SendKeyDelivery(ctx context.Context, email, tier, keyValue string) error {
+	if m.sendKeyFunc != nil {
+		return m.sendKeyFunc(ctx, email, tier, keyValue)
+	}
+	return nil
+}
+
+func (m *mockFreeEmail) SendPlanChange(ctx context.Context, email, oldTier, newTier string, renewsAt time.Time) error {
+	return nil
+}
+
+func (m *mockFreeEmail) SendCancellation(ctx context.Context, email string, renewsAt time.Time) error {
+	return nil
+}
+
+// newFreeSignupApp builds a minimal Fiber app wired with FreeSignupHandler.
+// It uses the api.ErrorHandler so RFC 7807 problem responses are serialised correctly.
+func newFreeSignupApp(t *testing.T, keys billing.KeyManager, emailer billing.Emailer, rdbAddr string) *fiber.App {
+	t.Helper()
+	rdb := redis.NewClient(&redis.Options{Addr: rdbAddr})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	h := handlers.NewFreeSignupHandler(keys, emailer, rdb, zerolog.Nop())
+	app.Post("/v1/signup/free", h.Handle)
+	return app
+}
+
+// freeSignupPost fires a POST to /v1/signup/free and returns status + body bytes.
+func freeSignupPost(app *fiber.App, body string) (int, []byte) {
+	req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		panic("app.Test: " + err.Error())
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
+// freeSignupPostHeaders fires a POST and returns status, body, and the response headers.
+func freeSignupPostHeaders(app *fiber.App, body string) (int, []byte, map[string]string) {
+	req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		panic("app.Test: " + err.Error())
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	headers := make(map[string]string)
+	for k, vs := range resp.Header {
+		if len(vs) > 0 {
+			headers[k] = vs[0]
+		}
+	}
+	return resp.StatusCode, b, headers
+}
+
+func TestFreeSignupHandler(t *testing.T) {
+	t.Run("valid email returns 200 with message and no key in body", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		var capturedKeyValue string
+		keys := &mockFreeKeys{
+			createKeyFunc: func(_ context.Context, email, tier string) (string, string, error) {
+				capturedKeyValue = "uk_test_abc"
+				return "key-id-123", "uk_test_abc", nil
+			},
+		}
+		emailer := &mockFreeEmail{}
+
+		app := newFreeSignupApp(t, keys, emailer, mr.Addr())
+		status, body := freeSignupPost(app, `{"email":"user@example.com"}`)
+
+		if status != 200 {
+			t.Fatalf("expected 200, got %d; body: %s", status, body)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("response is not valid JSON: %v; body: %s", err, body)
+		}
+		if _, ok := resp["message"]; !ok {
+			t.Errorf("expected 'message' key in response body, got: %s", body)
+		}
+		if strings.Contains(string(body), capturedKeyValue) {
+			t.Errorf("response body must not contain the key value %q; body: %s", capturedKeyValue, body)
+		}
+	})
+
+	t.Run("invalid email returns 400 with problem+json content type", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		app := newFreeSignupApp(t, &mockFreeKeys{}, &mockFreeEmail{}, mr.Addr())
+		req := httptest.NewRequest("POST", "/v1/signup/free", strings.NewReader(`{"email":"notanemail"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != 400 {
+			t.Fatalf("expected 400, got %d; body: %s", resp.StatusCode, body)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.Contains(ct, "application/problem+json") {
+			t.Errorf("expected Content-Type application/problem+json, got %q", ct)
+		}
+	})
+
+	t.Run("empty email returns 400", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		app := newFreeSignupApp(t, &mockFreeKeys{}, &mockFreeEmail{}, mr.Addr())
+		status, body := freeSignupPost(app, `{"email":""}`)
+
+		if status != 400 {
+			t.Fatalf("expected 400 for empty email, got %d; body: %s", status, body)
+		}
+	})
+
+	t.Run("4th request from same IP returns 429 with Retry-After header and problem+json", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		keys := &mockFreeKeys{
+			createKeyFunc: func(_ context.Context, _, _ string) (string, string, error) {
+				return "key-id", "uk_test_key", nil
+			},
+		}
+		app := newFreeSignupApp(t, keys, &mockFreeEmail{}, mr.Addr())
+
+		// First 3 requests should succeed.
+		for i := 1; i <= 3; i++ {
+			status, body := freeSignupPost(app, `{"email":"user@example.com"}`)
+			if status != 200 {
+				t.Fatalf("request %d: expected 200, got %d; body: %s", i, status, body)
+			}
+		}
+
+		// 4th request must be rejected.
+		status, body, headers := freeSignupPostHeaders(app, `{"email":"user@example.com"}`)
+
+		if status != 429 {
+			t.Fatalf("4th request: expected 429, got %d; body: %s", status, body)
+		}
+		retryAfter := headers["Retry-After"]
+		if retryAfter != "86400" {
+			t.Errorf("expected Retry-After: 86400, got %q", retryAfter)
+		}
+		ct := headers["Content-Type"]
+		if !strings.Contains(ct, "application/problem+json") {
+			t.Errorf("expected Content-Type application/problem+json on 429, got %q", ct)
+		}
+	})
+
+	t.Run("email send failure still returns 200 with message and no key value", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis.Run: %v", err)
+		}
+		t.Cleanup(mr.Close)
+
+		const issuedKey = "uk_test_should_not_appear"
+		keys := &mockFreeKeys{
+			createKeyFunc: func(_ context.Context, _, _ string) (string, string, error) {
+				return "key-id-456", issuedKey, nil
+			},
+		}
+		emailer := &mockFreeEmail{
+			sendKeyFunc: func(_ context.Context, _, _, _ string) error {
+				return fmt.Errorf("SMTP timeout")
+			},
+		}
+
+		app := newFreeSignupApp(t, keys, emailer, mr.Addr())
+		status, body := freeSignupPost(app, `{"email":"user@example.com"}`)
+
+		if status != 200 {
+			t.Fatalf("expected 200 even when email fails, got %d; body: %s", status, body)
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("response is not valid JSON: %v; body: %s", err, body)
+		}
+		if _, ok := resp["message"]; !ok {
+			t.Errorf("expected 'message' key in response body, got: %s", body)
+		}
+		if strings.Contains(string(body), issuedKey) {
+			t.Errorf("response body must not contain the key value %q; body: %s", issuedKey, body)
+		}
+	})
 }
