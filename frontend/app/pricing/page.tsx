@@ -12,12 +12,12 @@ export const revalidate = false
 export const metadata: Metadata = {
   title: "API Plans & Pricing — LLM Pricing Data for Developers",
   description:
-    "Access reconciled AI model pricing data via API. Free tier (100 req/day), Developer ($9.99/mo, 10k req/day with price history), and Pro ($14.99/mo, unlimited + webhooks + SLA).",
+    "Access reconciled AI model pricing data via API. Free tier (100 req/day), Developer ($10/mo, 10k req/day with price history), and Pro ($15/mo, unlimited + webhooks + SLA).",
   alternates: { canonical: "/pricing" },
   openGraph: {
     title: "LLMRates API Plans — AI Pricing Data for Developers & Agents",
     description:
-      "Free to $14.99/mo. Access reconciled LLM pricing data, price history, agent-optimized endpoints, and webhooks.",
+      "Free to $15/mo. Access reconciled LLM pricing data, price history, agent-optimized endpoints, and webhooks.",
   },
 }
 
@@ -65,7 +65,7 @@ const TIERS: Tier[] = [
   {
     rank:     "ENGINEER",
     name:     "Developer",
-    price:    "$9.99",
+    price:    "$10",
     requests: "10,000 req/day",
     ctaLabel: "Get API Key",
     ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing",
@@ -85,7 +85,7 @@ const TIERS: Tier[] = [
   {
     rank:     "ARCHITECT",
     name:     "Pro",
-    price:    "$14.99",
+    price:    "$15",
     requests: "Unlimited",
     ctaLabel: "Go Pro",
     ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_PRO || "/pricing",

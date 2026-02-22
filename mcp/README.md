@@ -175,8 +175,8 @@ npx @llmrates/mcp
 | Tier | Price | Rate limit | Tools available |
 |------|-------|------------|-----------------|
 | Free | $0/month | 100 req/day | `compare_models`, `get_recent_changes` |
-| Developer | $9.99/month | 10,000 req/day | All tools except `subscribe_to_changes` |
-| Pro | $14.99/month | Unlimited | All tools including webhooks + SLA |
+| Developer | $10/month | 10,000 req/day | All tools except `subscribe_to_changes` |
+| Pro | $15/month | Unlimited | All tools including webhooks + SLA |
 
 Tools that require a higher tier return a descriptive error message — no silent failures.
 
