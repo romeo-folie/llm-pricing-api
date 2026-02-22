@@ -44,8 +44,8 @@ const TIERS: Tier[] = [
     name:     "Free",
     price:    "$0",
     requests: "100 req/day",
-    ctaLabel: "Browse Models",
-    ctaHref:  "/models",
+    ctaLabel: "Get Free Key",
+    ctaHref:  "/signup/free",
     featured: false,
     features: [
       { label: "100 req/day — hard capped",                included: true  },
