@@ -155,6 +155,15 @@ func main() {
 	// Register public discovery routes (no auth required).
 	handlers.RegisterDiscovery(app, db, redisClient)
 
+	// Register account dashboard API routes. These are always registered,
+	// even when billingSvc is nil, so Free-tier users can use the dashboard.
+	// Routes: POST /api/account/verify  GET /api/account/usage
+	if cfg.UnkeyRootKey != "" && cfg.UnkeyAPIID != "" {
+		handlers.RegisterAccount(app, db, redisClient, billingSvc, cfg.UnkeyRootKey, cfg.UnkeyAPIID, cfg.SessionSecret, log)
+	} else {
+		log.Warn().Msg("account dashboard endpoints not registered: UNKEY_ROOT_KEY or UNKEY_API_ID is missing")
+	}
+
 	// Register unauthenticated /v1 routes BEFORE creating the auth group.
 	// In Fiber v2, app.Group(prefix, handlers...) registers those handlers via
 	// app.Use(prefix, ...), which applies them to ALL routes registered after

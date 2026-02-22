@@ -44,10 +44,18 @@ frontend/
 │   │   └── actions.ts          # Server action for cost calculation
 │   ├── changes/page.tsx        # Real-time price change feed (60s polling)
 │   ├── pricing/page.tsx        # Static pricing page with tier cards + FAQ
+│   ├── account/
+│   │   ├── page.tsx            # Account dashboard Server Component (reads session cookie)
+│   │   ├── KeyInputForm.tsx    # Client Component — API key entry form
+│   │   └── AccountDashboard.tsx # Client Component — 3-card layout (Plan, Key, Usage)
 │   └── api/                    # Route handlers (proxy routes for client polling)
 │       ├── health/route.ts     # Health check endpoint
 │       ├── changes/route.ts    # Changes proxy for client-side polling
-│       └── model/[id]/route.ts # Model detail proxy
+│       ├── model/[id]/route.ts # Model detail proxy
+│       └── account/
+│           ├── verify/route.ts  # POST — forward key to Go API, issue signed session cookie
+│           ├── usage/route.ts   # GET  — proxy usage poll to Go API with X-Account-Token
+│           └── signout/route.ts # POST — clear session cookie, redirect to /account
 ├── components/
 │   ├── analytics/
 │   │   └── GoogleAnalytics.tsx # GA4 script loader + route change tracker
@@ -70,11 +78,13 @@ frontend/
 │   ├── changes/
 │   │   ├── ChangesFeed.tsx     # Change feed with polling + filters
 │   │   └── ChangeRow.tsx       # Individual change row
-│   └── calculator/
-│       └── CalculatorClient.tsx # Calculator with daily/monthly/yearly toggle
+│   ├── calculator/
+│   │   └── CalculatorClient.tsx # Calculator with daily/monthly/yearly toggle
+│   └── UsageCard.tsx           # Client Component — live usage bar, polls /api/account/usage every 60s
 ├── lib/
 │   ├── analytics.ts            # GA4 pageview + typed custom event helpers
 │   ├── api.ts                  # Server-only typed API client (all REST endpoints)
+│   ├── session.ts              # HMAC-SHA256 session cookie signing/verification + X-Account-Token helper
 │   └── utils.ts                # cn() class merging utility
 ├── public/                     # Static assets (SVGs, favicon)
 ├── .env.example                # Required environment variables
@@ -102,6 +112,8 @@ Copy `.env.example` to `.env.local` and fill in values:
 |---|---|---|
 | `LLM_PRICING_API_BASE_URL` | Server | REST API base URL (default: `http://localhost:8080`) |
 | `LLM_PRICING_API_KEY` | Server | Dev-tier API key for history/recommend endpoints |
+| `SESSION_SECRET` | Server | HMAC-SHA256 key for signing account session cookies — **must match the Go API's `SESSION_SECRET`**; required in production |
+| `BASE_URL` | Server | Absolute base URL for signout redirect (default: `http://localhost:3000`) |
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Client | Lemon Squeezy checkout URL (Developer plan) |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Client | Lemon Squeezy checkout URL (Pro plan) |
 | `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap (default: `https://llmrates.live`) |
@@ -187,6 +199,8 @@ Vercel auto-detects Next.js and requires no build configuration. Import the `fro
 |---|---|---|
 | `LLM_PRICING_API_BASE_URL` | Production, Preview | REST API base URL |
 | `LLM_PRICING_API_KEY` | Production, Preview | Server-only — never expose to client |
+| `SESSION_SECRET` | Production, Preview | Must match Go API's `SESSION_SECRET`; required in production |
+| `BASE_URL` | Production, Preview | Absolute URL for signout redirect (e.g. `https://llmrates.live`) |
 | `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Production, Preview | Lemon Squeezy checkout URL |
 | `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Production, Preview | Lemon Squeezy checkout URL |
 | `NEXT_PUBLIC_SITE_URL` | Production | Canonical URL (e.g. `https://llmrates.live`) |
@@ -196,9 +210,34 @@ Vercel auto-detects Next.js and requires no build configuration. Import the `fro
 
 Vercel runs `npm run build` automatically on each push and serves the output via its global edge network. No `startCommand`, Nixpacks builder, or `railway.json` is needed.
 
+## Account Dashboard (`/account`)
+
+The account dashboard lets users view their plan, masked API key, and live daily usage without exposing the raw API key to the browser.
+
+**Architecture (cross-domain cookie proxy):**
+
+```
+Browser → POST /api/account/verify (Next.js) → POST /api/account/verify (Go API)
+                    ↓ on success
+            Set-Cookie: account_session=<signed payload>; HttpOnly; SameSite=Lax
+Browser → GET /api/account/usage (Next.js) → reads cookie → GET /api/account/usage?key_id=<keyId> (Go API)
+                                                              Header: X-Account-Token: HMAC-SHA256(keyId, SESSION_SECRET)
+```
+
+The Go API and Next.js frontend share `SESSION_SECRET`. The Go side signs the `X-Account-Token` header; the Next.js side signs/verifies the `account_session` HttpOnly cookie. The raw API key never leaves the Go API after initial verification.
+
+**Key files:**
+- `lib/session.ts` — `signSession`, `verifySession`, `makeAccountToken`, `cookieName`, `cookieOptions`; uses `timingSafeEqual` for constant-time cookie verification; fails fast in production if `SESSION_SECRET` is missing
+- `app/api/account/verify/route.ts` — proxies key to Go, sets signed cookie
+- `app/api/account/usage/route.ts` — reads cookie, proxies usage poll with `X-Account-Token`
+- `app/api/account/signout/route.ts` — clears cookie (Max-Age=0), redirects to `/account`
+- `app/account/page.tsx` — Server Component; renders `KeyInputForm` or `AccountDashboard` based on session cookie
+- `components/UsageCard.tsx` — polls `/api/account/usage` every 60 seconds; displays progress bar with error state
+
 ## Security
 
 - `LLM_PRICING_API_KEY` is server-only — enforced by `import 'server-only'` in `lib/api.ts`
+- `SESSION_SECRET` is server-only — never use `NEXT_PUBLIC_SESSION_SECRET`; the Go API validates it is non-empty at startup; `lib/session.ts` throws in production if unset
 - CSP, `X-Content-Type-Options`, and `X-Frame-Options` set in `next.config.ts`
 - All user inputs (calculator token counts, filter params) validated server-side before any price calculation
 - No dark mode — single fixed light theme per design spec

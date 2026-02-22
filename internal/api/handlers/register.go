@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
+	unkeygo "github.com/unkeyed/unkey-go"
 
 	"llm-pricing-api/internal/billing"
 	"llm-pricing-api/internal/middleware"
@@ -180,4 +181,51 @@ func RegisterPro(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client, webhookSecr
 func RegisterFreeSignup(v1 fiber.Router, rdb *redis.Client, billingSvc *billing.Service, log zerolog.Logger) {
 	h := NewFreeSignupHandler(billingSvc.Keys, billingSvc.Email, rdb, log)
 	v1.Post("/signup/free", h.Handle)
+}
+
+// RegisterAccount registers the unauthenticated account dashboard API endpoints
+// on the root Fiber app under /api/account/. These routes are placed outside
+// the /v1 auth group because authentication is handled by the caller (Next.js
+// server route) which sets a signed session cookie. The X-Account-Token HMAC
+// header guards the usage endpoint from unauthenticated management API access.
+//
+// The endpoint is always registered (not gated on billingSvc) so the account
+// dashboard works for Free-tier users who have no billing_subscriptions row.
+// billingSvc may be nil; when nil, paid-tier portal URLs are skipped gracefully.
+//
+// rdb is used for IP-based rate limiting on POST /api/account/verify.
+//
+// Routes registered:
+//
+//	POST /api/account/verify
+//	GET  /api/account/usage
+func RegisterAccount(
+	app *fiber.App,
+	db *pgxpool.Pool,
+	rdb *redis.Client,
+	billingSvc *billing.Service,
+	unkeyRootKey, unkeyAPIID, sessionSecret string,
+	log zerolog.Logger,
+) {
+	store := NewAccountStore(db)
+
+	var ls billing.SubscriptionManager
+	if billingSvc != nil {
+		ls = billingSvc.LS
+	}
+
+	sdk := unkeygo.New(unkeygo.WithSecurity(unkeyRootKey))
+	h := NewAccountHandler(AccountHandlerConfig{
+		SDK:           sdk,
+		APIID:         unkeyAPIID,
+		Store:         store,
+		LS:            ls,
+		RDB:           rdb,
+		SessionSecret: sessionSecret,
+		Log:           log,
+	})
+
+	apiGroup := app.Group("/api/account")
+	apiGroup.Post("/verify", h.HandleVerify)
+	apiGroup.Get("/usage", h.HandleUsage)
 }

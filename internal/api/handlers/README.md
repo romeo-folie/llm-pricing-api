@@ -21,6 +21,8 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `sse.go` | `GET /v1/stream/changes` (SSE price-change stream; Developer+ only) |
 | `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (Pro only); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
 | `billing.go` | `POST /webhooks/lemon-squeezy` handler; `LemonSqueezyHandler`, `LemonSqueezyStore` interface + `pgxLemonSqueezyStore`; `BillingRevokeKeyPayload`; HMAC verification; background goroutine dispatch |
+| `account.go` | `POST /api/account/verify` + `GET /api/account/usage` handlers; `AccountHandler`, `AccountStore` interface + `pgxAccountStore`; `maskKey`, `validateAccountToken` (HMAC-SHA256); IP-based Redis rate limiting (SETNX+INCR, 10 req/hour); session-token auth for Next.js proxy calls |
+| `account_test.go` | Unit tests for `validateAccountToken`, `maskKey`, `HandleVerify` validation, `HandleUsage` token validation |
 | `handlers_test.go` | Unit tests for Free-tier handlers using Fiber's `app.Test()` and an in-memory mock store |
 | `dev_handlers_test.go` | Unit tests for Developer+ handlers (history, recommend, context + markdown/metadata) with tier-gate coverage |
 | `ask_test.go` | 46 unit tests for `/v1/ask`: intent classification, alias normalisation, param extraction, response shape |
@@ -176,6 +178,10 @@ handlers.RegisterPro(v1, db, redisClient, cfg.WebhookSecretKey, logger)
 
 // Discovery routes — no auth, registered on the root app, not the v1 group.
 handlers.RegisterDiscovery(app, db, redisClient)
+
+// Account dashboard — unauthenticated endpoints; session managed by Next.js.
+// Skipped when UNKEY_ROOT_KEY or UNKEY_API_ID are absent.
+handlers.RegisterAccount(app, db, redisClient, billingSvc, cfg.UnkeyRootKey, cfg.UnkeyAPIID, cfg.SessionSecret, log)
 
 // Lemon Squeezy webhook — no API key auth; HMAC-verified; outside /v1 group.
 if billingSvc != nil {

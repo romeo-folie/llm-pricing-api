@@ -58,6 +58,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
+	// SESSION_SECRET must be set in non-development environments. An empty secret
+	// causes HMAC-SHA256(keyId, "") to be deterministic and guessable, bypassing
+	// both the session cookie signature and the X-Account-Token guard.
+	sessionSecret := os.Getenv("SESSION_SECRET")
+	if appEnv != "development" && sessionSecret == "" {
+		return nil, fmt.Errorf("SESSION_SECRET must be set in non-development environments")
+	}
+
 	return &Config{
 		DatabaseURL:      dbURL,
 		RedisURL:         getEnv("REDIS_URL", "localhost:6379"),
@@ -75,7 +83,7 @@ func Load() (*Config, error) {
 		LSStoreID:        os.Getenv("LEMONSQUEEZY_STORE_ID"),
 		ResendAPIKey:     os.Getenv("RESEND_API_KEY"),
 		ResendFromEmail:  getEnv("RESEND_FROM_EMAIL", "keys@llmrates.com"),
-		SessionSecret:    os.Getenv("SESSION_SECRET"),
+		SessionSecret:    sessionSecret,
 		LSSigningSecret:  os.Getenv("LEMONSQUEEZY_SIGNING_SECRET"),
 		LSVariantDev:     os.Getenv("LS_VARIANT_DEV"),
 		LSVariantPro:     os.Getenv("LS_VARIANT_PRO"),
