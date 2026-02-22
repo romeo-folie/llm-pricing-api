@@ -96,7 +96,7 @@ const TIER_SUMMARY = [
   {
     rank: "ENGINEER",
     name: "Developer",
-    price: "$15",
+    price: "$9.99",
     period: "/mo",
     requests: "10,000 req/day",
     highlight: true,
@@ -107,7 +107,7 @@ const TIER_SUMMARY = [
   {
     rank: "ARCHITECT",
     name: "Pro",
-    price: "$50",
+    price: "$14.99",
     period: "/mo",
     requests: "Unlimited",
     highlight: false,
