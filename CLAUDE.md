@@ -287,7 +287,16 @@ After implementing any feature or task, you **must** run the `/code-reviewer` sk
 5. Repeat with Opus until the review comes back clean with no actionable findings.
 6. Only then may you mark the task complete or close the issue.
 
-If a flagged issue is intentionally skipped (e.g. out of scope, deferred, won't-fix), you **must** state the reason in the task completion summary. Do not silently skip findings. Every skipped item needs a one-line justification alongside it.
+If a flagged issue is intentionally skipped (e.g. out of scope, deferred, won't-fix), you **must**:
+
+1. State the skip reason **inline** in your response at the moment you decide to skip — not deferred to a closing comment.
+2. Include the finding ID and a one-line justification in the GitHub issue closing comment under a "Skipped Findings" section.
+3. Never silently omit a finding. Silence means the finding was missed, not considered.
+
+Format for skipped findings:
+```
+Skipped: [FINDING-ID] — <reason> (e.g. "out of scope for this task", "deferred to follow-up ticket #N", "won't-fix: consistent with existing pattern")
+```
 
 A task is **not done** until the code-reviewer confirms it is clean or all remaining findings have documented skip reasons.
 
