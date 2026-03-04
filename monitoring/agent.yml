@@ -1,0 +1,31 @@
+server:
+  log_level: info
+
+prometheus:
+  wal_directory: /tmp/grafana-agent-wal
+  global:
+    scrape_interval: 15s
+    evaluation_interval: 15s
+
+  configs:
+    - name: llm-pricing
+      scrape_configs:
+        - job_name: llm-pricing-api
+          static_configs:
+            # API metrics are exposed on the internal metrics server
+            # (METRICS_PORT, default 9091) started by cmd/api/main.go.
+            - targets: ["host.docker.internal:9091"]
+
+        - job_name: postgres-exporter
+          static_configs:
+            - targets: ["postgres-exporter:9187"]
+
+        - job_name: redis-exporter
+          static_configs:
+            - targets: ["redis-exporter:9121"]
+
+      remote_write:
+        - url: ${GRAFANA_CLOUD_URL}
+          basic_auth:
+            username: ${GRAFANA_CLOUD_USER}
+            password: ${GRAFANA_CLOUD_API_KEY}
