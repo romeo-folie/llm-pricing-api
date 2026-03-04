@@ -87,14 +87,14 @@ func TestRateLimit_Free_UnderLimit(t *testing.T) {
 	}
 }
 
-// TestRateLimit_Free_AtLimit allows a request exactly at the limit (100).
+// TestRateLimit_Free_AtLimit allows a request exactly at the limit (1,000,000).
 func TestRateLimit_Free_AtLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	hash := hashOf("freelimitkey")
 	date := time.Now().UTC().Format("2006-01-02")
 	counterKey := fmt.Sprintf("ratelimit:%s:%s", hash, date)
 
-	mock.ExpectIncr(counterKey).SetVal(100)
+	mock.ExpectIncr(counterKey).SetVal(1_000_000)
 
 	app := newRateLimitApp("free", hash, db)
 	req := httptest.NewRequest("GET", "/v1/test", nil)
@@ -103,18 +103,18 @@ func TestRateLimit_Free_AtLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != fiber.StatusOK {
-		t.Errorf("want 200 at limit=100, got %d", resp.StatusCode)
+		t.Errorf("want 200 at limit=1_000_000, got %d", resp.StatusCode)
 	}
 }
 
-// TestRateLimit_Free_OverLimit blocks a request when counter exceeds 100.
+// TestRateLimit_Free_OverLimit blocks a request when counter exceeds 1,000,000.
 func TestRateLimit_Free_OverLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	hash := hashOf("freeoverlimitkey")
 	date := time.Now().UTC().Format("2006-01-02")
 	counterKey := fmt.Sprintf("ratelimit:%s:%s", hash, date)
 
-	mock.ExpectIncr(counterKey).SetVal(101)
+	mock.ExpectIncr(counterKey).SetVal(1_000_001)
 
 	app := newRateLimitApp("free", hash, db)
 	req := httptest.NewRequest("GET", "/v1/test", nil)
@@ -131,14 +131,14 @@ func TestRateLimit_Free_OverLimit(t *testing.T) {
 	}
 }
 
-// TestRateLimit_Developer_UnderLimit allows a request below the 10k limit.
+// TestRateLimit_Developer_UnderLimit allows a request below the 1M limit.
 func TestRateLimit_Developer_UnderLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	hash := hashOf("devkey")
 	date := time.Now().UTC().Format("2006-01-02")
 	counterKey := fmt.Sprintf("ratelimit:%s:%s", hash, date)
 
-	mock.ExpectIncr(counterKey).SetVal(5000)
+	mock.ExpectIncr(counterKey).SetVal(500_000)
 
 	app := newRateLimitApp("developer", hash, db)
 	req := httptest.NewRequest("GET", "/v1/test", nil)
@@ -151,14 +151,14 @@ func TestRateLimit_Developer_UnderLimit(t *testing.T) {
 	}
 }
 
-// TestRateLimit_Developer_OverLimit blocks a request above the 10k limit.
+// TestRateLimit_Developer_OverLimit blocks a request above the 1M limit.
 func TestRateLimit_Developer_OverLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	hash := hashOf("devoverlimitkey")
 	date := time.Now().UTC().Format("2006-01-02")
 	counterKey := fmt.Sprintf("ratelimit:%s:%s", hash, date)
 
-	mock.ExpectIncr(counterKey).SetVal(10_001)
+	mock.ExpectIncr(counterKey).SetVal(1_000_001)
 
 	app := newRateLimitApp("developer", hash, db)
 	req := httptest.NewRequest("GET", "/v1/test", nil)
@@ -200,7 +200,7 @@ func TestRateLimit_429_HasProblemJSON(t *testing.T) {
 	date := time.Now().UTC().Format("2006-01-02")
 	counterKey := fmt.Sprintf("ratelimit:%s:%s", hash, date)
 
-	mock.ExpectIncr(counterKey).SetVal(999_999)
+	mock.ExpectIncr(counterKey).SetVal(1_000_001)
 
 	app := newRateLimitApp("free", hash, db)
 	req := httptest.NewRequest("GET", "/v1/test", nil)

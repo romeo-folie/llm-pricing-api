@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/rs/zerolog"
 
@@ -23,6 +25,7 @@ import (
 	"llm-pricing-api/internal/database"
 	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/logger"
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/review"
 )
@@ -93,10 +96,11 @@ func main() {
 		ErrorHandler: api.ErrorHandler,
 	})
 
-	// Middleware order: security headers first, then OTel tracing, request
-	// logger, and panic recovery.
+	// Middleware order: security headers first, then OTel tracing, Prometheus
+	// instrumentation, request logger, and panic recovery.
 	app.Use(middleware.Security())
 	app.Use(otelfiber.Middleware())
+	app.Use(metrics.PrometheusMiddleware())
 	app.Use(requestLogger(log))
 	app.Use(recover.New())
 
@@ -157,6 +161,32 @@ func main() {
 	admin.Get("/review", reviewHandler.List)
 	admin.Post("/review/:id/approve", reviewHandler.Approve)
 	admin.Post("/review/:id/reject", reviewHandler.Reject)
+
+	// Start internal Prometheus metrics server on a separate port.
+	// This server is intentionally NOT behind the public-facing Fiber instance
+	// so that /metrics is never reachable via the public API port.
+	if cfg.MetricsPort != "" {
+		metricsAddr := fmt.Sprintf(":%s", cfg.MetricsPort)
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.Handler())
+		metricsServer := &http.Server{
+			Addr:         metricsAddr,
+			Handler:      metricsMux,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		go func() {
+			log.Info().Str("addr", metricsAddr).Msg("starting metrics server")
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Error().Err(err).Msg("metrics server error")
+			}
+		}()
+		defer func() {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = metricsServer.Shutdown(shutCtx)
+		}()
+	}
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

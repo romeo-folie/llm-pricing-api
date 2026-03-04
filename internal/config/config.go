@@ -23,6 +23,9 @@ type Config struct {
 	// LogLevel controls the minimum log level. Accepts zerolog level names:
 	// trace, debug, info, warn, error, fatal, panic. Defaults to "debug".
 	LogLevel string
+	// MetricsPort is the port for the internal Prometheus /metrics HTTP server.
+	// Defaults to "9091". Set to empty to disable.
+	MetricsPort string
 }
 
 // Load reads configuration from environment variables.
@@ -56,6 +59,7 @@ func Load() (*Config, error) {
 		UnkeyAPIID:       os.Getenv("UNKEY_API_ID"),
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
+		MetricsPort:      getEnv("METRICS_PORT", "9091"),
 	}, nil
 }
 

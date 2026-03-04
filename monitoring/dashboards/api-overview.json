@@ -1,0 +1,60 @@
+{
+  "title": "LLM Pricing API Overview",
+  "uid": "llm-api-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests / sec",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate (5xx)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total{status=~\"5..\"}[5m])) / sum(rate(llm_api_requests_total[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Latency p95",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(llm_api_request_duration_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Active keys by tier",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "llm_api_active_keys"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Request rate by tier",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total[1h])) by (tier)"
+        }
+      ]
+    }
+  ]
+}

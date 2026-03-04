@@ -47,9 +47,9 @@ func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 	v1.Get("/changes", h.ListChanges)
 }
 
-// RegisterDev registers Developer+ endpoint handlers on the v1 router.
-// All routes here are gated behind RequireTier("developer") so Free-tier
-// keys receive RFC 7807 403 responses.
+// RegisterDev registers previously-Developer+ endpoint handlers on the v1 router.
+// Tier gating has been removed — all authenticated keys (including free-tier)
+// can access these endpoints.
 //
 // Routes registered:
 //
@@ -63,15 +63,15 @@ func RegisterDev(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) error {
 	store := NewPgxStore(db)
 	h := New(store)
 
-	v1.Get("/models/:id/history", middleware.RequireTier(middleware.TierDeveloper), h.GetModelHistory)
-	v1.Get("/recommend", middleware.RequireTier(middleware.TierDeveloper), h.Recommend)
-	v1.Get("/context", middleware.RequireTier(middleware.TierDeveloper), h.GetContext)
+	v1.Get("/models/:id/history", h.GetModelHistory)
+	v1.Get("/recommend", h.Recommend)
+	v1.Get("/context", h.GetContext)
 
 	ask, err := NewAskHandler(store)
 	if err != nil {
 		return fmt.Errorf("create ask handler: %w", err)
 	}
-	v1.Post("/ask", middleware.RequireTier(middleware.TierDeveloper), ask.Ask)
+	v1.Post("/ask", ask.Ask)
 	return nil
 }
 
@@ -95,7 +95,7 @@ func RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 //
 // Route registered:
 //
-//	GET /v1/stream/changes  — Server-Sent Events stream (Developer+ tier)
+//	GET /v1/stream/changes  — Server-Sent Events stream (all authenticated tiers)
 //
 // Returns an error if the OTel instruments cannot be created.
 func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
@@ -103,7 +103,7 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 	if err != nil {
 		return fmt.Errorf("create SSE handler: %w", err)
 	}
-	v1.Get("/stream/changes", middleware.RequireTier(middleware.TierDeveloper), sse.StreamChanges)
+	v1.Get("/stream/changes", sse.StreamChanges)
 	return nil
 }
 

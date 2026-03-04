@@ -13,6 +13,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/webhooks"
 )
 
@@ -59,6 +60,11 @@ func NewWebhookDeliveryHandler(secretKey string) *WebhookDeliveryHandler {
 // HMAC-SHA256, POSTs it to the registered URL, and returns an error on
 // non-2xx status so asynq retries the task.
 func (h *WebhookDeliveryHandler) Handle(ctx context.Context, t *asynq.Task) error {
+	status := "error"
+	defer func() {
+		metrics.WebhookDeliveriesTotal.WithLabelValues(status).Inc()
+	}()
+
 	var payload WebhookTaskPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		return fmt.Errorf("unmarshal webhook task: %w", err)
@@ -99,5 +105,6 @@ func (h *WebhookDeliveryHandler) Handle(ctx context.Context, t *asynq.Task) erro
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook destination returned non-2xx: %d", resp.StatusCode)
 	}
+	status = "success"
 	return nil
 }

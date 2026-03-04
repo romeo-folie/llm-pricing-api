@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/diff"
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/models"
 	"llm-pricing-api/internal/webhooks"
 )
@@ -145,6 +146,7 @@ func effectiveProvider(d diff.PriceDiff) string {
 // (currently none — all per-model errors are demoted to warnings).
 func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) error {
 	if len(diffs) == 0 {
+		metrics.ReconcilerEventsTotal.WithLabelValues("no_change").Inc()
 		return nil
 	}
 
@@ -329,6 +331,7 @@ func (r *Reconciler) processMultiSource(
 	}
 
 	if maxDelta > models.DiscrepancyThreshold {
+		metrics.ReconcilerEventsTotal.WithLabelValues("discrepancy_flagged").Inc()
 		r.logger.Warn().
 			Str("slug", slug).
 			Str("field", string(field)).
@@ -388,6 +391,7 @@ func (r *Reconciler) processSingleSource(
 		}
 	} else {
 		// New value (or first time seeing this slug+field+source): start/reset counter.
+		metrics.ReconcilerEventsTotal.WithLabelValues("pending_change_seen").Inc()
 		r.pending[key] = &pendingChange{value: d.NewValue, source: d.Source, fetchCount: 1, lastSeen: time.Now()}
 	}
 	r.mu.Unlock()
@@ -446,6 +450,7 @@ func (r *Reconciler) publish(
 			Msg("reconciler: PublishPrice failed")
 		return
 	}
+	metrics.ReconcilerEventsTotal.WithLabelValues("price_published").Inc()
 
 	// Resolve source name and provider for event payloads (shared by webhooks and Pub/Sub).
 	// Skip the lookups entirely when no downstream consumer is active — both are DB

@@ -6,14 +6,14 @@ const PRODUCT_LINKS = [
   { href: "/compare",    label: "Compare"       },
   { href: "/calculator", label: "Calculator"    },
   { href: "/changes",    label: "Price Changes" },
-  { href: "/pricing",    label: "Pricing"       },
+  { href: "/pricing",    label: "Features"      },
 ] as const
 
 // openapi.json is a rewrite to the Go API — use `native: true` to render a
 // plain <a> tag and prevent Next.js from attempting an RSC prefetch on it.
 const API_LINKS: { href: string; label: string; external?: boolean; native?: boolean }[] = [
   { href: "/docs",         label: "API Docs"    },
-  { href: "/pricing",      label: "Plans"       },
+  { href: "/pricing",      label: "Features"    },
   { href: "/openapi.json", label: "OpenAPI Spec", native: true },
 ]
 

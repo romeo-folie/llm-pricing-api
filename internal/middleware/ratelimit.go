@@ -8,6 +8,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/metrics"
 )
 
 const (
@@ -16,8 +17,11 @@ const (
 	rateLimitTTL = 25 * time.Hour
 
 	// Free and developer daily limits.
-	rateLimitFree      = 100
-	rateLimitDeveloper = 10_000
+	// Both tiers are set to 1,000,000 req/day — effectively unlimited for
+	// real-world usage. The rate-limiter and Redis counters are retained so
+	// that per-key usage data continues to be tracked for billing/abuse analytics.
+	rateLimitFree      = 1_000_000
+	rateLimitDeveloper = 1_000_000
 )
 
 // RateLimit returns a Fiber middleware that enforces per-key, per-calendar-day
@@ -28,9 +32,11 @@ const (
 // is never stored in Redis.
 //
 //   - Pro: unlimited — no counter is touched.
-//   - Developer: 10,000 req/day
-//   - Free (default): 100 req/day
+//   - Developer: 1,000,000 req/day (effectively unlimited)
+//   - Free (default): 1,000,000 req/day (effectively unlimited)
 //
+// Redis counters are still incremented for all tiers so per-key usage data
+// remains available for analytics and abuse detection.
 // Exceeding the limit returns HTTP 429 with a Retry-After header set to the
 // number of seconds until midnight UTC.
 func RateLimit(redisClient *redis.Client) fiber.Handler {
@@ -74,6 +80,8 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		}
 
 		if int(count) > limit {
+			metrics.RateLimitHitsTotal.WithLabelValues(tier, hash).Inc()
+
 			// Compute seconds until midnight UTC for Retry-After.
 			retryAfter := int(time.Until(midnight).Seconds())
 			if retryAfter < 0 {

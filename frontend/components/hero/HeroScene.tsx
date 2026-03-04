@@ -9,10 +9,10 @@ const PROVIDERS = [
 ]
 
 const ENDPOINTS = [
-  { path: "/v1/models", tier: "Free" },
-  { path: "/v1/history", tier: "Dev+" },
-  { path: "/v1/stream", tier: "Dev+" },
-  { path: "/v1/context", tier: "Dev+" },
+  { path: "/v1/models" },
+  { path: "/v1/history" },
+  { path: "/v1/stream" },
+  { path: "/v1/context" },
 ]
 
 /* ─── Layout constants ─────────────────────────────────────────────────────── */
@@ -452,7 +452,6 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         <g>
           {ENDPOINTS.map((ep, i) => {
             const y = endpointY(i)
-            const isDev = ep.tier === "Dev+"
             return (
               <g key={ep.path}>
                 <rect
@@ -477,18 +476,18 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 >
                   {ep.path}
                 </text>
-                {/* Tier badge */}
+                {/* Endpoint label */}
                 <text
                   x={E_X + 10}
                   y={y + E_H / 2 + 10}
                   fontSize="8"
                   fontWeight="600"
                   fontFamily="var(--font-geist-mono), monospace"
-                  fill={isDev ? "var(--blue)" : "var(--green)"}
+                  fill="var(--green)"
                   dominantBaseline="middle"
                   opacity="0.8"
                 >
-                  {ep.tier}
+                  endpoint
                 </text>
               </g>
             )

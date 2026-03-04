@@ -1,0 +1,50 @@
+{
+  "title": "LLM Pricing Usage & Abuse",
+  "uid": "llm-usage-abuse",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests by endpoint",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total[5m])) by (path)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Request rate by tier",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total[5m])) by (tier)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Rate-limit hits by tier (24h)",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "sum(increase(llm_api_rate_limit_hits_total[24h])) by (tier)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Rate-limit hits",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_rate_limit_hits_total[5m])) by (tier)"
+        }
+      ]
+    }
+  ]
+}

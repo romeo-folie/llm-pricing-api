@@ -59,61 +59,36 @@ const AGENT_ENDPOINTS = [
     method: "GET",
     path: "/v1/context",
     desc: "~2k token pricing snapshot for agent system prompts",
-    tier: "Dev+",
   },
   {
     method: "POST",
     path: "/v1/ask",
     desc: "Natural language → structured pricing response",
-    tier: "Dev+",
   },
   {
     method: "GET",
     path: "/v1/stream/changes",
     desc: "SSE stream with Last-Event-ID reconnection",
-    tier: "Dev+",
   },
   {
     method: "GET",
     path: "/v1/recommend",
     desc: "Ranked model recommendations by task, context, and price",
-    tier: "Dev+",
   },
 ]
 
-const TIER_SUMMARY = [
+const FEATURE_HIGHLIGHTS = [
   {
-    rank: "RECRUIT",
-    name: "Free",
-    price: "$0",
-    period: "/mo",
-    requests: "100 req/day",
-    highlight: false,
-    cta: "Browse Models",
-    href: "/models",
-    features: ["Model list + detail", "Provider list", "Compare up to 5", "Recent changes"],
+    title: "Model catalogue",
+    points: ["Model list + detail", "Provider directory", "Compare up to 5 models", "Recent changes"],
   },
   {
-    rank: "ENGINEER",
-    name: "Developer",
-    price: "$14.99",
-    period: "/mo",
-    requests: "10,000 req/day",
-    highlight: true,
-    cta: "Get API Key",
-    href: process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing",
-    features: ["Everything in Free", "Price history", "Agent APIs (/context, /ask, SSE)", "Model recommendations"],
+    title: "Agent workflows",
+    points: ["Price history", "Agent APIs (/context, /ask, SSE)", "Recommendations", "Webhook automation"],
   },
   {
-    rank: "ARCHITECT",
-    name: "Pro",
-    price: "$29.99",
-    period: "/mo",
-    requests: "Unlimited",
-    highlight: false,
-    cta: "Go Pro",
-    href: process.env.NEXT_PUBLIC_LS_CHECKOUT_PRO || "/pricing",
-    features: ["Everything in Developer", "Webhooks", "99.9% SLA", "Priority support"],
+    title: "Reliability",
+    points: ["Source attribution", "Reconciliation confidence", "Replay-safe stream", "Signed webhooks"],
   },
 ]
 
@@ -231,7 +206,7 @@ export default async function Home() {
                     border: "1px solid var(--border)",
                   }}
                 >
-                  View Pricing
+                  View Features
                 </a>
               </div>
 
@@ -414,7 +389,7 @@ export default async function Home() {
                   border: "1px solid var(--accentDk)",
                 }}
               >
-                Get Dev+ Access
+                Explore Features
               </a>
             </div>
 
@@ -429,8 +404,7 @@ export default async function Home() {
                   <th scope="col">Method</th>
                   <th scope="col">Path</th>
                   <th scope="col">Description</th>
-                  <th scope="col">Tier</th>
-                </tr>
+                                  </tr>
               </thead>
               <tbody>
                 {AGENT_ENDPOINTS.map((ep, i) => (
@@ -468,17 +442,7 @@ export default async function Home() {
                         {ep.desc}
                       </span>
                     </td>
-                    <td className="px-4 py-4 w-px whitespace-nowrap">
-                      <span
-                        className="font-orbitron text-xs font-semibold px-1.5 py-0.5"
-                        style={{
-                          backgroundColor: "var(--blueLt)",
-                          color: "var(--blue)",
-                        }}
-                      >
-                        {ep.tier}
-                      </span>
-                    </td>
+                    
                   </tr>
                 ))}
               </tbody>
@@ -488,8 +452,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ── Pricing summary ──────────────────────────────────────────────── */}
-      <section aria-labelledby="pricing-heading">
+      {/* ── Feature highlights ──────────────────────────────────────────── */}
+      <section aria-labelledby="features-heading">
         <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-16">
           <div className="mb-10 flex items-end justify-between flex-wrap gap-4">
@@ -498,17 +462,17 @@ export default async function Home() {
                 className="font-orbitron text-xs tracking-widest"
                 style={{ color: "var(--dim)" }}
               >
-                [ SIMPLE PRICING ]
+                [ FEATURE HIGHLIGHTS ]
               </span>
               <h2
-                id="pricing-heading"
+                id="features-heading"
                 className="font-outfit text-2xl font-bold mt-3 mb-2"
                 style={{ color: "var(--ink)" }}
               >
-                Start free. Upgrade when you need history.
+                Feature highlights for agents and developers.
               </h2>
               <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
-                Start free. Upgrade when you need price history and agent endpoints.
+                Everything is available through one unified API surface.
               </p>
             </div>
             <a
@@ -516,94 +480,41 @@ export default async function Home() {
               className="font-outfit text-sm font-medium"
               style={{ color: "var(--accent)" }}
             >
-              Full plan comparison →
+              Full feature list →
             </a>
           </div>
 
           <div className="grid sm:grid-cols-3 gap-4">
-            {TIER_SUMMARY.map((t) => (
+            {FEATURE_HIGHLIGHTS.map((t) => (
               <div
-                key={t.rank}
+                key={t.title}
                 className="flex flex-col gap-4 p-6"
                 style={{
                   border: "1px solid var(--border)",
                   position: "relative",
-                  paddingTop: t.highlight ? "2rem" : undefined,
                 }}
               >
-                {t.highlight && (
-                  <span
-                    className="absolute top-0 left-4 -translate-y-1/2 font-orbitron text-xs font-bold px-2 py-0.5"
-                    style={{
-                      backgroundColor: "var(--accent)",
-                      color: "var(--surfaceHi)",
-                    }}
-                  >
-                    [ POPULAR ]
-                  </span>
-                )}
-
                 <div>
                   <span
                     className="font-orbitron text-xs tracking-widest"
                     style={{ color: "var(--dim)" }}
                   >
-                    [ {t.rank} ]
-                  </span>
-                  <h3
-                    className="font-outfit text-lg font-bold mt-0.5"
-                    style={{ color: "var(--ink)" }}
-                  >
-                    {t.name}
-                  </h3>
-                </div>
-
-                <div className="flex items-baseline gap-1">
-                  <span
-                    className="font-orbitron text-3xl font-extrabold"
-                    style={{ color: t.highlight ? "var(--accent)" : "var(--ink)" }}
-                  >
-                    {t.price}
-                  </span>
-                  <span
-                    className="font-outfit text-sm"
-                    style={{ color: "var(--dim)" }}
-                  >
-                    {t.period}
+                    [ {t.title.toUpperCase()} ]
                   </span>
                 </div>
-
-                <span
-                  className="font-outfit text-xs"
-                  style={{ color: "var(--muted)" }}
-                >
-                  {t.requests}
-                </span>
 
                 <ul className="flex flex-col gap-2">
-                  {t.features.map((feat) => (
+                  {t.points.map((point) => (
                     <li
-                      key={feat}
+                      key={point}
                       className="font-outfit text-sm flex items-start gap-2"
                       style={{ color: "var(--text)" }}
                     >
                       <span style={{ color: "var(--green)" }} aria-hidden="true">✓</span>
-                      {feat}
+                      {point}
                     </li>
                   ))}
                 </ul>
-
-                <a
-                  href={t.href}
-                  className="font-outfit text-sm font-semibold px-4 py-2.5 text-center mt-auto"
-                  style={{
-                    backgroundColor: t.highlight ? "var(--accent)" : "transparent",
-                    color: t.highlight ? "var(--surfaceHi)" : "var(--text)",
-                    border: t.highlight ? "1px solid var(--accentDk)" : "1px solid var(--border)",
-                  }}
-                >
-                  {t.cta}
-                </a>
               </div>
             ))}
           </div>
@@ -689,8 +600,7 @@ export default async function Home() {
             className="font-outfit text-lg max-w-xl"
             style={{ color: "var(--muted)" }}
           >
-            Free tier available. No credit card required. Full price history and
-            agent APIs one tier away.
+            Start exploring models immediately. Use the full API surface for history, recommendations, stream updates, and webhook automation.
           </p>
           <div className="flex gap-3 flex-wrap justify-center">
             <a
@@ -702,7 +612,7 @@ export default async function Home() {
                 border: "1px solid var(--accentDk)",
               }}
             >
-              Browse Models — Free
+              Browse Models
             </a>
             <a
               href="/pricing"
@@ -712,7 +622,7 @@ export default async function Home() {
                 border: "1px solid var(--border)",
               }}
             >
-              Compare Plans
+              Explore Features
             </a>
           </div>
         </div>
