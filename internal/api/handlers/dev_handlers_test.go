@@ -33,9 +33,9 @@ func newDevApp(store handlers.Store) *fiber.App {
 	return app
 }
 
-// newDevAppWithTier creates a Fiber app that pre-seeds the "tier" local so
-// that RequireTier middleware behaves as if a key of the given tier was
-// presented.
+// newDevAppWithTier creates a Fiber app that pre-seeds the "tier" local.
+// RequireTier is no longer applied to these routes (all tiers can access them);
+// the tier local is injected so that downstream metrics and logging still see it.
 func newDevAppWithTier(store handlers.Store, tier string) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: api.ErrorHandler,
@@ -48,9 +48,9 @@ func newDevAppWithTier(store handlers.Store, tier string) *fiber.App {
 
 	h := handlers.New(store)
 	v1 := app.Group("/v1")
-	v1.Get("/models/:id/history", middleware.RequireTier(middleware.TierDeveloper), h.GetModelHistory)
-	v1.Get("/recommend", middleware.RequireTier(middleware.TierDeveloper), h.Recommend)
-	v1.Get("/context", middleware.RequireTier(middleware.TierDeveloper), h.GetContext)
+	v1.Get("/models/:id/history", h.GetModelHistory)
+	v1.Get("/recommend", h.Recommend)
+	v1.Get("/context", h.GetContext)
 	return app
 }
 
@@ -335,9 +335,18 @@ func TestGetModelHistory_UnderlyingProvider_NonNullSerialisation(t *testing.T) {
 	}
 }
 
-// FreeTier key should receive 403 on Developer+ endpoint.
-func TestGetModelHistory_FreeTier_Returns403(t *testing.T) {
-	app := newDevAppWithTier(&mockStore{}, middleware.TierFree)
+// TestGetModelHistory_FreeTier_CanAccess verifies that free-tier keys can
+// now access the history endpoint (tier gate removed).
+func TestGetModelHistory_FreeTier_CanAccess(t *testing.T) {
+	store := &mockStore{
+		modelExists: func(_ context.Context, _ int) (bool, error) {
+			return true, nil
+		},
+		getModelHistory: func(_ context.Context, _ int, _ handlers.HistoryFilter) ([]handlers.HistoryRow, error) {
+			return []handlers.HistoryRow{sampleHistoryRow(0)}, nil
+		},
+	}
+	app := newDevAppWithTier(store, middleware.TierFree)
 
 	req := httptest.NewRequest("GET", "/v1/models/1/history", nil)
 	resp, err := app.Test(req, -1)
@@ -346,8 +355,11 @@ func TestGetModelHistory_FreeTier_Returns403(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode != fiber.StatusForbidden {
-		t.Fatalf("expected 403 for free tier, got %d", resp.StatusCode)
+	if resp.StatusCode == fiber.StatusForbidden {
+		t.Fatal("free-tier should not receive 403 — tier gate has been removed")
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 }
 
@@ -565,9 +577,15 @@ func TestRecommend_FiltersPassedToStore(t *testing.T) {
 	}
 }
 
-// FreeTier key should receive 403 on Developer+ endpoint.
-func TestRecommend_FreeTier_Returns403(t *testing.T) {
-	app := newDevAppWithTier(&mockStore{}, middleware.TierFree)
+// TestRecommend_FreeTier_CanAccess verifies that free-tier keys can
+// access the recommend endpoint (tier gate removed).
+func TestRecommend_FreeTier_CanAccess(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{}, nil
+		},
+	}
+	app := newDevAppWithTier(store, middleware.TierFree)
 
 	req := httptest.NewRequest("GET", "/v1/recommend", nil)
 	resp, err := app.Test(req, -1)
@@ -576,8 +594,8 @@ func TestRecommend_FreeTier_Returns403(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode != fiber.StatusForbidden {
-		t.Fatalf("expected 403 for free tier, got %d", resp.StatusCode)
+	if resp.StatusCode == fiber.StatusForbidden {
+		t.Fatal("free-tier should not receive 403 — tier gate has been removed")
 	}
 }
 
@@ -729,9 +747,15 @@ func TestGetContext_EmptyStore_Returns200(t *testing.T) {
 	}
 }
 
-// FreeTier key should receive 403 on Developer+ endpoint.
-func TestGetContext_FreeTier_Returns403(t *testing.T) {
-	app := newDevAppWithTier(&mockStore{}, middleware.TierFree)
+// TestGetContext_FreeTier_CanAccess verifies that free-tier keys can
+// access the context endpoint (tier gate removed).
+func TestGetContext_FreeTier_CanAccess(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return []handlers.ContextModelRow{sampleContextRow(1)}, nil
+		},
+	}
+	app := newDevAppWithTier(store, middleware.TierFree)
 
 	req := httptest.NewRequest("GET", "/v1/context", nil)
 	resp, err := app.Test(req, -1)
@@ -740,8 +764,11 @@ func TestGetContext_FreeTier_Returns403(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode != fiber.StatusForbidden {
-		t.Fatalf("expected 403 for free tier, got %d", resp.StatusCode)
+	if resp.StatusCode == fiber.StatusForbidden {
+		t.Fatal("free-tier should not receive 403 — tier gate has been removed")
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 }
 
