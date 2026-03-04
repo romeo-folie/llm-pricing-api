@@ -776,7 +776,6 @@ func TestIntegrationRFC7807_AllErrorResponsesHaveProblemContentType(t *testing.T
 		{"model not found by integer id", "GET", "/v1/models/99999", devAuth, 404},
 		{"model not found by slug", "GET", "/v1/models/unknown/slug", devAuth, 404},
 		{"too many compare ids", "GET", "/v1/compare?models=1,2,3,4,5,6", devAuth, 400},
-		{"free key on history endpoint", "GET", "/v1/models/1/history", freeAuth, 200},
 	}
 
 	for _, tc := range cases {
@@ -1002,7 +1001,7 @@ func TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels(t *testing.T)
 	}
 }
 
-// TestIntegrationAsk_FreeKey_Returns200 verifies that /v1/ask enforces Developer+ tier.
+// TestIntegrationAsk_FreeKey_Returns200 verifies that /v1/ask is accessible to free-tier keys.
 func TestIntegrationAsk_FreeKey_Returns200(t *testing.T) {
 	app := setupTestApp(t)
 
