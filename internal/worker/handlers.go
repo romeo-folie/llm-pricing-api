@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/diff"
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/huggingface"
@@ -40,6 +41,10 @@ func (h *Handlers) SetLogger(l zerolog.Logger) {
 // table name used to pre-fetch matching stored prices for the diff engine.
 func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string, s scraper.Scraper) error {
 	h.logger.Info().Str("task", taskName).Msg("handler: starting")
+	status := "error"
+	defer func() {
+		metrics.ScraperRunsTotal.WithLabelValues(sourceName, status).Inc()
+	}()
 
 	scraped, err := s.Fetch(ctx)
 	if err != nil {
@@ -78,6 +83,7 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 	}
 
 	h.logger.Info().Str("task", taskName).Int("model_count", len(scraped)).Msg("handler: done")
+	status = "success"
 	return nil
 }
 

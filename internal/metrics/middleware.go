@@ -7,7 +7,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"llm-pricing-api/internal/api"
-	"llm-pricing-api/internal/middleware"
 )
 
 // PrometheusMiddleware returns a Fiber middleware that records
@@ -51,10 +50,16 @@ func PrometheusMiddleware() fiber.Handler {
 		// Use the registered route pattern to avoid per-ID cardinality explosion.
 		path := c.Route().Path
 		method := c.Method()
-		tier, _ := c.Locals(middleware.LocalKeyTier).(string)
-		hash, _ := c.Locals(middleware.LocalKeyHash).(string)
+		// Keep keys in sync with Auth middleware locals keys.
+		const (
+			localKeyTier = "tier"
+			localKeyHash = "key_hash"
+		)
+		tier, _ := c.Locals(localKeyTier).(string)
+		hash, _ := c.Locals(localKeyHash).(string)
 
 		RequestsTotal.WithLabelValues(method, path, status, tier, hash).Inc()
+		ObserveActiveKey(tier, hash)
 		RequestDurationSeconds.WithLabelValues(method, path).Observe(elapsed)
 
 		// Count 5xx as errors.

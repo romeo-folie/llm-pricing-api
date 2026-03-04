@@ -8,6 +8,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/metrics"
 )
 
 const (
@@ -79,6 +80,8 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		}
 
 		if int(count) > limit {
+			metrics.RateLimitHitsTotal.WithLabelValues(tier, hash).Inc()
+
 			// Compute seconds until midnight UTC for Retry-After.
 			retryAfter := int(time.Until(midnight).Seconds())
 			if retryAfter < 0 {
