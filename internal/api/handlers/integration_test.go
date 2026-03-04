@@ -300,31 +300,37 @@ func TestIntegrationAuth_ValidFreeKey_Returns200(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 2. Tier gating tests
+// 2. Free-key access tests (tier gating removed for dev endpoints)
 // -----------------------------------------------------------------------
 
-func TestIntegrationTierGating_FreeKey_HistoryEndpoint_Returns403(t *testing.T) {
+func TestIntegrationFreeKey_HistoryEndpoint_Returns200(t *testing.T) {
 	app := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models/1/history", freeAuth)
 
-	assertTierGating403(t, status, body, middleware.TierDeveloper)
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
 }
 
-func TestIntegrationTierGating_FreeKey_RecommendEndpoint_Returns403(t *testing.T) {
+func TestIntegrationFreeKey_RecommendEndpoint_Returns200(t *testing.T) {
 	app := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/recommend", freeAuth)
 
-	assertTierGating403(t, status, body, middleware.TierDeveloper)
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
 }
 
-func TestIntegrationTierGating_FreeKey_ContextEndpoint_Returns403(t *testing.T) {
+func TestIntegrationFreeKey_ContextEndpoint_Returns200(t *testing.T) {
 	app := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/context", freeAuth)
 
-	assertTierGating403(t, status, body, middleware.TierDeveloper)
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
 }
 
 func TestIntegrationTierGating_FreeKey_WebhooksEndpoint_Returns403(t *testing.T) {
@@ -383,14 +389,12 @@ func assertTierGating403(t *testing.T, status int, body []byte, expectedTier str
 // 3. Rate limiting tests
 // -----------------------------------------------------------------------
 
-// TestIntegrationRateLimit_FreeKeyExceedsDailyLimit_Returns429 exhausts the
-// 100-request free daily limit in one test run. setupTestApp flushes all
-// rate-limit / cache / unkey Redis keys on entry, so this test starts from a
-// clean counter regardless of run order.
-func TestIntegrationRateLimit_FreeKeyExceedsDailyLimit_Returns429(t *testing.T) {
+// TestIntegrationRateLimit_FreeKey_101RequestsStillAllowed verifies free keys
+// are no longer capped at 100/day (limit raised to 1M/day).
+func TestIntegrationRateLimit_FreeKey_101RequestsStillAllowed(t *testing.T) {
 	app := setupTestApp(t)
 
-	// Make exactly 100 requests (the free daily limit).
+	// Make 100 requests; all should succeed well below 1M/day.
 	for i := 0; i < 100; i++ {
 		status, body := apiGet(t, app, "/v1/models", freeAuth)
 		if status != fiber.StatusOK {
@@ -398,7 +402,7 @@ func TestIntegrationRateLimit_FreeKeyExceedsDailyLimit_Returns429(t *testing.T) 
 		}
 	}
 
-	// The 101st request must be rate-limited.
+	// The 101st request should still succeed.
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	req.Header.Set("Authorization", freeAuth)
 	resp, err := app.Test(req, 10_000)
@@ -408,11 +412,8 @@ func TestIntegrationRateLimit_FreeKeyExceedsDailyLimit_Returns429(t *testing.T) 
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
-	if resp.StatusCode != fiber.StatusTooManyRequests {
-		t.Fatalf("101st request: expected 429, got %d; body: %s", resp.StatusCode, body)
-	}
-	if resp.Header.Get("Retry-After") == "" {
-		t.Error("429 response must include Retry-After header")
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("101st request: expected 200, got %d; body: %s", resp.StatusCode, body)
 	}
 }
 
@@ -775,7 +776,7 @@ func TestIntegrationRFC7807_AllErrorResponsesHaveProblemContentType(t *testing.T
 		{"model not found by integer id", "GET", "/v1/models/99999", devAuth, 404},
 		{"model not found by slug", "GET", "/v1/models/unknown/slug", devAuth, 404},
 		{"too many compare ids", "GET", "/v1/compare?models=1,2,3,4,5,6", devAuth, 400},
-		{"free tier on dev endpoint", "GET", "/v1/models/1/history", freeAuth, 403},
+		{"free key on history endpoint", "GET", "/v1/models/1/history", freeAuth, 200},
 	}
 
 	for _, tc := range cases {
@@ -1001,15 +1002,17 @@ func TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels(t *testing.T)
 	}
 }
 
-// TestIntegrationAsk_FreeKey_Returns403 verifies that /v1/ask enforces Developer+ tier.
-func TestIntegrationAsk_FreeKey_Returns403(t *testing.T) {
+// TestIntegrationAsk_FreeKey_Returns200 verifies that /v1/ask enforces Developer+ tier.
+func TestIntegrationAsk_FreeKey_Returns200(t *testing.T) {
 	app := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/ask", freeAuth, map[string]string{
 		"query": "What is the price of gpt-4o?",
 	})
 
-	assertTierGating403(t, status, body, middleware.TierDeveloper)
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
 }
 
 // TestIntegrationAsk_EmptyQuery_Returns400 verifies validation for empty query.
