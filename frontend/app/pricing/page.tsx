@@ -1,134 +1,70 @@
 import type { Metadata } from "next"
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
 import { safeJsonLd } from "@/lib/utils"
 
 export const revalidate = false
 
 export const metadata: Metadata = {
-  title: "API Plans & Pricing — LLM Pricing Data for Developers",
+  title: "API Features — LLM Pricing Data for Developers",
   description:
-    "Access reconciled AI model pricing data via API. Free tier (100 req/day), Developer ($14.99/mo, 10k req/day with price history), and Pro ($29.99/mo, unlimited + webhooks + SLA).",
+    "Explore LLMRates API capabilities: reconciled pricing, full history, agent-native endpoints, webhooks, and real-time change streaming.",
   alternates: { canonical: "/pricing" },
   openGraph: {
-    title: "LLMRates API Plans — AI Pricing Data for Developers & Agents",
+    title: "LLMRates API Features",
     description:
-      "Free to $29.99/mo. Access reconciled LLM pricing data, price history, agent-optimized endpoints, and webhooks.",
+      "Reconciled LLM pricing data with history, streaming updates, model recommendations, and webhook integrations.",
   },
 }
 
-interface Feature {
-  label: string
-  included: boolean
-  agent?: boolean
-}
-
-interface Tier {
-  rank:     string
-  name:     string
-  price:    string
-  requests: string
-  ctaLabel: string
-  ctaHref:  string
-  featured: boolean
-  features: Feature[]
-}
-
-const TIERS: Tier[] = [
+const FEATURE_GROUPS = [
   {
-    rank:     "RECRUIT",
-    name:     "Free",
-    price:    "$0",
-    requests: "100 req/day",
-    ctaLabel: "Browse Models",
-    ctaHref:  "/models",
-    featured: false,
-    features: [
-      { label: "100 req/day — hard capped",                included: true  },
-      { label: "GET /v1/models — list all models",         included: true  },
-      { label: "GET /v1/models/:id — model detail",        included: true  },
-      { label: "GET /v1/compare — up to 5 models",        included: true  },
-      { label: "GET /v1/providers — provider list",        included: true  },
-      { label: "GET /v1/changes — recent price changes",   included: true  },
-      { label: "Price history (Dev+)",                     included: false },
-      { label: "⚡ Agent context snapshot (Dev+)",         included: false, agent: true },
-      { label: "⚡ Natural language queries (Dev+)",       included: false, agent: true },
-      { label: "⚡ SSE change stream (Dev+)",              included: false, agent: true },
-      { label: "Webhooks (Pro only)",                      included: false },
-      { label: "SLA guarantee (Pro only)",                 included: false },
+    title: "Core Pricing API",
+    items: [
+      "GET /v1/models — full model catalogue",
+      "GET /v1/models/:id — model detail",
+      "GET /v1/providers — provider catalogue",
+      "GET /v1/compare — side-by-side model comparison",
+      "GET /v1/changes — recent price deltas",
     ],
   },
   {
-    rank:     "ENGINEER",
-    name:     "Developer",
-    price:    "$14.99",
-    requests: "10,000 req/day",
-    ctaLabel: "Get API Key",
-    ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing",
-    featured: true,
-    features: [
-      { label: "Everything in Free",                               included: true  },
-      { label: "10,000 req/day — hard capped",                     included: true  },
-      { label: "GET /v1/models/:id/history — price history",      included: true  },
-      { label: "⚡ GET /v1/context — agent context snapshot",     included: true,  agent: true },
-      { label: "⚡ POST /v1/ask — natural language queries",      included: true,  agent: true },
-      { label: "⚡ GET /v1/stream/changes — SSE stream",         included: true,  agent: true },
-      { label: "⚡ GET /v1/recommend — model recommendations",   included: true,  agent: true },
-      { label: "Webhooks (Pro only)",                              included: false },
-      { label: "SLA guarantee (Pro only)",                         included: false },
+    title: "History & Context",
+    items: [
+      "GET /v1/models/:id/history — full price timeline",
+      "GET /v1/context — compact context snapshot for system prompts",
+      "GET /v1/recommend — model recommendations by task/context/price",
     ],
   },
   {
-    rank:     "ARCHITECT",
-    name:     "Pro",
-    price:    "$29.99",
-    requests: "Unlimited",
-    ctaLabel: "Go Pro",
-    ctaHref:  process.env.NEXT_PUBLIC_LS_CHECKOUT_PRO || "/pricing",
-    featured: false,
-    features: [
-      { label: "Everything in Developer",                         included: true  },
-      { label: "POST /v1/webhooks — webhook registration",        included: true  },
-      { label: "DELETE /v1/webhooks/:id",                         included: true  },
-      { label: "Unlimited requests",                              included: true  },
-      { label: "4hr SLA during business hours",                   included: true  },
-      { label: "Priority support",                                 included: true  },
+    title: "Agent & Automation",
+    items: [
+      "POST /v1/ask — natural language pricing queries",
+      "GET /v1/stream/changes — SSE stream with replay semantics",
+      "POST /v1/webhooks — signed webhook subscriptions",
+      "DELETE /v1/webhooks/:id — webhook removal",
     ],
   },
 ]
 
 const FAQ = [
   {
-    q: "How are prices kept up to date?",
-    a: "We scrape OpenRouter every 6 hours and LiteLLM and provider documentation daily. Our reconciliation engine requires agreement from at least 2 sources before publishing any price change.",
+    q: "How are prices verified?",
+    a: "Data is scraped from multiple sources and reconciled before publishing. Divergent values are flagged for review.",
   },
   {
-    q: "What does 'reconciled pricing' mean?",
-    a: "Our diff engine flags price discrepancies greater than 5% between sources for human review. Only values confirmed by multiple sources are published to the API — no raw, unverified scrape data.",
+    q: "How fast do changes appear?",
+    a: "Price updates are ingested continuously and surfaced through API endpoints and streaming channels.",
   },
   {
-    q: "Do I need a credit card for the Free tier?",
-    a: "No. The Free tier is genuinely free with no payment information required. You can start making API calls immediately after generating a key.",
+    q: "Can I use this in production agents?",
+    a: "Yes. /v1/context and /v1/ask are optimized for prompt-injection workflows and low-latency agent use.",
   },
   {
-    q: "What happens if I exceed my rate limit?",
-    a: "You'll receive a 429 response with a Retry-After header indicating when you can make your next request. There are no overage charges — the Free and Developer tiers are hard-capped.",
-  },
-  {
-    q: "Can I use this in my AI agent's system prompt?",
-    a: "Yes. GET /v1/context returns a ~2,000 token pricing snapshot specifically designed for injection into agent system prompts. It includes current prices, confidence scores, and source attribution. Available on Developer tier.",
-  },
-  {
-    q: "Is there a webhook for price changes?",
-    a: "Yes, on the Pro tier. Register your HTTPS endpoint via POST /v1/webhooks. Payloads are signed with HMAC-SHA256, delivered at-least-once with 3 retries over 15 minutes.",
+    q: "Are webhook payloads signed?",
+    a: "Yes. Webhook events are signed with HMAC-SHA256 so receivers can verify authenticity.",
   },
 ]
 
-export default function PricingPage() {
+export default function FeaturesPage() {
   const faqJsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -148,207 +84,62 @@ export default function PricingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonLd(faqJsonLd) }}
       />
+
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-
-        {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: "48px" }}>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            [ PLANS &amp; PRICING ]
+        <header style={{ textAlign: "center", marginBottom: "40px" }}>
+          <span className="font-orbitron text-xs tracking-widest" style={{ color: "var(--dim)" }}>
+            [ API FEATURES ]
           </span>
-          <h1
-            className="font-outfit text-3xl font-bold"
-            style={{ color: "var(--ink)", marginBottom: "12px" }}
-          >
-            Plans & Pricing
+          <h1 className="font-outfit text-3xl font-bold" style={{ color: "var(--ink)", marginTop: "12px" }}>
+            Features
           </h1>
-          <p className="font-outfit text-base" style={{ color: "var(--muted)", maxWidth: "480px", margin: "0 auto" }}>
-            Reconciled LLM pricing data. From free exploration to agent-grade access with full history and webhooks.
+          <p className="font-outfit text-base" style={{ color: "var(--muted)", maxWidth: "700px", margin: "12px auto 0" }}>
+            Everything in one reconciled API: model catalogue, history, recommendations,
+            natural-language query endpoints, stream updates, and webhook automation.
           </p>
-        </div>
+        </header>
 
-        {/* Rank progression strip */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "12px",
-            marginBottom: "36px",
-          }}
-        >
-          {["RECRUIT", "ENGINEER", "ARCHITECT"].map((rank, i) => (
-            <div key={rank} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span
-                  className="font-orbitron text-xs"
-                  style={{
-                    color: i === 1 ? "var(--accent)" : "var(--dim)",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  {["▪", "▪▪", "▪▪▪"][i]}
-                </span>
-                <span
-                  className="font-orbitron text-xs"
-                  style={{ color: i === 1 ? "var(--accent)" : "var(--dim)", letterSpacing: "0.06em" }}
-                >
-                  {rank}
-                </span>
-              </div>
-              {i < 2 && (
-                <span className="font-outfit text-sm" style={{ color: "var(--border)" }}>──→</span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Tier cards */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "16px",
-            marginBottom: "64px",
-          }}
-        >
-          {TIERS.map((tier) => (
-            <div
-              key={tier.name}
+        <section className="grid gap-4 md:grid-cols-3" style={{ marginBottom: "48px" }}>
+          {FEATURE_GROUPS.map((group) => (
+            <article
+              key={group.title}
               style={{
-                position: "relative",
-                padding: "24px",
-                backgroundColor: "var(--surface)",
+                background: "var(--surface)",
                 border: "1px solid var(--borderDk)",
-                borderTop: "1px solid var(--borderDk)",
+                padding: "20px",
               }}
             >
-              {tier.featured && (
-                <div
-                  className="font-orbitron text-xs"
-                  style={{
-                    position: "absolute",
-                    top: "12px",
-                    right: "12px",
-                    padding: "2px 8px",
-                    border: "1px solid var(--accent)",
-                    color: "var(--accent)",
-                    backgroundColor: "var(--accentLt)",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  [ POPULAR ]
-                </div>
-              )}
-
-              {/* Rank badge */}
-              <div
-                className="font-orbitron text-xs"
-                style={{
-                  marginBottom: "8px",
-                  color: tier.featured ? "var(--accent)" : tier.name === "Pro" ? "var(--ink)" : "var(--dim)",
-                  letterSpacing: "0.1em",
-                }}
-              >
-                [ {tier.rank} ]
-              </div>
-
-              {/* Tier name */}
-              <h2
-                className="font-outfit text-xl font-bold"
-                style={{ color: "var(--ink)", marginBottom: "4px" }}
-              >
-                {tier.name}
+              <h2 className="font-outfit text-lg font-semibold" style={{ color: "var(--ink)", marginBottom: "12px" }}>
+                {group.title}
               </h2>
-
-              {/* Price */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: "4px", marginBottom: "4px" }}>
-                <span className="font-orbitron text-3xl" style={{ color: "var(--ink)" }}>
-                  {tier.price}
-                </span>
-                <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>/mo</span>
-              </div>
-
-              <div
-                className="font-outfit text-xs"
-                style={{ color: "var(--dim)", marginBottom: "20px" }}
-              >
-                {tier.requests}
-              </div>
-
-              {/* CTA */}
-              <a
-                href={tier.ctaHref}
-                className="font-outfit text-sm"
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: "10px",
-                  textAlign: "center",
-                  border:           tier.featured ? "none" : "1px solid var(--border)",
-                  backgroundColor:  tier.featured ? "var(--accent)" : "var(--surfaceLo)",
-                  color:            tier.featured ? "white" : "var(--text)",
-                  textDecoration:   "none",
-                  fontWeight:       600,
-                  marginBottom:     "20px",
-                }}
-              >
-                {tier.ctaLabel}
-              </a>
-
-              {/* Divider */}
-              <div style={{ borderTop: "1px solid var(--border)", marginBottom: "16px" }} />
-
-              {/* Features */}
-              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-                {tier.features.map((f) => (
-                  <li
-                    key={f.label}
-                    className="font-outfit text-xs"
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: "6px",
-                      color: f.included ? "var(--text)" : "var(--dim)",
-                    }}
-                  >
-                    <span style={{ flexShrink: 0, color: f.included ? "var(--green)" : "var(--dim)" }}>
-                      {f.included ? "✓" : "✗"}
-                    </span>
-                    {f.label}
+              <ul className="space-y-2">
+                {group.items.map((item) => (
+                  <li key={item} className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                    • {item}
                   </li>
                 ))}
               </ul>
-            </div>
+            </article>
           ))}
-        </div>
+        </section>
 
-        {/* FAQ */}
-        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "48px" }}>
-          <div style={{ maxWidth: "720px" }}>
-            <h2
-              className="font-outfit text-lg font-bold"
-              style={{ color: "var(--ink)", marginBottom: "16px" }}
-            >
-              FAQ
-            </h2>
-            <Accordion type="single" collapsible>
-              {FAQ.map((item, i) => (
-                <AccordionItem key={i} value={`faq-${i}`}>
-                  <AccordionTrigger className="font-outfit text-sm" style={{ color: "var(--ink)" }}>
-                    {item.q}
-                  </AccordionTrigger>
-                  <AccordionContent className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
-                    {item.a}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
+        <section>
+          <h2 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)", marginBottom: "12px" }}>
+            FAQ
+          </h2>
+          <div className="space-y-4">
+            {FAQ.map((item) => (
+              <div key={item.q} style={{ border: "1px solid var(--border)", padding: "16px" }}>
+                <h3 className="font-outfit text-base font-semibold" style={{ color: "var(--ink)" }}>
+                  {item.q}
+                </h3>
+                <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "8px" }}>
+                  {item.a}
+                </p>
+              </div>
+            ))}
           </div>
-        </div>
-
+        </section>
       </div>
     </main>
   )

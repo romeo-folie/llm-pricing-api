@@ -11,7 +11,7 @@ const NAV_LINKS = [
   { href: "/calculator", label: "Calculator" },
   { href: "/changes",    label: "Changes"    },
   { href: "/docs",       label: "Docs"       },
-  { href: "/pricing",    label: "Pricing"    },
+  { href: "/pricing",    label: "Features"   },
 ] as const
 
 export default function Nav() {
