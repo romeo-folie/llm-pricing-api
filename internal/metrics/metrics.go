@@ -15,11 +15,11 @@ var (
 	// ── HTTP API ──────────────────────────────────────────────────────────────
 
 	// RequestsTotal counts every completed HTTP request.
-	// Labels: method, path, status (HTTP status code string), tier, key_hash.
+	// Labels: method, path, status (HTTP status code string), tier.
 	RequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "llm_api_requests_total",
-		Help: "Total number of HTTP requests handled, partitioned by method, path, status, tier, and key_hash.",
-	}, []string{"method", "path", "status", "tier", "key_hash"})
+		Help: "Total number of HTTP requests handled, partitioned by method, path, status, and tier.",
+	}, []string{"method", "path", "status", "tier"})
 
 	// RequestDurationSeconds observes per-request latency.
 	// Labels: method, path.

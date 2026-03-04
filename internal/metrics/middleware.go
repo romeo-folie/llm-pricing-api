@@ -58,7 +58,7 @@ func PrometheusMiddleware() fiber.Handler {
 		tier, _ := c.Locals(localKeyTier).(string)
 		hash, _ := c.Locals(localKeyHash).(string)
 
-		RequestsTotal.WithLabelValues(method, path, status, tier, hash).Inc()
+		RequestsTotal.WithLabelValues(method, path, status, tier).Inc()
 		ObserveActiveKey(tier, hash)
 		RequestDurationSeconds.WithLabelValues(method, path).Observe(elapsed)
 

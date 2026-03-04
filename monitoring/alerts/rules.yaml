@@ -13,12 +13,12 @@ groups:
 
       - alert: LLMAPIAbuseSingleKeyHighVolume
         expr: |
-          max(sum(increase(llm_api_requests_total[1h])) by (key_hash)) > 50000
+          max(sum(increase(llm_api_rate_limit_hits_total[1h])) by (tier)) > 2000
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Single API key exceeded 50k requests/hour"
+          summary: "Rate-limit rejections exceeded threshold for a tier"
 
       - alert: LLMScraperFailureConsecutive
         expr: |

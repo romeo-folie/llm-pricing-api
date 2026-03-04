@@ -10,25 +10,41 @@
       "id": 1,
       "title": "Requests by endpoint",
       "type": "timeseries",
-      "targets": [{ "expr": "sum(rate(llm_api_requests_total[5m])) by (path)" }]
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total[5m])) by (path)"
+        }
+      ]
     },
     {
       "id": 2,
-      "title": "Per-key request rate",
+      "title": "Request rate by tier",
       "type": "timeseries",
-      "targets": [{ "expr": "sum(rate(llm_api_requests_total[5m])) by (key_hash)" }]
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_requests_total[5m])) by (tier)"
+        }
+      ]
     },
     {
       "id": 3,
-      "title": "Keys above 50k/day (approx)",
+      "title": "Rate-limit hits by tier (24h)",
       "type": "table",
-      "targets": [{ "expr": "sum(increase(llm_api_requests_total[24h])) by (key_hash) > 50000" }]
+      "targets": [
+        {
+          "expr": "sum(increase(llm_api_rate_limit_hits_total[24h])) by (tier)"
+        }
+      ]
     },
     {
       "id": 4,
       "title": "Rate-limit hits",
       "type": "timeseries",
-      "targets": [{ "expr": "sum(rate(llm_api_rate_limit_hits_total[5m])) by (tier)" }]
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_rate_limit_hits_total[5m])) by (tier)"
+        }
+      ]
     }
   ]
 }
