@@ -2,17 +2,18 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
-	unkeygo "github.com/unkeyed/unkey-go"
-	"github.com/unkeyed/unkey-go/models/components"
 
 	"llm-pricing-api/internal/api"
 )
@@ -47,41 +48,67 @@ type UnkeyVerifier interface {
 	VerifyKey(ctx context.Context, key, apiID string) (valid bool, tier string, err error)
 }
 
-// unkeyClient wraps the official Unkey Go SDK and implements UnkeyVerifier.
+// unkeyClient uses Unkey v2 HTTP API directly and implements UnkeyVerifier.
+// We avoid the old v1 SDK endpoint (api.unkey.dev), which no longer resolves.
 type unkeyClient struct {
-	sdk   *unkeygo.Unkey
-	apiID string
+	rootKey string
+	apiID   string // kept for interface compatibility / future policy checks
+	http    *http.Client
 }
 
-// NewUnkeyClient creates a real UnkeyVerifier backed by the Unkey Go SDK.
+// NewUnkeyClient creates a real UnkeyVerifier backed by Unkey v2 HTTP API.
 func NewUnkeyClient(rootKey, apiID string) UnkeyVerifier {
-	sdk := unkeygo.New(unkeygo.WithSecurity(rootKey))
-	return &unkeyClient{sdk: sdk, apiID: apiID}
+	return &unkeyClient{
+		rootKey: rootKey,
+		apiID:   apiID,
+		http:    &http.Client{Timeout: 8 * time.Second},
+	}
 }
 
-// VerifyKey calls the Unkey API. The apiID parameter is provided for
-// interface compatibility but is ignored — the stored u.apiID is used instead.
+// VerifyKey calls POST https://api.unkey.com/v2/keys.verifyKey with payload {key}.
+// v2 infers API from the key itself; apiID is no longer required in request body.
 func (u *unkeyClient) VerifyKey(ctx context.Context, key, _ string) (bool, string, error) {
-	apiID := unkeygo.String(u.apiID)
-	res, err := u.sdk.Keys.VerifyKey(ctx, components.V1KeysVerifyKeyRequest{
-		Key:   key,
-		APIID: apiID,
-	})
+	payload, _ := json.Marshal(map[string]string{"key": key})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.unkey.com/v2/keys.verifyKey", bytes.NewReader(payload))
+	if err != nil {
+		return false, "", fmt.Errorf("unkey request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+u.rootKey)
+
+	resp, err := u.http.Do(req)
 	if err != nil {
 		return false, "", fmt.Errorf("unkey verify: %w", err)
 	}
-	body := res.V1KeysVerifyKeyResponse
-	if body == nil || !body.Valid {
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	var body struct {
+		Data struct {
+			Valid bool `json:"valid"`
+			Meta  struct {
+				Tier string `json:"tier"`
+			} `json:"meta"`
+		} `json:"data"`
+		Error *struct {
+			Detail string `json:"detail"`
+			Status int    `json:"status"`
+			Title  string `json:"title"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return false, "", fmt.Errorf("unkey decode: %w", err)
+	}
+	if body.Error != nil {
+		return false, "", fmt.Errorf("unkey error %d: %s", body.Error.Status, body.Error.Detail)
+	}
+	if !body.Data.Valid {
 		return false, "", nil
 	}
 
 	tier := TierFree
-	if body.Meta != nil {
-		if v, ok := body.Meta["tier"]; ok {
-			if s, ok := v.(string); ok && s != "" {
-				tier = strings.ToLower(s)
-			}
-		}
+	if body.Data.Meta.Tier != "" {
+		tier = strings.ToLower(body.Data.Meta.Tier)
 	}
 	return true, tier, nil
 }
