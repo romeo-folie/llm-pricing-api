@@ -180,7 +180,11 @@ function toHistoryEntry(raw: RawHistoryItem): PriceHistoryEntry {
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const BASE_URL = process.env.LLM_PRICING_API_BASE_URL || "http://localhost:8080"
+const BASE_URL =
+  process.env.LLM_PRICING_API_BASE_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://api.llmrates.live"
+    : "http://localhost:8080")
 
 // Headers constructed lazily per-request so that a missing API_KEY at module
 // evaluation does not silently produce an empty bearer token that persists
