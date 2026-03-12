@@ -123,45 +123,30 @@ export default function FeaturesPage() {
           ))}
         </section>
 
-        <section
-          aria-labelledby="faq-heading"
-          style={{
-            marginTop: "8px",
-            background: "#140f0f",
-            border: "1px solid #2a2323",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
-          }}
-        >
-          <div className="mx-auto max-w-4xl border-x px-6 py-8 sm:px-10" style={{ borderColor: "#2a2323" }}>
+        <section aria-labelledby="faq-heading" style={{ marginTop: "8px" }}>
+          <div className="mx-auto max-w-4xl border-x px-6 py-8 sm:px-10" style={{ borderColor: "var(--border)" }}>
             <h2
               id="faq-heading"
               className="font-orbitron text-xs tracking-[0.14em] uppercase"
-              style={{ color: "#d8d1c8", marginBottom: "8px" }}
+              style={{ color: "var(--dim)", marginBottom: "10px" }}
             >
               FAQ
             </h2>
 
-            <div>
-              {FAQ.map((item, idx) => (
-                <details
-                  key={item.q}
-                  className="group"
-                  style={{
-                    borderTop: idx === 0 ? "1px solid #2a2323" : "none",
-                    borderBottom: "1px solid #2a2323",
-                  }}
-                >
+            <div style={{ borderTop: "1px solid var(--border)" }}>
+              {FAQ.map((item) => (
+                <details key={item.q} className="group py-1">
                   <summary
-                    className="list-none cursor-pointer select-none py-5 font-orbitron text-[1.65rem] sm:text-[1.75rem] leading-[1.1] tracking-[0.01em] flex items-start gap-4"
-                    style={{ color: "#f1eee8" }}
+                    className="list-none cursor-pointer select-none py-4 font-outfit text-[2rem] sm:text-[2.2rem] leading-[1.12] tracking-tight flex items-start gap-4"
+                    style={{ color: "var(--ink)" }}
                   >
-                    <span className="mt-[2px] w-5 text-[#8f8580]">
+                    <span className="mt-[2px] w-5" style={{ color: "var(--muted)" }}>
                       <span className="group-open:hidden">+</span>
                       <span className="hidden group-open:inline">−</span>
                     </span>
                     <span>{item.q}</span>
                   </summary>
-                  <p className="pb-5 pl-9 font-outfit text-base leading-relaxed" style={{ color: "#b8aea7", maxWidth: "80ch" }}>
+                  <p className="pb-4 pl-9 font-outfit text-base leading-relaxed" style={{ color: "var(--muted)", maxWidth: "80ch" }}>
                     {item.a}
                   </p>
                 </details>
