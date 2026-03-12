@@ -26,9 +26,11 @@ export default function Nav() {
       <div className="mx-auto max-w-[1280px] border-x border-y" style={{ borderColor: "var(--border)" }}>
         <div className="grid h-13 grid-cols-[auto_1fr_auto] items-center px-6 md:h-14 md:px-8">
           {/* Logo */}
-          <Link href="/" className="select-none whitespace-nowrap">
+          <Link href="/" className="flex items-center select-none whitespace-nowrap">
             <span className="font-orbitron text-base font-bold tracking-tight" style={{ color: "var(--ink)" }}>
-              LLMRates
+              LLM
+            </span><span className="font-outfit text-base font-semibold" style={{ color: "var(--accent)" }}>
+              Rates
             </span>
           </Link>
 

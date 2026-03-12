@@ -35,12 +35,17 @@ export default function Footer() {
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="lg:col-span-1">
-            <div className="mb-3">
+            <div className="mb-3 flex items-center">
               <span
                 className="font-orbitron text-base font-bold"
                 style={{ color: "var(--ink)" }}
               >
-                LLMRates
+                LLM
+              </span><span
+                className="font-outfit text-base font-semibold"
+                style={{ color: "var(--accent)" }}
+              >
+                Rates
               </span>
             </div>
             <p className="text-xs font-outfit leading-relaxed" style={{ color: "var(--muted)" }}>
