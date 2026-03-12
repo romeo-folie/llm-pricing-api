@@ -123,20 +123,86 @@ export default function FeaturesPage() {
           ))}
         </section>
 
-        <section>
-          <h2 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)", marginBottom: "12px" }}>
-            FAQ
-          </h2>
-          <div className="space-y-4">
-            {FAQ.map((item) => (
-              <div key={item.q} style={{ border: "1px solid var(--border)", padding: "16px" }}>
-                <h3 className="font-outfit text-base font-semibold" style={{ color: "var(--ink)" }}>
-                  {item.q}
-                </h3>
-                <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "8px" }}>
-                  {item.a}
-                </p>
-              </div>
+        <section aria-labelledby="faq-heading" style={{ position: "relative" }}>
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: "-18px -12px auto -12px",
+              height: "140px",
+              background:
+                "radial-gradient(70% 120% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 72%)",
+              pointerEvents: "none",
+            }}
+          />
+
+          <header style={{ marginBottom: "18px", position: "relative" }}>
+            <h2 id="faq-heading" className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)", marginBottom: "8px" }}>
+              FAQ
+            </h2>
+            <p className="font-outfit text-sm" style={{ color: "var(--dim)" }}>
+              Quick answers to common implementation questions.
+            </p>
+          </header>
+
+          <div className="space-y-3" style={{ position: "relative" }}>
+            {FAQ.map((item, idx) => (
+              <details
+                key={item.q}
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--border) 75%, var(--accent) 25%)",
+                  background:
+                    "linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, var(--accent) 8%) 0%, var(--surface) 100%)",
+                  boxShadow: "0 1px 0 rgba(255,255,255,0.03) inset, 0 12px 32px rgba(0,0,0,0.12)",
+                  overflow: "hidden",
+                }}
+              >
+                <summary
+                  className="font-outfit"
+                  style={{
+                    listStyle: "none",
+                    cursor: "pointer",
+                    padding: "14px 16px",
+                    color: "var(--ink)",
+                    fontSize: "15px",
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      width: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      border: "1px solid color-mix(in srgb, var(--accent) 45%, var(--border) 55%)",
+                      color: "var(--accent)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "12px",
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {idx + 1}
+                  </span>
+                  <span>{item.q}</span>
+                </summary>
+
+                <div
+                  style={{
+                    padding: "0 16px 15px 48px",
+                    borderTop: "1px solid color-mix(in srgb, var(--border) 82%, var(--accent) 18%)",
+                  }}
+                >
+                  <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "10px", lineHeight: 1.6 }}>
+                    {item.a}
+                  </p>
+                </div>
+              </details>
             ))}
           </div>
         </section>
