@@ -104,8 +104,7 @@ export default function FeaturesPage() {
             <article
               key={group.title}
               style={{
-                background: "var(--surface)",
-                border: "1px solid var(--borderDk)",
+                border: "1px solid var(--border)",
                 padding: "20px",
               }}
             >
@@ -123,21 +122,44 @@ export default function FeaturesPage() {
           ))}
         </section>
 
-        <section>
-          <h2 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)", marginBottom: "12px" }}>
-            FAQ
-          </h2>
-          <div className="space-y-4">
-            {FAQ.map((item) => (
-              <div key={item.q} style={{ border: "1px solid var(--border)", padding: "16px" }}>
-                <h3 className="font-outfit text-base font-semibold" style={{ color: "var(--ink)" }}>
-                  {item.q}
-                </h3>
-                <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "8px" }}>
-                  {item.a}
-                </p>
-              </div>
-            ))}
+        <section aria-labelledby="faq-heading" style={{ marginTop: "32px" }}>
+          <div className="mx-auto max-w-4xl px-6 py-8 sm:px-10">
+            <h2
+              id="faq-heading"
+              className="font-outfit text-3xl font-bold text-center"
+              style={{ color: "var(--ink)", marginBottom: "24px" }}
+            >
+              FAQ
+            </h2>
+
+            <div>
+              {FAQ.map((item) => (
+                <details
+                  key={item.q}
+                  className="group"
+                >
+                  <summary
+                    className="list-none cursor-pointer select-none py-4 font-outfit text-lg sm:text-xl font-medium tracking-tight flex items-start gap-4"
+                    style={{ color: "var(--ink)" }}
+                  >
+                    <span
+                      className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center text-lg leading-none"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      <span className="group-open:hidden">+</span>
+                      <span className="hidden group-open:inline">−</span>
+                    </span>
+                    <span>{item.q}</span>
+                  </summary>
+                  <p
+                    className="pb-4 pl-9 font-outfit text-base leading-relaxed"
+                    style={{ color: "var(--muted)", maxWidth: "80ch" }}
+                  >
+                    {item.a}
+                  </p>
+                </details>
+              ))}
+            </div>
           </div>
         </section>
       </div>
