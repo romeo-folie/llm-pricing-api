@@ -130,7 +130,7 @@ export default function FeaturesPage() {
               className="font-outfit text-xs font-bold uppercase tracking-[0.2em]"
               style={{ color: "var(--dim)", marginBottom: "24px" }}
             >
-              [ FAQ ]
+              FAQ
             </h2>
 
             <div>
@@ -140,7 +140,7 @@ export default function FeaturesPage() {
                   className="group"
                 >
                   <summary
-                    className="list-none cursor-pointer select-none py-6 font-outfit text-lg sm:text-xl font-medium tracking-tight flex items-start gap-4"
+                    className="list-none cursor-pointer select-none py-4 font-outfit text-lg sm:text-xl font-medium tracking-tight flex items-start gap-4"
                     style={{ color: "var(--ink)" }}
                   >
                     <span
@@ -153,7 +153,7 @@ export default function FeaturesPage() {
                     <span>{item.q}</span>
                   </summary>
                   <p
-                    className="pb-6 pl-9 font-outfit text-base leading-relaxed"
+                    className="pb-4 pl-9 font-outfit text-base leading-relaxed"
                     style={{ color: "var(--muted)", maxWidth: "80ch" }}
                   >
                     {item.a}
