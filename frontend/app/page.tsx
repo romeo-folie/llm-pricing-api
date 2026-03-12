@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { ArrowUpRight } from "lucide-react"
-import HeroWrapper from "@/components/hero/HeroWrapper"
+import HeroScene from "@/components/hero/HeroScene"
 import { getModels, getProviders, getChanges } from "@/lib/api"
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
@@ -260,9 +260,9 @@ export default async function Home() {
               </div>
             </div>
 
-            {/* Right: hero scene — 3D model with SVG fallback */}
+            {/* Right: hero scene */}
             <div className="w-full">
-              <HeroWrapper />
+              <HeroScene />
             </div>
           </div>
         </div>
