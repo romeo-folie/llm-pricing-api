@@ -127,8 +127,8 @@ export default function FeaturesPage() {
           <div className="mx-auto max-w-4xl px-6 py-8 sm:px-10">
             <h2
               id="faq-heading"
-              className="font-outfit text-xs font-bold uppercase tracking-[0.2em]"
-              style={{ color: "var(--dim)", marginBottom: "24px" }}
+              className="font-outfit text-3xl font-bold"
+              style={{ color: "var(--ink)", marginBottom: "24px" }}
             >
               FAQ
             </h2>
