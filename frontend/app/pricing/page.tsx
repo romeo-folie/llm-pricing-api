@@ -104,8 +104,7 @@ export default function FeaturesPage() {
             <article
               key={group.title}
               style={{
-                background: "var(--surface)",
-                border: "1px solid var(--borderDk)",
+                border: "1px solid var(--border)",
                 padding: "20px",
               }}
             >
