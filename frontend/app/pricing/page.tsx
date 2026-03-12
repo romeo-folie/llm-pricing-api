@@ -123,30 +123,40 @@ export default function FeaturesPage() {
           ))}
         </section>
 
-        <section aria-labelledby="faq-heading" style={{ marginTop: "8px" }}>
-          <div className="mx-auto max-w-4xl border-x px-6 py-8 sm:px-10" style={{ borderColor: "var(--border)" }}>
+        <section aria-labelledby="faq-heading" style={{ marginTop: "32px" }}>
+          <div className="mx-auto max-w-4xl px-6 py-8 sm:px-10">
             <h2
               id="faq-heading"
-              className="font-orbitron text-xs tracking-[0.14em] uppercase"
-              style={{ color: "var(--dim)", marginBottom: "10px" }}
+              className="font-outfit text-xs font-bold uppercase tracking-[0.2em]"
+              style={{ color: "var(--dim)", marginBottom: "24px" }}
             >
               FAQ
             </h2>
 
             <div style={{ borderTop: "1px solid var(--border)" }}>
               {FAQ.map((item) => (
-                <details key={item.q} className="group py-1">
+                <details
+                  key={item.q}
+                  className="group border-b"
+                  style={{ borderColor: "var(--border)" }}
+                >
                   <summary
-                    className="list-none cursor-pointer select-none py-4 font-outfit text-[2rem] sm:text-[2.2rem] leading-[1.12] tracking-tight flex items-start gap-4"
+                    className="list-none cursor-pointer select-none py-6 font-outfit text-lg sm:text-xl font-medium tracking-tight flex items-start gap-4"
                     style={{ color: "var(--ink)" }}
                   >
-                    <span className="mt-[2px] w-5" style={{ color: "var(--muted)" }}>
+                    <span
+                      className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center text-lg leading-none"
+                      style={{ color: "var(--muted)" }}
+                    >
                       <span className="group-open:hidden">+</span>
                       <span className="hidden group-open:inline">−</span>
                     </span>
                     <span>{item.q}</span>
                   </summary>
-                  <p className="pb-4 pl-9 font-outfit text-base leading-relaxed" style={{ color: "var(--muted)", maxWidth: "80ch" }}>
+                  <p
+                    className="pb-6 pl-9 font-outfit text-base leading-relaxed"
+                    style={{ color: "var(--muted)", maxWidth: "80ch" }}
+                  >
                     {item.a}
                   </p>
                 </details>
