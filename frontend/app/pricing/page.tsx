@@ -133,12 +133,11 @@ export default function FeaturesPage() {
               FAQ
             </h2>
 
-            <div style={{ borderTop: "1px solid var(--border)" }}>
+            <div>
               {FAQ.map((item) => (
                 <details
                   key={item.q}
-                  className="group border-b"
-                  style={{ borderColor: "var(--border)" }}
+                  className="group"
                 >
                   <summary
                     className="list-none cursor-pointer select-none py-6 font-outfit text-lg sm:text-xl font-medium tracking-tight flex items-start gap-4"
