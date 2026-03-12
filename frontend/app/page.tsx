@@ -114,9 +114,9 @@ const TESTIMONIALS = [
 ]
 
 const DATA_SOURCES = [
-  "OpenRouter",
-  "LiteLLM",
-  "Hugging Face",
+  { name: "OpenRouter", logo: "/provider-logos/openrouter.svg" },
+  { name: "LiteLLM", logo: "/provider-logos/litellm.png" },
+  { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
 ]
 
 // ─── SSR helpers ──────────────────────────────────────────────────────────────
@@ -273,15 +273,19 @@ export default async function Home() {
       <section aria-label="Data sources">
         <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-6">
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+          <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
             {DATA_SOURCES.map((source) => (
-              <span
-                key={source}
-                className="font-outfit text-sm font-medium"
-                style={{ color: "var(--muted)" }}
-              >
-                {source}
-              </span>
+              <div key={source.name} className="flex flex-col items-center gap-1.5">
+                <img
+                  src={source.logo}
+                  alt={source.name}
+                  title={source.name}
+                  className="h-6 w-auto opacity-80"
+                />
+                <span className="font-outfit text-xs font-medium" style={{ color: "var(--muted)" }}>
+                  {source.name}
+                </span>
+              </div>
             ))}
           </div>
         </div>
