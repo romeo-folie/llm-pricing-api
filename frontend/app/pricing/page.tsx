@@ -113,8 +113,13 @@ export default function FeaturesPage() {
               </h2>
               <ul className="space-y-2">
                 {group.items.map((item) => (
-                  <li key={item} className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
-                    • {item}
+                  <li
+                    key={item}
+                    className="font-outfit text-sm flex items-start gap-2"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    <span style={{ color: "var(--green)" }} aria-hidden="true">✓</span>
+                    <span>{item}</span>
                   </li>
                 ))}
               </ul>
