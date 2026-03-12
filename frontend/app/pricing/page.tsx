@@ -127,6 +127,17 @@ export default function FeaturesPage() {
           ))}
         </section>
 
+        <div
+          style={{
+            borderTop: "1px solid var(--border)",
+            marginTop: "8px",
+            width: "min(100vw, 80rem)",
+            position: "relative",
+            left: "50%",
+            transform: "translateX(-50%)",
+          }}
+        />
+
         <section aria-labelledby="faq-heading" style={{ marginTop: "32px" }}>
           <div className="mx-auto max-w-4xl px-6 py-8 sm:px-10">
             <h2
