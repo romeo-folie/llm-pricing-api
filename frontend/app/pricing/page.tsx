@@ -144,7 +144,7 @@ export default function FeaturesPage() {
                   className="group"
                 >
                   <summary
-                    className="list-none cursor-pointer select-none py-4 font-outfit text-lg sm:text-xl font-medium tracking-tight flex items-start gap-4"
+                    className="list-none cursor-pointer select-none py-4 font-outfit text-base sm:text-lg font-medium tracking-tight flex items-start gap-4"
                     style={{ color: "var(--ink)" }}
                   >
                     <span
