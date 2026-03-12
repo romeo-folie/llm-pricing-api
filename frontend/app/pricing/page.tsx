@@ -130,7 +130,7 @@ export default function FeaturesPage() {
               className="font-outfit text-xs font-bold uppercase tracking-[0.2em]"
               style={{ color: "var(--dim)", marginBottom: "24px" }}
             >
-              FAQ
+              [ FAQ ]
             </h2>
 
             <div>
