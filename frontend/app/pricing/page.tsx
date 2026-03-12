@@ -123,87 +123,50 @@ export default function FeaturesPage() {
           ))}
         </section>
 
-        <section aria-labelledby="faq-heading" style={{ position: "relative" }}>
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: "-18px -12px auto -12px",
-              height: "140px",
-              background:
-                "radial-gradient(70% 120% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 72%)",
-              pointerEvents: "none",
-            }}
-          />
-
-          <header style={{ marginBottom: "18px", position: "relative" }}>
-            <h2 id="faq-heading" className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)", marginBottom: "8px" }}>
+        <section
+          aria-labelledby="faq-heading"
+          style={{
+            marginTop: "8px",
+            background: "#140f0f",
+            border: "1px solid #2a2323",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
+          }}
+        >
+          <div className="mx-auto max-w-4xl border-x px-6 py-8 sm:px-10" style={{ borderColor: "#2a2323" }}>
+            <h2
+              id="faq-heading"
+              className="font-orbitron text-xs tracking-[0.14em] uppercase"
+              style={{ color: "#d8d1c8", marginBottom: "8px" }}
+            >
               FAQ
             </h2>
-            <p className="font-outfit text-sm" style={{ color: "var(--dim)" }}>
-              Quick answers to common implementation questions.
-            </p>
-          </header>
 
-          <div className="space-y-3" style={{ position: "relative" }}>
-            {FAQ.map((item, idx) => (
-              <details
-                key={item.q}
-                style={{
-                  border: "1px solid color-mix(in srgb, var(--border) 75%, var(--accent) 25%)",
-                  background:
-                    "linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, var(--accent) 8%) 0%, var(--surface) 100%)",
-                  boxShadow: "0 1px 0 rgba(255,255,255,0.03) inset, 0 12px 32px rgba(0,0,0,0.12)",
-                  overflow: "hidden",
-                }}
-              >
-                <summary
-                  className="font-outfit"
+            <div>
+              {FAQ.map((item, idx) => (
+                <details
+                  key={item.q}
+                  className="group"
                   style={{
-                    listStyle: "none",
-                    cursor: "pointer",
-                    padding: "14px 16px",
-                    color: "var(--ink)",
-                    fontSize: "15px",
-                    fontWeight: 600,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
+                    borderTop: idx === 0 ? "1px solid #2a2323" : "none",
+                    borderBottom: "1px solid #2a2323",
                   }}
                 >
-                  <span
-                    aria-hidden
-                    style={{
-                      width: "22px",
-                      height: "22px",
-                      borderRadius: "999px",
-                      border: "1px solid color-mix(in srgb, var(--accent) 45%, var(--border) 55%)",
-                      color: "var(--accent)",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "12px",
-                      lineHeight: 1,
-                      flexShrink: 0,
-                    }}
+                  <summary
+                    className="list-none cursor-pointer select-none py-5 font-orbitron text-[1.65rem] sm:text-[1.75rem] leading-[1.1] tracking-[0.01em] flex items-start gap-4"
+                    style={{ color: "#f1eee8" }}
                   >
-                    {idx + 1}
-                  </span>
-                  <span>{item.q}</span>
-                </summary>
-
-                <div
-                  style={{
-                    padding: "0 16px 15px 48px",
-                    borderTop: "1px solid color-mix(in srgb, var(--border) 82%, var(--accent) 18%)",
-                  }}
-                >
-                  <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "10px", lineHeight: 1.6 }}>
+                    <span className="mt-[2px] w-5 text-[#8f8580]">
+                      <span className="group-open:hidden">+</span>
+                      <span className="hidden group-open:inline">−</span>
+                    </span>
+                    <span>{item.q}</span>
+                  </summary>
+                  <p className="pb-5 pl-9 font-outfit text-base leading-relaxed" style={{ color: "#b8aea7", maxWidth: "80ch" }}>
                     {item.a}
                   </p>
-                </div>
-              </details>
-            ))}
+                </details>
+              ))}
+            </div>
           </div>
         </section>
       </div>
