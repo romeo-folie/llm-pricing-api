@@ -20,10 +20,10 @@ export default function Nav() {
 
   return (
     <header
-      className="sticky top-0 z-50 w-full border-y"
-      style={{ backgroundColor: "var(--bg)", borderColor: "var(--border)" }}
+      className="sticky top-0 z-50 w-full"
+      style={{ backgroundColor: "var(--bg)" }}
     >
-      <div className="mx-auto max-w-[1280px] border-x" style={{ borderColor: "var(--border)" }}>
+      <div className="mx-auto max-w-[1280px] border-x border-y" style={{ borderColor: "var(--border)" }}>
         <div className="grid h-13 grid-cols-[auto_1fr_auto] items-center px-6 md:h-14 md:px-8">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-0.5 select-none whitespace-nowrap">
