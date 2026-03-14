@@ -368,8 +368,9 @@ func normalizeSlug(name string) string {
 
 // --- HTML helpers ---------------------------------------------------------
 
-// cleanText returns the trimmed text content of n with internal whitespace
-// collapsed.
+// cleanText returns the trimmed text content of n.
+// Leading/trailing whitespace is stripped; use textContent directly if
+// raw whitespace is needed.
 func cleanText(n *html.Node) string {
 	return strings.TrimSpace(textContent(n))
 }
