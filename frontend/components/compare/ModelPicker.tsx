@@ -62,8 +62,8 @@ export default function ModelPicker({
                 border: "1px solid var(--borderDk)",
 
 
-                backgroundColor: "var(--surfaceLo)",
-                color: "var(--text)",
+                backgroundColor: "var(--bg)",
+                color: "var(--ink)",
               }}
             >
               {m.name}
@@ -90,8 +90,8 @@ export default function ModelPicker({
         style={{
           padding: "8px 12px",
           border: "1px solid var(--border)",
-          backgroundColor: atMax ? "var(--surfaceLo)" : "var(--surface)",
-          color: "var(--text)",
+          backgroundColor: atMax ? "var(--surfaceLo)" : "var(--bg)",
+          color: "var(--ink)",
           outline: "none",
           width: "100%",
         }}
@@ -107,7 +107,7 @@ export default function ModelPicker({
             zIndex: 50,
             border: "1px solid var(--borderDk)",
             borderTop: "none",
-            backgroundColor: "var(--surface)",
+            backgroundColor: "var(--bg)",
             maxHeight: "240px",
             overflowY: "auto",
             margin: 0,
@@ -128,13 +128,14 @@ export default function ModelPicker({
                   border: "none",
                   borderBottom: "1px solid var(--border)",
                   cursor: "pointer",
-                  color: "var(--text)",
+                  color: "var(--ink)",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  transition: "background-color 0.12s",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--surfaceLo)")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FDFAF7" }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent" }}
               >
                 <span>{m.name}</span>
                 <span className="font-outfit text-xs" style={{ color: "var(--muted)", padding: "1px 6px", border: "1px solid var(--border)" }}>

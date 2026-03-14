@@ -47,7 +47,7 @@ export default function Pagination({
     height: "32px",
     padding: "0 8px",
     border: "1px solid var(--border)",
-    backgroundColor: "var(--surface)",
+    backgroundColor: "var(--bg)",
     color: "var(--muted)",
     textDecoration: "none",
     cursor: "pointer",

@@ -190,7 +190,7 @@ export default function ChangesFeed({
     }
   }
 
-  const liveColor = pollFailed ? "var(--dim)" : "var(--accent)"
+
 
   return (
     <div>
@@ -235,19 +235,22 @@ export default function ChangesFeed({
               display: "inline-flex",
               alignItems: "center",
               gap: "5px",
-              padding: "3px 8px",
-              border: `1px solid ${liveColor}`,
-              color: liveColor,
-              backgroundColor: polling && !pollFailed ? "var(--accentLt)" : "var(--surfaceLo)",
+              padding: "1px 6px",
+              border: "none",
+              color: "#ffffff",
+              backgroundColor: polling && !pollFailed ? "#10B981" : "var(--muted)",
+              letterSpacing: "0.12em",
+              fontSize: "0.65rem",
+              lineHeight: 1.4,
             }}
           >
             <span
               className={polling && !pollFailed ? "animate-live" : ""}
               style={{
-                width: "6px",
-                height: "6px",
+                width: "5px",
+                height: "5px",
                 borderRadius: "50%",
-                backgroundColor: liveColor,
+                backgroundColor: "rgba(255,255,255,0.7)",
                 display: "inline-block",
               }}
             />
@@ -308,10 +311,16 @@ export default function ChangesFeed({
           onChange={(e) => applyFilter(e.target.value, since)}
           className="font-outfit text-sm"
           style={{
-            padding: "6px 10px",
+            padding: "6px 32px 6px 12px",
             border: "1px solid var(--border)",
-            backgroundColor: "var(--surface)",
-            color: "var(--text)",
+            backgroundColor: "var(--bg)",
+            color: "var(--ink)",
+            cursor: "pointer",
+            outline: "none",
+            appearance: "none",
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2378716C' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 10px center",
           }}
         >
           <option value="">All providers</option>
@@ -326,10 +335,11 @@ export default function ChangesFeed({
           onChange={(e) => applyFilter(provider, e.target.value)}
           className="font-outfit text-sm"
           style={{
-            padding: "6px 10px",
+            padding: "6px 12px",
             border: "1px solid var(--border)",
-            backgroundColor: "var(--surface)",
-            color: "var(--text)",
+            backgroundColor: "var(--bg)",
+            color: "var(--ink)",
+            outline: "none",
           }}
         />
 
@@ -341,7 +351,7 @@ export default function ChangesFeed({
               padding: "6px 12px",
               border: "1px solid var(--border)",
               color: "var(--muted)",
-              backgroundColor: "var(--surface)",
+              backgroundColor: "var(--bg)",
               cursor: "pointer",
             }}
           >

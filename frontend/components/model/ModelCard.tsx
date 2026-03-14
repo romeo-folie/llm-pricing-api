@@ -41,8 +41,6 @@ export default function ModelCard({ model }: ModelCardProps) {
     router.push(`?${params.toString()}`, { scroll: false })
   }
 
-  const isStale = model.trust.age_hours >= 24
-
   return (
     <button
       onClick={openModal}
@@ -52,16 +50,16 @@ export default function ModelCard({ model }: ModelCardProps) {
         alignItems: "center",
         gap: "12px",
         padding: "12px 16px",
-        backgroundColor: "var(--surface)",
+        backgroundColor: "transparent",
         borderBottom: "1px solid var(--border)",
         cursor: "pointer",
         transition: "background-color 0.12s",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor  = "var(--surfaceLo)"
+        e.currentTarget.style.backgroundColor = "#FDFAF7"
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor  = "var(--surface)"
+        e.currentTarget.style.backgroundColor = "transparent"
       }}
     >
       {/* Confidence dot */}
@@ -84,15 +82,17 @@ export default function ModelCard({ model }: ModelCardProps) {
           display: "inline-flex",
           alignItems: "center",
           gap: "4px",
-          padding: "2px 6px",
-          border: "1px solid var(--accent)",
-          color: "var(--accent)",
-          backgroundColor: "var(--accentLt)",
+          padding: "1px 6px",
+          border: "none",
+          color: "#ffffff",
+          backgroundColor: "#10B981",
           flexShrink: 0,
-          opacity: isStale ? 0.5 : 1,
+          letterSpacing: "0.12em",
+          fontSize: "0.65rem",
+          lineHeight: 1.4,
         }}
       >
-        <span className="animate-live" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--accent)", display: "inline-block" }} />
+        <span className="animate-live" style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "rgba(255,255,255,0.7)", display: "inline-block" }} />
         LIVE
       </span>
 

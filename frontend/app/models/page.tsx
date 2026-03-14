@@ -127,7 +127,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             marginBottom: "20px",
             padding: "12px",
             border: "1px solid var(--border)",
-            backgroundColor: "var(--surfaceLo)",
+            backgroundColor: "var(--bg)",
           }}
         >
           {/* Provider */}
@@ -136,10 +136,16 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             defaultValue={sp.provider ?? ""}
             className="font-outfit text-sm"
             style={{
-              padding: "6px 10px",
+              padding: "6px 32px 6px 12px",
               border: "1px solid var(--border)",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
+              backgroundColor: "var(--bg)",
+              color: "var(--ink)",
+              cursor: "pointer",
+              outline: "none",
+              appearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2378716C' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 10px center",
             }}
           >
             <option value="">All providers</option>
@@ -154,10 +160,16 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             defaultValue={sp.modality ?? ""}
             className="font-outfit text-sm"
             style={{
-              padding: "6px 10px",
+              padding: "6px 32px 6px 12px",
               border: "1px solid var(--border)",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
+              backgroundColor: "var(--bg)",
+              color: "var(--ink)",
+              cursor: "pointer",
+              outline: "none",
+              appearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2378716C' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 10px center",
             }}
           >
             <option value="">All modalities</option>
@@ -172,10 +184,16 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             defaultValue={sp.min_context ?? ""}
             className="font-outfit text-sm"
             style={{
-              padding: "6px 10px",
+              padding: "6px 32px 6px 12px",
               border: "1px solid var(--border)",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
+              backgroundColor: "var(--bg)",
+              color: "var(--ink)",
+              cursor: "pointer",
+              outline: "none",
+              appearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2378716C' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 10px center",
             }}
           >
             <option value="">Any context</option>

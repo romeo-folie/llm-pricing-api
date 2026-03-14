@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { ArrowUpRight } from "lucide-react"
 import HeroScene from "@/components/hero/HeroScene"
+import { FeatureSections } from "@/components/features"
 import { getModels, getProviders, getChanges } from "@/lib/api"
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
@@ -457,73 +458,8 @@ export default async function Home() {
       </section>
 
       {/* ── Feature highlights ──────────────────────────────────────────── */}
-      <section aria-labelledby="features-heading">
-        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
-        <div className="max-w-6xl mx-auto px-6 py-16">
-          <div className="mb-10 flex items-end justify-between flex-wrap gap-4">
-            <div>
-              <span
-                className="font-orbitron text-xs tracking-widest"
-                style={{ color: "var(--dim)" }}
-              >
-                [ FEATURE HIGHLIGHTS ]
-              </span>
-              <h2
-                id="features-heading"
-                className="font-outfit text-2xl font-bold mt-3 mb-2"
-                style={{ color: "var(--ink)" }}
-              >
-                Feature highlights for agents and developers.
-              </h2>
-              <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
-                Everything is available through one unified API surface.
-              </p>
-            </div>
-            <a
-              href="/pricing"
-              className="font-outfit text-sm font-medium"
-              style={{ color: "var(--accent)" }}
-            >
-              Full feature list →
-            </a>
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-4">
-            {FEATURE_HIGHLIGHTS.map((t) => (
-              <div
-                key={t.title}
-                className="flex flex-col gap-4 p-6"
-                style={{
-                  border: "1px solid var(--border)",
-                  position: "relative",
-                }}
-              >
-                <div>
-                  <span
-                    className="font-orbitron text-xs tracking-widest"
-                    style={{ color: "var(--dim)" }}
-                  >
-                    [ {t.title.toUpperCase()} ]
-                  </span>
-                </div>
-
-                <ul className="flex flex-col gap-2">
-                  {t.points.map((point) => (
-                    <li
-                      key={point}
-                      className="font-outfit text-sm flex items-start gap-2"
-                      style={{ color: "var(--text)" }}
-                    >
-                      <span style={{ color: "var(--green)" }} aria-hidden="true">✓</span>
-                      {point}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-        </div>
+      <section aria-labelledby="feature-highlights-heading" style={{ borderBottom: "1px solid var(--border)" }}>
+        <FeatureSections />
       </section>
 
       {/* ── Final CTA ────────────────────────────────────────────────────── */}

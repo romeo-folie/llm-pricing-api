@@ -45,7 +45,7 @@ export default function CompareTable({ models, onRemove }: CompareTableProps) {
                 textAlign: "left",
                 color: "var(--dim)",
                 borderBottom: "2px solid var(--borderDk)",
-                backgroundColor: "var(--surfaceLo)",
+                backgroundColor: "var(--bg)",
                 width: "120px",
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
@@ -62,7 +62,7 @@ export default function CompareTable({ models, onRemove }: CompareTableProps) {
                     padding: "10px 12px",
                     borderBottom: "2px solid var(--borderDk)",
                     borderLeft: isBest ? "3px solid var(--accent)" : "1px solid var(--border)",
-                    backgroundColor: isBest ? "var(--accentLt)" : "var(--surface)",
+                    backgroundColor: isBest ? "var(--accentLt)" : "var(--bg)",
                     position: "relative",
                   }}
                 >
@@ -107,7 +107,7 @@ export default function CompareTable({ models, onRemove }: CompareTableProps) {
         {/* Data rows */}
         <tbody>
           {ROWS.map((row, i) => (
-            <tr key={row.label} style={{ backgroundColor: i % 2 === 0 ? "var(--surface)" : "var(--surfaceLo)" }}>
+            <tr key={row.label} style={{ backgroundColor: i % 2 === 0 ? "var(--bg)" : "var(--surfaceLo)" }}>
               <td
                 className="font-outfit text-xs"
                 style={{

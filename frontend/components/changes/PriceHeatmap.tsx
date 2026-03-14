@@ -206,19 +206,27 @@ export default function PriceHeatmap({
 
   if (treemapData.length === 0) {
     return (
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          backgroundColor: "var(--surface)",
-          minHeight: "200px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <EmptyState padding="40px 24px">
-          No price changes in this time window.
-        </EmptyState>
+      <div>
+        <span
+          className="font-orbitron text-xs tracking-widest"
+          style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+        >
+          [ PRICE HEATMAP ]
+        </span>
+        <div
+          style={{
+            height: "302px",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--surface)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <EmptyState padding="40px 24px">
+            No price changes in this time window.
+          </EmptyState>
+        </div>
       </div>
     )
   }
@@ -238,7 +246,7 @@ export default function PriceHeatmap({
           overflow: "hidden",
         }}
       >
-        <ResponsiveContainer width="100%" height={340}>
+        <ResponsiveContainer width="100%" height={300}>
           <Treemap
             data={treemapData}
             dataKey="size"
@@ -259,7 +267,7 @@ export default function PriceHeatmap({
           </Treemap>
         </ResponsiveContainer>
       </div>
-      {/* Legend */}
+      {/* Legend — outside border, below heatmap */}
       <div
         className="font-outfit text-xs"
         style={{
