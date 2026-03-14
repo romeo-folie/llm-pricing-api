@@ -89,7 +89,6 @@ export default function ModelCard({ model }: ModelCardProps) {
           color: "#ffffff",
           backgroundColor: "#10B981",
           flexShrink: 0,
-          opacity: isStale ? 0.5 : 1,
           letterSpacing: "0.12em",
           fontSize: "0.65rem",
           padding: "1px 6px",

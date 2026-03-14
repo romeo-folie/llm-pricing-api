@@ -23,10 +23,11 @@ export default function BiggestMovers({ topMovers }: BiggestMoversProps) {
       </span>
       <div
         style={{
+          height: "302px",
           border: "1px solid var(--border)",
           backgroundColor: "var(--surface)",
           padding: "12px",
-          minHeight: "200px",
+          overflowY: "auto",
         }}
       >
         {movers.length === 0 ? (

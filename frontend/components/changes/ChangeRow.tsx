@@ -25,7 +25,7 @@ export default function ChangeRow({ change, isNew }: ChangeRowProps) {
         gap: "12px",
         padding: "12px 16px",
         borderBottom: "1px solid var(--border)",
-        backgroundColor: "var(--surface)",
+        backgroundColor: "transparent",
       }}
     >
       {/* Model + provider */}

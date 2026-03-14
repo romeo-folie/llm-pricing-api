@@ -26,7 +26,7 @@ export default function TimeWindowSelector({ value, onChange }: TimeWindowSelect
             style={{
               padding: "4px 12px",
               border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-              backgroundColor: active ? "var(--accent)" : "var(--surface)",
+              backgroundColor: active ? "var(--accent)" : "var(--bg)",
               color: active ? "white" : "var(--muted)",
               cursor: "pointer",
               letterSpacing: "0.05em",

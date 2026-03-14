@@ -47,7 +47,7 @@
   font-family: var(--font-geist-mono, monospace);
   font-size: 0.78rem;
   line-height: 1.8;
-  color: var(--muted);
+  color: var(--ink);
   min-height: 220px;
   overflow-x: auto;
   white-space: pre;
