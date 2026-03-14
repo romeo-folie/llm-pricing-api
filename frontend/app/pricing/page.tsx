@@ -148,7 +148,7 @@ export default function FeaturesPage() {
                           className="font-orbitron text-xs"
                           style={{ color: "var(--dim)", letterSpacing: "0.08em" }}
                         >
-                          {group.tag}
+                          [ {group.tag} ]
                         </span>
                         <span
                           className="font-outfit text-sm font-semibold"

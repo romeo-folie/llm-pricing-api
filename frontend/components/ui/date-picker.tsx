@@ -34,11 +34,7 @@ export function DatePicker({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className={cn(
-            "font-outfit text-sm justify-start gap-2",
-            !value && "text-muted-foreground",
-            className
-          )}
+          className={cn("font-outfit text-sm justify-start gap-2", className)}
           style={{
             padding: "6px 12px",
             border: "1px solid var(--border)",
@@ -53,7 +49,7 @@ export function DatePicker({
             size={14}
             style={{ color: "var(--dim)", flexShrink: 0 }}
           />
-          {value ? format(parseISO(value), "MMM d, yyyy") : placeholder}
+          {selected ? format(selected, "MMM d, yyyy") : placeholder}
         </Button>
       </PopoverTrigger>
       <PopoverContent
