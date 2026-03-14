@@ -215,7 +215,7 @@ export default function PriceHeatmap({
         </span>
         <div
           style={{
-            height: "300px",
+            height: "302px",
             border: "1px solid var(--border)",
             backgroundColor: "var(--surface)",
             display: "flex",

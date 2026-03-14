@@ -190,7 +190,7 @@ export default function ChangesFeed({
     }
   }
 
-  const liveColor = pollFailed ? "var(--dim)" : "var(--accent)"
+
 
   return (
     <div>

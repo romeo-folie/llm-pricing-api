@@ -41,8 +41,6 @@ export default function ModelCard({ model }: ModelCardProps) {
     router.push(`?${params.toString()}`, { scroll: false })
   }
 
-  const isStale = model.trust.age_hours >= 24
-
   return (
     <button
       onClick={openModal}

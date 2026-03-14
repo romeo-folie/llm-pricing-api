@@ -76,7 +76,7 @@ export function SSEStream() {
   }, []);
 
   useEffect(() => {
-    // seed 3 initial events
+    // seed 3 initial events (startStream adds a 4th immediately after)
     const seed: StreamEvent[] = [];
     for (let i = 0; i < 3; i++) {
       eventId.current += 1;

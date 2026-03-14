@@ -43,7 +43,7 @@ export function FeatureSections() {
     <section className={styles.wrapper}>
       <div className={styles.sectionHeader}>
         <span className={styles.tag}>[ FEATURE HIGHLIGHTS ]</span>
-        <h2 className={styles.heading}>
+        <h2 id="feature-highlights-heading" className={styles.heading}>
           Feature highlights for agents and developers.
         </h2>
         <p className={styles.subheading}>

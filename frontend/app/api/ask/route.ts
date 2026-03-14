@@ -29,6 +29,21 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify(body),
   });
 
-  const data = await upstream.json();
-  return NextResponse.json(data, { status: upstream.status });
+  const contentType = upstream.headers.get("content-type") ?? ""
+  if (!contentType.includes("application/json")) {
+    const text = await upstream.text()
+    return NextResponse.json(
+      { error: "upstream returned non-JSON response", detail: text.slice(0, 200) },
+      { status: upstream.status }
+    )
+  }
+
+  let data: unknown
+  try {
+    data = await upstream.json()
+  } catch {
+    return NextResponse.json({ error: "failed to parse upstream response" }, { status: 502 })
+  }
+
+  return NextResponse.json(data, { status: upstream.status })
 }

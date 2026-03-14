@@ -458,7 +458,7 @@ export default async function Home() {
       </section>
 
       {/* ── Feature highlights ──────────────────────────────────────────── */}
-      <section aria-labelledby="features-heading" style={{ borderBottom: "1px solid var(--border)" }}>
+      <section aria-labelledby="feature-highlights-heading" style={{ borderBottom: "1px solid var(--border)" }}>
         <FeatureSections />
       </section>
 
