@@ -111,11 +111,11 @@ func TestFetch(t *testing.T) {
 	// Expect: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-5.4, gpt-5.4-pro
 	// (no-price-model skipped; fine-tuning and image sections skipped)
 	want := map[string]struct{}{
-		"openai/gpt-4-1":      {},
-		"openai/gpt-4-1-mini": {},
-		"openai/gpt-4-1-nano": {},
-		"openai/gpt-5-4":      {},
-		"openai/gpt-5-4-pro":  {},
+		"openai/gpt-4.1":      {},
+		"openai/gpt-4.1-mini": {},
+		"openai/gpt-4.1-nano": {},
+		"openai/gpt-5.4":      {},
+		"openai/gpt-5.4-pro":  {},
 	}
 
 	if len(models) != len(want) {
@@ -174,7 +174,7 @@ func TestFetch_PriceConversion(t *testing.T) {
 
 	var found bool
 	for _, m := range models {
-		if m.Slug != "openai/gpt-4-1" {
+		if m.Slug != "openai/gpt-4.1" {
 			continue
 		}
 		found = true
@@ -190,7 +190,7 @@ func TestFetch_PriceConversion(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected model openai/gpt-4-1 not found in Fetch result; got %d models", len(models))
+		t.Errorf("expected model openai/gpt-4.1 not found in Fetch result; got %d models", len(models))
 	}
 }
 
@@ -305,8 +305,8 @@ func TestParsePricePerMillion(t *testing.T) {
 
 func TestNormalizeSlug(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"gpt-4.1", "gpt-4-1"},
-		{"GPT Image 1.5", "gpt-image-1-5"},
+		{"gpt-4.1", "gpt-4.1"},
+		{"GPT Image 1.5", "gpt-image-1.5"},
 		{"gpt-4o", "gpt-4o"},
 		{"text-embedding-3-small", "text-embedding-3-small"},
 	}

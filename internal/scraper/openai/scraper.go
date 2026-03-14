@@ -116,7 +116,7 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 		return nil, fmt.Errorf("openai: no models returned after filtering — page structure may have changed")
 	}
 
-	slog.Info("openai: scraped models", "count", len(models), "tables", len(tables))
+	slog.Debug("openai: scraped models", "count", len(models), "tables", len(tables))
 	return models, nil
 }
 
@@ -434,10 +434,13 @@ func parsePricePerMillion(s string) (float64, error) {
 	return v / 1_000_000, nil
 }
 
-// normalizeSlug lowercases and replaces spaces/underscores/dots with hyphens.
+// normalizeSlug lowercases and replaces spaces and underscores with hyphens.
+// Dots are intentionally preserved so "gpt-4.1" stays "gpt-4.1" and matches
+// the canonical slug used by OpenRouter/LiteLLM scrapers for the same model,
+// enabling cross-source diff/reconciliation to work correctly.
 func normalizeSlug(name string) string {
 	name = strings.ToLower(name)
-	name = strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
+	name = strings.NewReplacer(" ", "-", "_", "-").Replace(name)
 	return name
 }
 
