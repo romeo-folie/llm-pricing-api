@@ -24,39 +24,39 @@ interface Endpoint {
 }
 
 const METHOD_STYLES: Record<HttpMethod, { bg: string; color: string }> = {
-  GET:    { bg: "rgba(16,126,114,0.1)",  color: "var(--accentDk)" },
-  POST:   { bg: "rgba(5,150,105,0.1)",   color: "var(--green)" },
-  DELETE: { bg: "rgba(220,38,38,0.1)",   color: "var(--red)" },
+  GET:    { bg: "var(--accentLt)",          color: "var(--accentDk)" },
+  POST:   { bg: "rgba(5,150,105,0.12)",     color: "var(--green)" },
+  DELETE: { bg: "rgba(220,38,38,0.1)",      color: "var(--red)" },
 }
 
-const FEATURE_GROUPS: { title: string; accent: string; endpoints: Endpoint[] }[] = [
+const FEATURE_GROUPS: { title: string; tag: string; endpoints: Endpoint[] }[] = [
   {
     title: "Core Pricing API",
-    accent: "var(--accent)",
+    tag: "PRICING",
     endpoints: [
-      { method: "GET",  path: "/v1/models",        desc: "Full model catalogue" },
-      { method: "GET",  path: "/v1/models/:id",    desc: "Model detail" },
-      { method: "GET",  path: "/v1/providers",     desc: "Provider catalogue" },
-      { method: "GET",  path: "/v1/compare",       desc: "Side-by-side model comparison" },
-      { method: "GET",  path: "/v1/changes",       desc: "Recent price deltas" },
+      { method: "GET", path: "/v1/models",        desc: "Full model catalogue with current prices and metadata" },
+      { method: "GET", path: "/v1/models/:id",    desc: "Model detail, full price history, and source attribution" },
+      { method: "GET", path: "/v1/providers",     desc: "Provider catalogue" },
+      { method: "GET", path: "/v1/compare",       desc: "Side-by-side model comparison" },
+      { method: "GET", path: "/v1/changes",       desc: "Recent price deltas with source and confidence" },
     ],
   },
   {
     title: "History & Context",
-    accent: "#8B5CF6",
+    tag: "HISTORY",
     endpoints: [
-      { method: "GET", path: "/v1/models/:id/history", desc: "Full price timeline" },
-      { method: "GET", path: "/v1/context",             desc: "Context snapshot for system prompts" },
-      { method: "GET", path: "/v1/recommend",           desc: "Model recommendations by task/price" },
+      { method: "GET", path: "/v1/models/:id/history", desc: "Full price timeline — every change, every source" },
+      { method: "GET", path: "/v1/context",             desc: "~2k token pricing snapshot for agent system prompts" },
+      { method: "GET", path: "/v1/recommend",           desc: "Ranked model recommendations by task, context, and price" },
     ],
   },
   {
     title: "Agent & Automation",
-    accent: "#F59E0B",
+    tag: "AGENT",
     endpoints: [
-      { method: "POST",   path: "/v1/ask",           desc: "Natural language pricing queries" },
-      { method: "GET",    path: "/v1/stream/changes", desc: "SSE stream with replay semantics" },
-      { method: "POST",   path: "/v1/webhooks",       desc: "Signed webhook subscriptions" },
+      { method: "POST",   path: "/v1/ask",           desc: "Natural language + structured pricing response" },
+      { method: "GET",    path: "/v1/stream/changes", desc: "SSE stream with Last-Event-ID reconnection semantics" },
+      { method: "POST",   path: "/v1/webhooks",       desc: "Signed webhook subscriptions for price change events" },
       { method: "DELETE", path: "/v1/webhooks/:id",   desc: "Webhook removal" },
     ],
   },
@@ -99,7 +99,7 @@ export default function FeaturesPage() {
         dangerouslySetInnerHTML={{ __html: safeJsonLd(faqJsonLd) }}
       />
 
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
         <header style={{ textAlign: "center", marginBottom: "48px" }}>
@@ -109,65 +109,100 @@ export default function FeaturesPage() {
           <h1 className="font-outfit text-3xl font-bold" style={{ color: "var(--ink)", marginTop: "12px" }}>
             Features
           </h1>
-          <p className="font-outfit text-base" style={{ color: "var(--muted)", maxWidth: "640px", margin: "12px auto 0", lineHeight: 1.7 }}>
+          <p className="font-outfit text-base" style={{ color: "var(--muted)", maxWidth: "600px", margin: "12px auto 0", lineHeight: 1.7 }}>
             Everything in one reconciled API: model catalogue, history, recommendations,
             natural-language query endpoints, stream updates, and webhook automation.
           </p>
         </header>
 
-        {/* Feature cards */}
-        <section className="grid gap-4 md:grid-cols-3" style={{ marginBottom: "56px" }}>
-          {FEATURE_GROUPS.map((group) => (
-            <article
-              key={group.title}
-              style={{
-                border: "1px solid var(--border)",
-                borderTop: `3px solid ${group.accent}`,
-                padding: "20px",
-                backgroundColor: "var(--surface)",
-              }}
-            >
-              <h2 className="font-outfit text-base font-semibold" style={{ color: "var(--ink)", marginBottom: "16px" }}>
-                {group.title}
-              </h2>
-              <ul style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {group.endpoints.map((ep) => {
-                  const ms = METHOD_STYLES[ep.method]
-                  return (
-                    <li key={ep.path} style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span
-                          className="font-orbitron"
-                          style={{
-                            fontSize: "0.6rem",
-                            letterSpacing: "0.05em",
-                            padding: "1px 5px",
-                            backgroundColor: ms.bg,
-                            color: ms.color,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {ep.method}
-                        </span>
+        {/* Unified endpoint reference table */}
+        <section style={{ marginBottom: "56px" }}>
+          <table
+            className="w-full"
+            style={{ border: "1px dashed var(--borderDk)", borderSpacing: 0, borderCollapse: "collapse" }}
+          >
+            <caption className="sr-only">LLMRates API endpoint reference</caption>
+            <thead className="sr-only">
+              <tr>
+                <th scope="col">Method</th>
+                <th scope="col">Path</th>
+                <th scope="col">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {FEATURE_GROUPS.map((group) => (
+                <>
+                  {/* Group header row */}
+                  <tr key={`header-${group.title}`}>
+                    <td
+                      colSpan={3}
+                      style={{
+                        padding: "10px 20px",
+                        backgroundColor: "var(--surfaceLo)",
+                        borderTop: "1px dashed var(--border)",
+                        borderBottom: "1px dashed var(--border)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <span
                           className="font-orbitron text-xs"
-                          style={{ color: "var(--ink)", letterSpacing: "0.02em" }}
+                          style={{ color: "var(--dim)", letterSpacing: "0.08em" }}
                         >
-                          {ep.path}
+                          [ {group.tag} ]
+                        </span>
+                        <span
+                          className="font-outfit text-sm font-semibold"
+                          style={{ color: "var(--ink)" }}
+                        >
+                          {group.title}
                         </span>
                       </div>
-                      <span
-                        className="font-outfit text-xs"
-                        style={{ color: "var(--muted)", paddingLeft: "2px" }}
+                    </td>
+                  </tr>
+
+                  {/* Endpoint rows */}
+                  {group.endpoints.map((ep) => {
+                    const ms = METHOD_STYLES[ep.method]
+                    return (
+                      <tr
+                        key={ep.path}
+                        style={{ borderTop: "1px dashed var(--border)" }}
                       >
-                        {ep.desc}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </article>
-          ))}
+                        <td style={{ padding: "12px 20px", width: "1%", whiteSpace: "nowrap" }}>
+                          <span
+                            className="font-orbitron text-xs font-semibold"
+                            style={{
+                              padding: "2px 6px",
+                              backgroundColor: ms.bg,
+                              color: ms.color,
+                            }}
+                          >
+                            {ep.method}
+                          </span>
+                        </td>
+                        <td style={{ padding: "12px 16px 12px 0", width: "1%", whiteSpace: "nowrap" }}>
+                          <code
+                            className="font-orbitron text-sm"
+                            style={{ color: "var(--ink)" }}
+                          >
+                            {ep.path}
+                          </code>
+                        </td>
+                        <td style={{ padding: "12px 20px 12px 0" }}>
+                          <span
+                            className="font-outfit text-sm"
+                            style={{ color: "var(--muted)" }}
+                          >
+                            {ep.desc}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </>
+              ))}
+            </tbody>
+          </table>
         </section>
 
         {/* Divider */}
