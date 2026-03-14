@@ -5,16 +5,13 @@ import "llm-pricing-api/internal/webhooks"
 // Task name constants for asynq job registration.
 // These strings are used as the task type identifier when enqueuing
 // and routing scraper jobs through the Redis-backed asynq queue.
-//
-// OpenAI, Anthropic, Google, Mistral, and Amazon provider HTML scrapers
-// were removed: their pricing pages are JavaScript SPAs and cannot be
-// reliably scraped with a plain HTTP GET. OpenRouter, LiteLLM, and
-// HuggingFace Inference Providers cover the same models via
-// machine-readable JSON endpoints.
 const (
 	TaskOpenRouterScrape  = "scrape:openrouter"
 	TaskLiteLLMScrape     = "scrape:litellm"
 	TaskHuggingFaceScrape = "scrape:huggingface"
+	// TaskOpenAIScrape triggers the HTML scraper for
+	// https://developers.openai.com/api/docs/pricing?latest-pricing=standard
+	TaskOpenAIScrape = "scrape:openai"
 )
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks

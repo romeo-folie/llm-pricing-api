@@ -13,6 +13,7 @@ import (
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/huggingface"
 	"llm-pricing-api/internal/scraper/litellm"
+	"llm-pricing-api/internal/scraper/openai"
 	"llm-pricing-api/internal/scraper/openrouter"
 )
 
@@ -103,4 +104,10 @@ func (h *Handlers) HandleLiteLLMScrape(ctx context.Context, _ *asynq.Task) error
 // the result through the diff and reconciliation pipeline.
 func (h *Handlers) HandleHuggingFaceScrape(ctx context.Context, _ *asynq.Task) error {
 	return h.runPipeline(ctx, TaskHuggingFaceScrape, "huggingface_inference_providers", huggingface.New(nil))
+}
+
+// HandleOpenAIScrape runs the OpenAI HTML pricing scraper and feeds the result
+// through the diff and reconciliation pipeline.
+func (h *Handlers) HandleOpenAIScrape(ctx context.Context, _ *asynq.Task) error {
+	return h.runPipeline(ctx, TaskOpenAIScrape, "openai", openai.New(nil))
 }
