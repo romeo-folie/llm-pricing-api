@@ -45,7 +45,9 @@ import (
 const defaultURL = "https://ai.google.dev/gemini-api/docs/pricing"
 
 // Googlebot UA is required to bypass the OAuth redirect that the page serves
-// to regular browser User-Agents.
+// to regular browser User-Agents.  A modern browser UA (e.g. Chrome) triggers
+// a sign-in redirect; Googlebot receives the static SSR HTML instead.
+// This is a deliberate implementation choice documented in issue #85.
 const userAgent = "Googlebot/2.1 (+http://www.google.com/bot.html)"
 
 // Scraper fetches model pricing from the Google Gemini API pricing page.
@@ -329,9 +331,14 @@ func parsePricePerMillion(s string) (float64, error) {
 	return v / 1_000_000, nil
 }
 
-// cleanModelName strips emoji, parenthetical tags, and extra whitespace from
-// a model heading.  E.g. "Gemini 3.1 Flash Image Preview 🍌" →
+// cleanModelName strips emoji and trims surrounding whitespace from a model
+// heading.  E.g. "Gemini 3.1 Flash Image Preview 🍌" →
 // "Gemini 3.1 Flash Image Preview".
+//
+// Note: parenthetical suffixes (e.g. "(deprecated)") are NOT stripped here —
+// the Gemini pricing page does not use them in model headings.  If they appear
+// in future, add parenthetical stripping similar to the Anthropic scraper's
+// canonicalAnthropicSlug helper.
 func cleanModelName(s string) string {
 	// Remove emoji (any character in Unicode category 'So' or 'Sm', or
 	// specifically the common emoji ranges).
