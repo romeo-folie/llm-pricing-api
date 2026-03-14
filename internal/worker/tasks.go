@@ -12,6 +12,8 @@ const (
 	// TaskOpenAIScrape triggers the HTML scraper for
 	// https://developers.openai.com/api/docs/pricing?latest-pricing=standard
 	TaskOpenAIScrape = "scrape:openai"
+	// TaskAnthropicScrape triggers the HTML scraper for anthropic.com/pricing.
+	TaskAnthropicScrape = "scrape:anthropic"
 )
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks

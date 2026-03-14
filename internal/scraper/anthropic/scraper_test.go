@@ -115,10 +115,12 @@ func TestFetch(t *testing.T) {
 	// Expect Claude Opus 4.6, Claude Sonnet 4.5, Claude Haiku 3.5
 	// (deprecated suffix stripped but model included; no-price row skipped).
 	// Batch and tool-use sections skipped.
+	// Canonical slug format: claude-<major>-<minor>-<variant>
+	// e.g. "Claude Opus 4.6" → "claude-4-6-opus"
 	want := map[string]struct{}{
-		"anthropic/claude-opus-4-6":   {},
-		"anthropic/claude-sonnet-4-5": {},
-		"anthropic/claude-haiku-3-5":  {},
+		"anthropic/claude-4-6-opus":   {},
+		"anthropic/claude-4-5-sonnet": {},
+		"anthropic/claude-3-5-haiku":  {},
 	}
 
 	if len(models) != len(want) {
@@ -169,18 +171,19 @@ func TestFetch_PriceConversion(t *testing.T) {
 	models, _ := s.Fetch(context.Background())
 
 	for _, m := range models {
-		if m.Slug != "anthropic/claude-opus-4-6" {
+		// Canonical slug for "Claude Opus 4.6" is "claude-4-6-opus"
+		if m.Slug != "anthropic/claude-4-6-opus" {
 			continue
 		}
 		// $5 / MTok → 5 / 1,000,000
 		const wantInput = 5.0 / 1_000_000
 		if m.InputCostPerToken != wantInput {
-			t.Errorf("claude-opus-4-6 InputCostPerToken: got %v, want %v", m.InputCostPerToken, wantInput)
+			t.Errorf("claude-4-6-opus InputCostPerToken: got %v, want %v", m.InputCostPerToken, wantInput)
 		}
 		// $25 / MTok → 25 / 1,000,000
 		const wantOutput = 25.0 / 1_000_000
 		if m.OutputCostPerToken != wantOutput {
-			t.Errorf("claude-opus-4-6 OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
+			t.Errorf("claude-4-6-opus OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
 	}
 }
@@ -195,10 +198,11 @@ func TestFetch_DeprecatedSuffix(t *testing.T) {
 	s := &Scraper{client: srv.Client(), url: srv.URL}
 	models, _ := s.Fetch(context.Background())
 
-	// "Claude Haiku 3.5 (deprecated)" should appear as "claude-haiku-3-5".
+	// "Claude Haiku 3.5 (deprecated)" should appear as "claude-3-5-haiku"
+	// (canonical format: version-first, variant-last; parenthetical stripped).
 	found := false
 	for _, m := range models {
-		if m.Slug == "anthropic/claude-haiku-3-5" {
+		if m.Slug == "anthropic/claude-3-5-haiku" {
 			found = true
 		}
 		// "(deprecated)" slug must not be present.
@@ -207,7 +211,7 @@ func TestFetch_DeprecatedSuffix(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected slug anthropic/claude-haiku-3-5 for deprecated model")
+		t.Errorf("expected slug anthropic/claude-3-5-haiku for deprecated model")
 	}
 }
 

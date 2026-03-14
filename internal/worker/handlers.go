@@ -11,6 +11,7 @@ import (
 	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/scraper"
+	"llm-pricing-api/internal/scraper/anthropic"
 	"llm-pricing-api/internal/scraper/huggingface"
 	"llm-pricing-api/internal/scraper/litellm"
 	"llm-pricing-api/internal/scraper/openai"
@@ -110,4 +111,10 @@ func (h *Handlers) HandleHuggingFaceScrape(ctx context.Context, _ *asynq.Task) e
 // through the diff and reconciliation pipeline.
 func (h *Handlers) HandleOpenAIScrape(ctx context.Context, _ *asynq.Task) error {
 	return h.runPipeline(ctx, TaskOpenAIScrape, "openai", openai.New(nil))
+}
+
+// HandleAnthropicScrape runs the Anthropic HTML pricing scraper and feeds the result
+// through the diff and reconciliation pipeline.
+func (h *Handlers) HandleAnthropicScrape(ctx context.Context, _ *asynq.Task) error {
+	return h.runPipeline(ctx, TaskAnthropicScrape, "anthropic", anthropic.New(nil))
 }

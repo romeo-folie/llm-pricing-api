@@ -301,7 +301,7 @@ func toScrapedModels(tables []PricingTable, fetchedAt time.Time) []scraper.Scrap
 				continue
 			}
 
-			slug := "anthropic/" + normalizeSlug(modelName)
+			slug := "anthropic/" + canonicalAnthropicSlug(modelName)
 			if seen[slug] {
 				continue
 			}
@@ -370,7 +370,50 @@ func cleanModelName(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// canonicalAnthropicSlug converts a human-facing Anthropic model name into the
+// canonical slug format used throughout the repo:
+//
+//	"Claude Opus 4.6"   → "claude-4-6-opus"
+//	"Claude Sonnet 4.5" → "claude-4-5-sonnet"
+//	"Claude Haiku 3.5"  → "claude-3-5-haiku"
+//
+// The existing repo convention for Anthropic slugs is
+// `anthropic/claude-<major>-<minor>-<variant>` (version first, variant last),
+// matching slugs like `anthropic/claude-3-5-sonnet-20241022` in aliases.go.
+// The scraper previously emitted `claude-opus-4-6` (variant first), which
+// would not match or reconcile against any existing rows.
+//
+// Parsing is deterministic for the "Claude <Variant> <Major>.<Minor>" pattern.
+// If parsing fails (unrecognised name format), the function falls back to a
+// simple lowercase-with-hyphens slug so unknown future models are still stored
+// rather than silently dropped.
+func canonicalAnthropicSlug(name string) string {
+	// Strip parenthetical suffixes like "(deprecated)" or "(beta)".
+	if idx := strings.Index(name, "("); idx != -1 {
+		name = strings.TrimSpace(name[:idx])
+	}
+
+	// Expected format: "Claude <Variant> <Major>.<Minor>"
+	// Split on spaces; token[0]="Claude", token[1]=variant, token[2]=version.
+	parts := strings.Fields(name)
+	if len(parts) == 3 && strings.EqualFold(parts[0], "claude") {
+		variant := strings.ToLower(parts[1])
+		version := parts[2] // e.g. "4.6" or "3.5"
+		verParts := strings.SplitN(version, ".", 2)
+		if len(verParts) == 2 {
+			major := strings.ReplaceAll(verParts[0], ".", "-")
+			minor := strings.ReplaceAll(verParts[1], ".", "-")
+			return fmt.Sprintf("claude-%s-%s-%s", major, minor, variant)
+		}
+	}
+
+	// Fallback: lowercase + replace separators.
+	name = strings.ToLower(name)
+	return strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
+}
+
 // normalizeSlug lowercases and replaces spaces/dots/underscores with hyphens.
+// Used for non-Anthropic model names within this package.
 func normalizeSlug(name string) string {
 	name = strings.ToLower(name)
 	name = strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
