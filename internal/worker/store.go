@@ -21,8 +21,7 @@ type WorkerStore interface {
 
 	// FetchPricesBySource returns all prices rows for the given source name.
 	// sourceName must match a name in the sources table (e.g. "openrouter",
-	// "litellm", "openai-docs", "anthropic-docs", "google-docs",
-	// "mistral-docs", "amazon-docs").
+	// "litellm", "openai", "anthropic", "huggingface_inference_providers").
 	FetchPricesBySource(ctx context.Context, sourceName string) ([]models.Price, error)
 
 	// EnsureModels upserts model rows from scraped data so that the
