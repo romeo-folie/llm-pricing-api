@@ -81,7 +81,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
           className="font-orbitron text-xs tracking-widest"
           style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
         >
-          [ CALCULATOR ]
+          CALCULATOR
         </span>
         <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
           Cost Calculator

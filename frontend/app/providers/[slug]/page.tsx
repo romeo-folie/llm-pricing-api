@@ -122,12 +122,6 @@ export default async function ProviderPage({ params }: PageProps) {
 
         {/* Header */}
         <div style={{ marginBottom: "32px" }}>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            [ PROVIDER ]
-          </span>
           <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
             {displayName} Model Pricing
           </h1>

@@ -27,7 +27,7 @@ export default function ModelDetailError({
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "16px" }}
       >
-        [ MODEL DETAIL ]
+        MODEL DETAIL
       </span>
       <h2
         className="font-orbitron text-lg font-bold"

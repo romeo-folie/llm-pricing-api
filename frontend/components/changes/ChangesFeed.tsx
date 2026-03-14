@@ -206,12 +206,6 @@ export default function ChangesFeed({
         }}
       >
         <div>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            [ PRICE CHANGES ]
-          </span>
           <h1
             className="font-outfit text-2xl font-bold"
             style={{ color: "var(--ink)" }}
@@ -291,7 +285,7 @@ export default function ChangesFeed({
           marginBottom: "12px",
         }}
       >
-        [ LIVE FEED ]
+        LIVE FEED
       </span>
 
       {/* Filters */}

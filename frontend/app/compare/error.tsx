@@ -22,7 +22,7 @@ export default function CompareError({
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "16px" }}
       >
-        [ COMPARE ]
+        COMPARE
       </span>
       <h2
         className="font-orbitron text-lg font-bold"

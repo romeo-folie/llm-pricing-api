@@ -185,12 +185,6 @@ export default async function CompareStaticPage({ params }: PageProps) {
 
         {/* Header */}
         <div style={{ marginBottom: "32px" }}>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            [ COMPARE ]
-          </span>
           <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
             {a.name} vs {b.name}
           </h1>
