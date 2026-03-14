@@ -190,7 +190,7 @@ body {
 
 /* ── shadcn Calendar — spacious sizing ─────────────────────────────────────── */
 [data-slot="calendar"] {
-  --cell-size: 2.75rem;
+  --cell-size: 2.25rem;
 }
 
 [data-slot="calendar"] button[name="day"] {

@@ -74,7 +74,7 @@ export function DatePicker({
           initialFocus
           style={
             {
-              "--cell-size": "2.75rem",
+              "--cell-size": "2.25rem",
               fontSize: "0.9rem",
             } as React.CSSProperties
           }
