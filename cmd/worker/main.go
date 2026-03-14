@@ -117,6 +117,7 @@ func main() {
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
 	mux.HandleFunc(worker.TaskLiteLLMScrape, h.HandleLiteLLMScrape)
 	mux.HandleFunc(worker.TaskHuggingFaceScrape, h.HandleHuggingFaceScrape)
+	mux.HandleFunc(worker.TaskOpenAIScrape, h.HandleOpenAIScrape)
 
 	// WebhookDeliveryHandler holds the AES key so it can decrypt secrets at
 	// task execution time — secrets are stored encrypted at rest.
@@ -134,6 +135,9 @@ func main() {
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
 		log.Fatal().Err(err).Msg("scheduler: register huggingface")
+	}
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskOpenAIScrape, nil)); err != nil {
+		log.Fatal().Err(err).Msg("scheduler: register openai")
 	}
 
 	if err := scheduler.Start(); err != nil {
@@ -159,6 +163,9 @@ func main() {
 	}
 	if _, err := client.Enqueue(asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
 		log.Warn().Err(err).Msg("initial huggingface scrape enqueue failed")
+	}
+	if _, err := client.Enqueue(asynq.NewTask(worker.TaskOpenAIScrape, nil)); err != nil {
+		log.Warn().Err(err).Msg("initial openai scrape enqueue failed")
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
 

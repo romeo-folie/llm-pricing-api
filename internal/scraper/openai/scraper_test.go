@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 // minimalPricingHTML is a trimmed but structurally faithful replica of the
@@ -303,6 +305,65 @@ func TestNormalizeSlug(t *testing.T) {
 	for _, tc := range cases {
 		if got := normalizeSlug(tc.in); got != tc.want {
 			t.Errorf("normalizeSlug(%q): got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestExtractHeaders_ColSpanInLastRow verifies that colSpan attributes on cells
+// in the *last* header row are expanded correctly.  This exercises the path
+// inside extractHeaders that expandscells with colspan > 1 — a path that the
+// top-level Fetch tests don't reach because their colSpan attributes are on the
+// *first* header row (the group-label row), not the last one.
+func TestExtractHeaders_ColSpanInLastRow(t *testing.T) {
+	const raw = `<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th colspan="2">Context window</th>
+      <th colspan="2">Pricing</th>
+    </tr>
+    <tr>
+      <th></th>
+      <th colspan="2">Context window</th>
+      <th>Input</th>
+      <th>Output</th>
+    </tr>
+  </thead>
+</table>`
+	doc, err := html.Parse(strings.NewReader(raw))
+	if err != nil {
+		t.Fatalf("html.Parse: %v", err)
+	}
+	// Find the <thead> element.
+	var thead *html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if thead != nil {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "thead" {
+			thead = n
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	if thead == nil {
+		t.Fatal("could not locate <thead>")
+	}
+
+	got := extractHeaders(thead)
+	// Last header row: colspan=2 "Context window" expands to 2 × "Context window",
+	// then "Input", "Output".  The first <th> (model name) is skipped.
+	want := []string{"Context window", "Context window", "Input", "Output"}
+	if len(got) != len(want) {
+		t.Fatalf("extractHeaders: got %v (len %d), want %v (len %d)", got, len(got), want, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("extractHeaders[%d]: got %q, want %q", i, got[i], want[i])
 		}
 	}
 }

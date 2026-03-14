@@ -1,4 +1,3 @@
--- Revert OpenAI source URL to the original value from 000002_create_sources.
-UPDATE sources
-SET url = 'https://openai.com/api/pricing'
-WHERE name = 'openai';
+-- Revert: remove the openai source row inserted/updated by the up migration.
+-- This restores the post-000008 state where openai was removed from sources.
+DELETE FROM sources WHERE name = 'openai';

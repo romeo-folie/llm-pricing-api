@@ -222,6 +222,14 @@ func extractTable(n *html.Node, section string) (PricingTable, bool) {
 
 // extractHeaders returns the column headers (excluding the model-name column)
 // from the last <tr> inside <thead>, expanding colSpan repetitions.
+//
+// Only the last header row is used for column names.  Earlier rows (e.g.
+// group-label rows like "Short context / Long context") are intentionally
+// ignored: their colspan attributes span pricing-column groups, not individual
+// columns, and incorporating them would require building a full multi-row
+// header merge — complexity not justified for the current page structure.
+// If OpenAI adds tiered-context columns that only appear in earlier header
+// rows, this function will need to be extended.
 func extractHeaders(thead *html.Node) []string {
 	// Collect all rows in thead; use the last one (some tables have a
 	// multi-row header where the first row holds group labels like
@@ -383,12 +391,17 @@ func toScrapedModels(tables []PricingTable, fetchedAt time.Time) []scraper.Scrap
 	return models
 }
 
-// columnIndex returns the 0-based index of the first header that contains
-// text (case-insensitive).  Returns -1 if not found.
+// columnIndex returns the 0-based index of the first header that exactly
+// matches text (case-insensitive, after normalisation).
+//
+// Exact matching avoids the ambiguity of substring search: "Cached input"
+// contains "input", so a Contains match would wrongly pick the cached-input
+// column when looking for "Input".  With exact matching the caller gets the
+// first column whose full name equals the target.
 func columnIndex(headers []string, text string) int {
-	lower := strings.ToLower(text)
+	target := strings.ToLower(strings.TrimSpace(text))
 	for i, h := range headers {
-		if strings.Contains(strings.ToLower(h), lower) {
+		if strings.ToLower(strings.TrimSpace(h)) == target {
 			return i
 		}
 	}
