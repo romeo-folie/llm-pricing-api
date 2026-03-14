@@ -63,6 +63,7 @@ export function DatePicker({
           backgroundColor: "var(--surface)",
           border: "1px solid var(--border)",
           borderRadius: 0,
+          minWidth: "320px",
         }}
       >
         <Calendar
@@ -71,6 +72,12 @@ export function DatePicker({
           onSelect={(date) => onChange(date ? format(date, "yyyy-MM-dd") : "")}
           disabled={(date) => date > new Date()}
           initialFocus
+          style={
+            {
+              "--cell-size": "2.75rem",
+              fontSize: "0.9rem",
+            } as React.CSSProperties
+          }
         />
       </PopoverContent>
     </Popover>
