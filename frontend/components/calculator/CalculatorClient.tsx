@@ -134,8 +134,8 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
             style={{
               padding: "8px 12px",
               border: "1px solid var(--border)",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
+              backgroundColor: "var(--bg)",
+              color: "var(--ink)",
               outline: "none",
               width: "100%",
             }}
@@ -157,8 +157,8 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
             style={{
               padding: "8px 12px",
               border: "1px solid var(--border)",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
+              backgroundColor: "var(--bg)",
+              color: "var(--ink)",
               outline: "none",
               width: "100%",
             }}
@@ -179,7 +179,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
                 style={{
                   padding: "6px 14px",
                   border: "1px solid var(--border)",
-                  backgroundColor: period === p.value ? "var(--accent)" : "var(--surface)",
+                  backgroundColor: period === p.value ? "var(--accent)" : "var(--bg)",
                   color: period === p.value ? "white" : "var(--muted)",
                   cursor: "pointer",
                 }}
