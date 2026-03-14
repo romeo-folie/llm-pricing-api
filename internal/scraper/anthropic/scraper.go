@@ -377,9 +377,14 @@ func cleanModelName(s string) string {
 //	"Claude Sonnet 4.5" → "claude-4-5-sonnet"
 //	"Claude Haiku 3.5"  → "claude-3-5-haiku"
 //
-// The existing repo convention for Anthropic slugs is
-// `anthropic/claude-<major>-<minor>-<variant>` (version first, variant last),
-// matching slugs like `anthropic/claude-3-5-sonnet-20241022` in aliases.go.
+// The slug format produced is `claude-<major>-<minor>-<variant>` (version
+// first, variant last), e.g. "Claude Opus 4.6" → "claude-4-6-opus".
+// Note: this scraper omits date suffixes (the pricing page does not expose
+// release dates). Historical hand-curated slugs that do carry dates (e.g.
+// `claude-3-5-sonnet-20241022`) continue to exist in aliases.go and are
+// unaffected; the scraper produces separate dated-free rows for any model
+// whose date-suffixed alias has not been added yet.
+//
 // The scraper previously emitted `claude-opus-4-6` (variant first), which
 // would not match or reconcile against any existing rows.
 //
@@ -412,13 +417,7 @@ func canonicalAnthropicSlug(name string) string {
 	return strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
 }
 
-// normalizeSlug lowercases and replaces spaces/dots/underscores with hyphens.
-// Used for non-Anthropic model names within this package.
-func normalizeSlug(name string) string {
-	name = strings.ToLower(name)
-	name = strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
-	return name
-}
+
 
 // --- HTML helpers ---------------------------------------------------------
 

@@ -326,3 +326,12 @@ func TestFetch_ContextCancellation(t *testing.T) {
 		t.Fatal("expected error on context cancellation, got nil")
 	}
 }
+
+// normalizeSlug is a test-only helper used by TestNormalizeSlug.
+// It was previously in scraper.go but is only exercised in tests, so it lives
+// here to keep the production surface minimal.
+func normalizeSlug(name string) string {
+	name = strings.ToLower(name)
+	name = strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
+	return name
+}
