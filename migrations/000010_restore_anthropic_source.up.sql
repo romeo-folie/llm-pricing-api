@@ -3,7 +3,7 @@
 -- to exist so that reconciler diffs are accepted.
 -- INSERT ... ON CONFLICT is idempotent: safe on both fresh and existing DBs.
 INSERT INTO sources (name, url, type)
-VALUES ('anthropic', 'https://www.anthropic.com/pricing', 'scrape')
+VALUES ('anthropic', 'https://platform.claude.com/docs/en/about-claude/pricing', 'scrape')
 ON CONFLICT (name) DO UPDATE
     SET url  = EXCLUDED.url,
         type = EXCLUDED.type;
