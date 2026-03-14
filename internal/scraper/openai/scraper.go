@@ -26,6 +26,8 @@ import (
 	"llm-pricing-api/internal/scraper"
 )
 
+// defaultURL is the canonical OpenAI API pricing page.  This must match the
+// URL stored in the sources table (migrations/000009_update_openai_source_url).
 const defaultURL = "https://developers.openai.com/api/docs/pricing?latest-pricing=standard"
 
 // Scraper fetches model pricing from the OpenAI API pricing page.
@@ -135,11 +137,12 @@ func parseHTML(r io.Reader) ([]PricingTable, error) {
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
-			case "span", "div", "p":
+			case "h1", "h2", "h3", "h4", "span", "div", "p":
 				// Section labels on the OpenAI pricing page are rendered as
-				// <span class="...heading..."> or similar elements.  We collect
-				// the text of any short inline element that looks like a section
-				// label (non-empty, no child tables, appears before a table).
+				// <span class="...heading..."> elements.  h1–h4 are also
+				// matched here so that isHeadingLike can filter by class for
+				// non-heading tags, and future page restructuring around real
+				// heading elements is handled automatically.
 				if isHeadingLike(n) {
 					if text := textContent(n); text != "" {
 						currentSection = text
@@ -183,7 +186,7 @@ func isHeadingLike(n *html.Node) bool {
 
 // extractTable parses a <table> node into a PricingTable.
 // Returns (table, true) on success or (zero, false) if the table cannot be
-// meaningfully parsed (no thead, no tbody, or fewer than 2 columns).
+// meaningfully parsed (no thead, no tbody, empty headers, or no data rows).
 func extractTable(n *html.Node, section string) (PricingTable, bool) {
 	pt := PricingTable{Section: section}
 
