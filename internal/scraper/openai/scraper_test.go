@@ -167,12 +167,17 @@ func TestFetch_PriceConversion(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
+	var found bool
 	for _, m := range models {
 		if m.Slug != "openai/gpt-4-1" {
 			continue
 		}
+		found = true
 		// $2.00 / 1M = 0.000002
 		const wantInput = 2.0 / 1_000_000
 		if m.InputCostPerToken != wantInput {
@@ -183,6 +188,9 @@ func TestFetch_PriceConversion(t *testing.T) {
 		if m.OutputCostPerToken != wantOutput {
 			t.Errorf("gpt-4.1 OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
+	}
+	if !found {
+		t.Errorf("expected model openai/gpt-4-1 not found in Fetch result; got %d models", len(models))
 	}
 }
 
@@ -311,7 +319,7 @@ func TestNormalizeSlug(t *testing.T) {
 
 // TestExtractHeaders_ColSpanInLastRow verifies that colSpan attributes on cells
 // in the *last* header row are expanded correctly.  This exercises the path
-// inside extractHeaders that expandscells with colspan > 1 — a path that the
+// inside extractHeaders that expands cells with colspan > 1 — a path that the
 // top-level Fetch tests don't reach because their colSpan attributes are on the
 // *first* header row (the group-label row), not the last one.
 func TestExtractHeaders_ColSpanInLastRow(t *testing.T) {

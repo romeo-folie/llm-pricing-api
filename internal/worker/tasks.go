@@ -9,7 +9,8 @@ const (
 	TaskOpenRouterScrape  = "scrape:openrouter"
 	TaskLiteLLMScrape     = "scrape:litellm"
 	TaskHuggingFaceScrape = "scrape:huggingface"
-	// TaskOpenAIScrape triggers the HTML scraper for developers.openai.com/pricing.
+	// TaskOpenAIScrape triggers the HTML scraper for
+	// https://developers.openai.com/api/docs/pricing?latest-pricing=standard
 	TaskOpenAIScrape = "scrape:openai"
 )
 
