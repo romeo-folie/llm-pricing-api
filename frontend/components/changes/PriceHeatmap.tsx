@@ -211,7 +211,7 @@ export default function PriceHeatmap({
           className="font-orbitron text-xs tracking-widest"
           style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
         >
-          [ PRICE HEATMAP ]
+          PRICE HEATMAP
         </span>
         <div
           style={{
@@ -237,7 +237,7 @@ export default function PriceHeatmap({
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
       >
-        [ PRICE HEATMAP ]
+        PRICE HEATMAP
       </span>
       <div
         style={{

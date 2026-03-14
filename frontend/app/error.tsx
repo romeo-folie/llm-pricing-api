@@ -24,7 +24,7 @@ export default function GlobalError({
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "24px" }}
       >
-        [ SYSTEM ERROR ]
+        SYSTEM ERROR
       </span>
       <h2
         className="font-orbitron text-xl font-bold"

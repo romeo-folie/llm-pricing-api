@@ -80,7 +80,7 @@ export default function CompareClient({
             className="font-orbitron text-xs tracking-widest"
             style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
           >
-            [ COMPARE ]
+            COMPARE
           </span>
           <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
             Compare Models

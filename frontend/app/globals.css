@@ -187,3 +187,19 @@ body {
     right: calc(50% - 640px);
   }
 }
+
+/* ── shadcn Calendar — spacious sizing ─────────────────────────────────────── */
+[data-slot="calendar"] {
+  --cell-size: 2.25rem;
+}
+
+[data-slot="calendar"] button[name="day"] {
+  min-width: var(--cell-size);
+  height: var(--cell-size);
+  font-size: 0.9rem;
+}
+
+[data-slot="calendar"] .rdp-weekday {
+  width: var(--cell-size);
+  font-size: 0.75rem;
+}

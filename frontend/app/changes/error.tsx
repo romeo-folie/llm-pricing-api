@@ -22,7 +22,7 @@ export default function ChangesError({
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "16px" }}
       >
-        [ PRICE CHANGES ]
+        PRICE CHANGES
       </span>
       <h2
         className="font-orbitron text-lg font-bold"

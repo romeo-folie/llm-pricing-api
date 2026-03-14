@@ -19,7 +19,7 @@ export default function BiggestMovers({ topMovers }: BiggestMoversProps) {
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
       >
-        [ BIGGEST MOVERS ]
+        BIGGEST MOVERS
       </span>
       <div
         style={{

@@ -8,6 +8,7 @@ import ChangeRow from "./ChangeRow"
 import TimeWindowSelector from "./TimeWindowSelector"
 import PriceHeatmap from "./PriceHeatmap"
 import BiggestMovers from "./BiggestMovers"
+import { DatePicker } from "@/components/ui/date-picker"
 import EmptyState from "@/components/ui/EmptyState"
 
 interface ChangesFeedProps {
@@ -206,12 +207,6 @@ export default function ChangesFeed({
         }}
       >
         <div>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            [ PRICE CHANGES ]
-          </span>
           <h1
             className="font-outfit text-2xl font-bold"
             style={{ color: "var(--ink)" }}
@@ -291,7 +286,7 @@ export default function ChangesFeed({
           marginBottom: "12px",
         }}
       >
-        [ LIVE FEED ]
+        LIVE FEED
       </span>
 
       {/* Filters */}
@@ -329,18 +324,10 @@ export default function ChangesFeed({
           ))}
         </select>
 
-        <input
-          type="date"
+        <DatePicker
           value={since}
-          onChange={(e) => applyFilter(provider, e.target.value)}
-          className="font-outfit text-sm"
-          style={{
-            padding: "6px 12px",
-            border: "1px solid var(--border)",
-            backgroundColor: "var(--bg)",
-            color: "var(--ink)",
-            outline: "none",
-          }}
+          onChange={(val) => applyFilter(provider, val)}
+          placeholder="Since date"
         />
 
         {(provider || since) && (

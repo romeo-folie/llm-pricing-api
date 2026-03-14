@@ -15,7 +15,7 @@ export default function NotFound() {
         className="font-orbitron text-xs tracking-widest"
         style={{ color: "var(--dim)", display: "block", marginBottom: "24px" }}
       >
-        [ 404 ]
+        404
       </span>
       <h1
         className="font-orbitron text-3xl font-bold"

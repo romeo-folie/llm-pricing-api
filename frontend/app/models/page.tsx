@@ -98,12 +98,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
 
         {/* Header */}
         <div style={{ marginBottom: "24px" }}>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            [ MODEL BROWSER ]
-          </span>
           <h1
             className="font-outfit text-2xl font-bold"
             style={{ color: "var(--ink)" }}
