@@ -52,16 +52,19 @@ export default function ModelCard({ model }: ModelCardProps) {
         alignItems: "center",
         gap: "12px",
         padding: "12px 16px",
-        backgroundColor: "var(--surface)",
+        backgroundColor: "transparent",
         borderBottom: "1px solid var(--border)",
+        borderLeft: "2px solid transparent",
         cursor: "pointer",
-        transition: "background-color 0.12s",
+        transition: "background-color 0.12s, border-left-color 0.12s",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor  = "var(--surfaceLo)"
+        e.currentTarget.style.backgroundColor = "#FDFAF7"
+        e.currentTarget.style.borderLeftColor = "var(--accent)"
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor  = "var(--surface)"
+        e.currentTarget.style.backgroundColor = "transparent"
+        e.currentTarget.style.borderLeftColor = "transparent"
       }}
     >
       {/* Confidence dot */}
@@ -85,14 +88,14 @@ export default function ModelCard({ model }: ModelCardProps) {
           alignItems: "center",
           gap: "4px",
           padding: "2px 6px",
-          border: "1px solid var(--accent)",
-          color: "var(--accent)",
-          backgroundColor: "var(--accentLt)",
+          border: "1px solid #00B934",
+          color: "#00B934",
+          backgroundColor: "#E6FAE9",
           flexShrink: 0,
           opacity: isStale ? 0.5 : 1,
         }}
       >
-        <span className="animate-live" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--accent)", display: "inline-block" }} />
+        <span className="animate-live" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#00B934", display: "inline-block" }} />
         LIVE
       </span>
 
