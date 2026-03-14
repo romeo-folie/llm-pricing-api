@@ -137,12 +137,16 @@ func parseHTML(r io.Reader) ([]PricingTable, error) {
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
-			case "h1", "h2", "h3", "h4", "span", "div", "p":
+			case "h1", "h2", "h3", "h4":
+				// Real heading elements are unconditionally treated as section
+				// labels; no class check needed.
+				if text := textContent(n); text != "" {
+					currentSection = text
+				}
+			case "span", "div", "p":
 				// Section labels on the OpenAI pricing page are rendered as
-				// <span class="...heading..."> elements.  h1–h4 are also
-				// matched here so that isHeadingLike can filter by class for
-				// non-heading tags, and future page restructuring around real
-				// heading elements is handled automatically.
+				// <span class="...heading..."> elements; isHeadingLike filters
+				// by class so only labelled elements update currentSection.
 				if isHeadingLike(n) {
 					if text := textContent(n); text != "" {
 						currentSection = text
@@ -164,17 +168,13 @@ func parseHTML(r io.Reader) ([]PricingTable, error) {
 	return tables, nil
 }
 
-// isHeadingLike returns true if n is a short inline/block element whose text
-// could be a pricing section label.  We check that:
-//   - it has a class attribute containing "heading" (OpenAI's CSS class), OR
-//   - it is an <h1>–<h4> element
+// isHeadingLike returns true if n is a span/div/p whose class attribute
+// contains "heading" — OpenAI's CSS class for pricing-section labels.
+// Actual <h1>–<h4> elements are handled directly in the walker and never
+// reach this function.
 func isHeadingLike(n *html.Node) bool {
 	if n.Type != html.ElementNode {
 		return false
-	}
-	tag := n.Data
-	if tag == "h1" || tag == "h2" || tag == "h3" || tag == "h4" {
-		return true
 	}
 	for _, a := range n.Attr {
 		if a.Key == "class" && strings.Contains(a.Val, "heading") {
