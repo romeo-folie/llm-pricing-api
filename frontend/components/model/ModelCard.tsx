@@ -84,14 +84,13 @@ export default function ModelCard({ model }: ModelCardProps) {
           display: "inline-flex",
           alignItems: "center",
           gap: "4px",
-          padding: "2px 6px",
+          padding: "1px 6px",
           border: "none",
           color: "#ffffff",
           backgroundColor: "#10B981",
           flexShrink: 0,
           letterSpacing: "0.12em",
           fontSize: "0.65rem",
-          padding: "1px 6px",
           lineHeight: 1.4,
         }}
       >
