@@ -12,6 +12,7 @@ import (
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/anthropic"
+	"llm-pricing-api/internal/scraper/gemini"
 	"llm-pricing-api/internal/scraper/huggingface"
 	"llm-pricing-api/internal/scraper/litellm"
 	"llm-pricing-api/internal/scraper/openai"
@@ -117,4 +118,10 @@ func (h *Handlers) HandleOpenAIScrape(ctx context.Context, _ *asynq.Task) error 
 // through the diff and reconciliation pipeline.
 func (h *Handlers) HandleAnthropicScrape(ctx context.Context, _ *asynq.Task) error {
 	return h.runPipeline(ctx, TaskAnthropicScrape, "anthropic", anthropic.New(nil))
+}
+
+// HandleGeminiScrape runs the Google Gemini HTML pricing scraper and feeds the result
+// through the diff and reconciliation pipeline.
+func (h *Handlers) HandleGeminiScrape(ctx context.Context, _ *asynq.Task) error {
+	return h.runPipeline(ctx, TaskGeminiScrape, "google", gemini.New(nil))
 }

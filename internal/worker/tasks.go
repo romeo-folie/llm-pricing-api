@@ -9,12 +9,13 @@ const (
 	TaskOpenRouterScrape  = "scrape:openrouter"
 	TaskLiteLLMScrape     = "scrape:litellm"
 	TaskHuggingFaceScrape = "scrape:huggingface"
-	// TaskOpenAIScrape triggers the HTML scraper for
-	// https://developers.openai.com/api/docs/pricing?latest-pricing=standard
+	// TaskOpenAIScrape triggers the HTML scraper for https://developers.openai.com/api/docs/pricing?latest-pricing=standard
 	TaskOpenAIScrape = "scrape:openai"
 	// TaskAnthropicScrape triggers the HTML scraper for
 	// https://platform.claude.com/docs/en/about-claude/pricing
 	TaskAnthropicScrape = "scrape:anthropic"
+	// TaskGeminiScrape triggers the HTML scraper for https://ai.google.dev/gemini-api/docs/pricing
+	TaskGeminiScrape = "scrape:gemini"
 )
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks
