@@ -78,8 +78,10 @@ interface HeroSceneProps {
 }
 
 export default function HeroScene({ className, style }: HeroSceneProps) {
+  const [mounted, setMounted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
+    setMounted(true);
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     setReducedMotion(mq.matches);
     const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
@@ -152,7 +154,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 fill="none"
                 className="hero-dash"
               />
-              {!reducedMotion && (
+              {mounted && !reducedMotion && (
                 <circle r={isPrimary ? 2.5 : 1.8} fill={baseColor} opacity={isPrimary ? 0.85 : 0.55}>
                   <animateMotion dur={dur} repeatCount="indefinite" path={d} />
                 </circle>
@@ -179,7 +181,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
                 fill={isPrimary ? "url(#glow-primary)" : "url(#glow-aggregator)"}
-                style={!reducedMotion ? {
+                style={mounted && !reducedMotion ? {
                   animation: `planetPulse ${pulseDur} ease-in-out infinite`,
                   animationDelay: pulseDelay,
                   transformOrigin: `${s.cx}px ${s.cy}px`,
@@ -249,7 +251,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g key={`out-${i}`}>
               <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" fill="none" opacity="0.4" />
               <path d={d} stroke="var(--green)" strokeWidth="1" strokeDasharray="4 8" strokeOpacity="0.45" fill="none" className="hero-dash" />
-              {!reducedMotion && (
+              {mounted && !reducedMotion && (
                 <circle r="2.5" fill="var(--green)" opacity="0.85">
                   <animateMotion dur={`${2.5 + i * 0.3}s`} repeatCount="indefinite" path={d} />
                 </circle>
