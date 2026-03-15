@@ -74,14 +74,14 @@
 @media (prefers-color-scheme: dark) {
   :root {
     /* Base palette */
-    --bg:          #1A1714;
-    --surface:     #221F1C;
-    --surfaceLo:   #161412;
-    --surfaceHi:   #2D2926;
+    --bg:          #2B2A28;
+    --surface:     #343230;
+    --surfaceLo:   #222120;
+    --surfaceHi:   #3E3C3A;
 
     /* Borders */
-    --border:      #352F2A;
-    --borderDk:    #4A4340;
+    --border:      #413F3C;
+    --borderDk:    #514E4B;
 
     /* Text */
     --text:        #E8E4E0;
