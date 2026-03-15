@@ -50,7 +50,10 @@ CREATE TABLE magic_link_tokens (
     used_at     TIMESTAMPTZ,               -- NULL = unused
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT magic_link_tokens_hash_unique UNIQUE (token_hash)
+    CONSTRAINT magic_link_tokens_hash_unique   UNIQUE (token_hash),
+    -- Prevent empty/whitespace-only token hashes which would produce a
+    -- constant, guessable hash (e.g. sha256("")).
+    CONSTRAINT magic_link_tokens_hash_nonempty CHECK (btrim(token_hash) <> '')
 );
 
 -- No separate index on token_hash — UNIQUE constraint already creates one.

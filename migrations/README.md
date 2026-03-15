@@ -24,14 +24,14 @@ migrations/
   000006_create_review_queue.down.sql
   000007_create_webhooks.up.sql        # Webhooks table; guards pgcrypto for gen_random_uuid()
   000007_create_webhooks.down.sql
-  000008_create_api_keys.up.sql        # API keys table
-  000008_create_api_keys.down.sql
-  000009_create_usage_logs.up.sql      # Usage/request logging
-  000009_create_usage_logs.down.sql
-  000010_create_rate_limits.up.sql     # Rate limiting table
-  000010_create_rate_limits.down.sql
-  000011_create_notifications.up.sql   # Notifications table
-  000011_create_notifications.down.sql
+  000008_huggingface_source.up.sql      # Adds HuggingFace as a source
+  000008_huggingface_source.down.sql
+  000009_update_openai_source_url.up.sql  # Updates OpenAI source URL
+  000009_update_openai_source_url.down.sql
+  000010_restore_anthropic_source.up.sql  # Restores Anthropic source row
+  000010_restore_anthropic_source.down.sql
+  000011_restore_google_source.up.sql  # Restores Google source row
+  000011_restore_google_source.down.sql
   000012_create_identity_tables.up.sql # Identity/signup tables (api_identities,
                                        # magic_link_tokens, api_keys_registry)
   000012_create_identity_tables.down.sql
@@ -43,7 +43,7 @@ migrations/
 ## Key Design Decisions
 
 - **TimescaleDB hypertable** on `price_history` partitioned by `recorded_at` in 7-day chunks for efficient time-range queries.
-- **Deduplication index** on `price_history (model_id, source_id, confirmed_at)` prevents duplicate records.
+- **Deduplication index** on `price_history (model_id, source_id, confirmed_at, recorded_at)` prevents duplicate records. The `recorded_at` column is included because TimescaleDB requires the partition key in every unique index on a hypertable.
 - **Partial unique index** on `review_queue (model_id, field) WHERE status = 'pending'` ensures only one active review per model/field.
 - **`set_updated_at()` trigger** on `models` (and `api_identities`) auto-updates `updated_at` on any row change. The trigger function is defined once in `000003` and reused by later migrations.
 - **Seed data** in `000002` pre-populates the 7 known data sources.

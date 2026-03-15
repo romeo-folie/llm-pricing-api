@@ -112,7 +112,11 @@ func TestIntegration_ConsumeToken_OneTimeUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateIdentity: %v", err)
 	}
-	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
+			t.Logf("cleanup: failed to delete identity %s: %v", id.ID, err)
+		}
+	})
 
 	// Use a unique token per run to avoid UNIQUE(token_hash) collisions against a
 	// persistent dev DB that may still hold rows from a prior test run.
@@ -150,7 +154,11 @@ func TestIntegration_ConsumeToken_ExpiredToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateIdentity: %v", err)
 	}
-	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
+			t.Logf("cleanup: failed to delete identity %s: %v", id.ID, err)
+		}
+	})
 
 	// Use a unique token per run to avoid UNIQUE(token_hash) collisions against a
 	// persistent dev DB that may still hold rows from a prior test run.
@@ -191,7 +199,11 @@ func TestIntegration_RegisterKey_OneActiveKeyPerIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateIdentity: %v", err)
 	}
-	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
+			t.Logf("cleanup: failed to delete identity %s: %v", id.ID, err)
+		}
+	})
 
 	pk1 := fmt.Sprintf("pkey-%d-1", time.Now().UnixNano())
 	_, err = s.RegisterKey(ctx, id.ID, pk1)
@@ -215,7 +227,11 @@ func TestIntegration_RevokeKey_AllowsNewKeyAfterRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateIdentity: %v", err)
 	}
-	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
+			t.Logf("cleanup: failed to delete identity %s: %v", id.ID, err)
+		}
+	})
 
 	pk1 := fmt.Sprintf("pkey-revoke-%d-1", time.Now().UnixNano())
 	if _, err = s.RegisterKey(ctx, id.ID, pk1); err != nil {
