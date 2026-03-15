@@ -159,7 +159,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               <path d={d} stroke="var(--borderDk)" strokeWidth="0.75" strokeDasharray="3 4" opacity="0.5" />
               <path d={d} stroke="var(--muted)" strokeWidth="0.75" strokeDasharray="3 6" strokeOpacity="0.35" className="hero-dash" />
               {!reducedMotion && (
-                <circle r="2" fill="var(--accent)" opacity="0.65">
+                <circle r="2" fill="var(--muted)" opacity="0.65">
                   <animateMotion dur={`${3.2 + i * 0.5}s`} repeatCount="indefinite" path={d} />
                 </circle>
               )}
@@ -183,7 +183,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               <path d={d} stroke="var(--borderDk)" strokeWidth="0.75" strokeDasharray="3 4" opacity="0.5" />
               <path d={d} stroke="var(--muted)" strokeWidth="1" strokeDasharray="3 6" strokeOpacity="0.35" className="hero-dash" />
               {!reducedMotion && (
-                <circle r="2" fill="var(--accent)" opacity="0.65">
+                <circle r="2" fill="var(--muted)" opacity="0.65">
                   <animateMotion dur="3s" repeatCount="indefinite" path={d} />
                 </circle>
               )}
