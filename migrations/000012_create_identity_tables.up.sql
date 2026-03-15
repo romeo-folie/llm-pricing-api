@@ -1,11 +1,16 @@
 -- Migration 000012: identity schema for free API key issuance (Epic #69)
 -- Tables: api_identities, magic_link_tokens, api_keys_registry
--- Requires: 000003 (set_updated_at function), 000007 (pgcrypto for gen_random_uuid)
+-- Requires: 000003 (set_updated_at function), pgcrypto (for gen_random_uuid)
+
+-- Belt-and-suspenders: guarantee pgcrypto is present on every upgrade path
+-- (fresh installs already get it from 000001; existing DBs that were migrated
+-- before 000001 declared pgcrypto get it from 000007). IF NOT EXISTS is idempotent.
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── api_identities ───────────────────────────────────────────────────────────
 -- One row per registered email address. Rows are created at signup time with
 -- email_verified_at = NULL; verification is a subsequent step.
--- email is normalised (lowercased, whitespace-stripped) before insert.
+-- email is normalised (lowercased, whitespace-trimmed) before insert.
 CREATE TABLE api_identities (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     email             TEXT        NOT NULL,

@@ -14,7 +14,8 @@ import (
 )
 
 // newTestPool connects to the test database specified by DATABASE_URL.
-// Skip the test if the env var is not set.
+// Skips the test (rather than failing) when DATABASE_URL is not set or the
+// database is unreachable, so integration tests are CI-safe when no DB is up.
 func newTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
@@ -23,7 +24,11 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	}
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
+		t.Skipf("pgxpool.New: %v — skipping (database unavailable)", err)
+	}
+	if err := pool.Ping(context.Background()); err != nil {
+		pool.Close()
+		t.Skipf("database unreachable: %v — skipping integration test", err)
 	}
 	t.Cleanup(pool.Close)
 	return pool
@@ -39,7 +44,8 @@ func randEmail(t *testing.T) string {
 
 func TestIntegration_CreateIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
 	ctx := context.Background()
-	s := signup.NewStore(newTestPool(t))
+	pool := newTestPool(t)
+	s := signup.NewStore(pool)
 	email := randEmail(t)
 
 	id1, err := s.CreateIdentity(ctx, email, "", "")
@@ -47,8 +53,9 @@ func TestIntegration_CreateIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
 		t.Fatalf("first CreateIdentity: %v", err)
 	}
 	t.Cleanup(func() {
-		pool := newTestPool(t)
-		pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id1.ID)
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id1.ID); err != nil {
+			t.Logf("cleanup: failed to delete identity %s: %v", id1.ID, err)
+		}
 	})
 
 	id2, err := s.CreateIdentity(ctx, email, "", "")
@@ -62,33 +69,27 @@ func TestIntegration_CreateIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
 
 func TestIntegration_CreateIdentity_NormalizesEmail(t *testing.T) {
 	ctx := context.Background()
-	s := signup.NewStore(newTestPool(t))
-	email := randEmail(t)
-	mixed := "  " + fmt.Sprintf("MIXED-%d@Example.Com", time.Now().UnixNano()) + "  "
+	pool := newTestPool(t)
+	s := signup.NewStore(pool)
+
+	// Construct a fixed input with known leading/trailing whitespace and mixed case.
+	// We capture the nano once so we can predict the expected normalised form exactly.
+	nano := time.Now().UnixNano()
+	mixed := fmt.Sprintf("  MIXED-%d@Example.Com  ", nano)
+	want := fmt.Sprintf("mixed-%d@example.com", nano)
 
 	id, err := s.CreateIdentity(ctx, mixed, "", "")
 	if err != nil {
 		t.Fatalf("CreateIdentity: %v", err)
 	}
 	t.Cleanup(func() {
-		pool := newTestPool(t)
-		pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID)
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
+			t.Logf("cleanup: failed to delete identity %s: %v", id.ID, err)
+		}
 	})
-	_ = email
-	if id.Email != fmt.Sprintf("mixed-%d@example.com", time.Now().UnixNano()) {
-		// Can't predict exact nanos, just check it's lowercase and trimmed.
-		if id.Email != id.Email[0:] || id.Email != fmt.Sprintf("%s", id.Email) {
-			t.Errorf("email not normalised: %q", id.Email)
-		}
-		// Verify lowercase
-		lower := id.Email
-		for _, c := range id.Email {
-			if c >= 'A' && c <= 'Z' {
-				t.Errorf("email contains uppercase after normalisation: %q", id.Email)
-				break
-			}
-			_ = lower
-		}
+
+	if id.Email != want {
+		t.Errorf("email normalisation: got %q, want %q", id.Email, want)
 	}
 }
 

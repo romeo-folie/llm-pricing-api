@@ -1,3 +1,7 @@
+-- Ensure pgcrypto is available for gen_random_uuid() on DBs that ran 000001
+-- before pgcrypto was added. IF NOT EXISTS makes this fully idempotent.
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 CREATE TABLE webhooks (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     api_key_hash TEXT        NOT NULL,

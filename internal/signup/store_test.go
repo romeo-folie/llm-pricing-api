@@ -1,22 +1,12 @@
 package signup_test
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
 
 	"llm-pricing-api/internal/signup"
 )
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-func randToken() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
 
 // ── HashToken ─────────────────────────────────────────────────────────────────
 
