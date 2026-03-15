@@ -39,7 +39,7 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
       {/* Ring 2 — tilted -35°, medium */}
       <g className={styles.ring2} style={{ transformOrigin: `${cx}px ${cy}px` }}>
         <ellipse
-          cx={cx} cy={cy} rx={56} ry={14}
+          cx={cx} cy={cy} rx={ORBITAL_REACTOR_OUTER_RX} ry={14}
           fill="none"
           stroke="var(--accent)"
           strokeWidth={0.5}
@@ -64,7 +64,7 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
         <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--greenBright)" className={styles.dot} />
       </g>
       <g className={styles.dot2Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx + 56} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
+        <circle cx={cx + ORBITAL_REACTOR_OUTER_RX} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
       </g>
       <g className={styles.dot3Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
         <circle cx={cx - 52} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
