@@ -153,14 +153,10 @@ func main() {
 	}
 	defer scheduler.Shutdown()
 
-	log.Info().Str("env", cfg.AppEnv).Int("concurrency", 10).Msg("worker started")
-	if err := srv.Start(mux); err != nil {
-		log.Fatal().Err(err).Msg("worker error")
-	}
-
 	// Enqueue one-shot scrapes so the database is populated immediately after
 	// a fresh deploy. The @every cron schedules only fire after the full
 	// interval elapses, which would leave the DB empty for hours on first boot.
+	// NOTE: this block must run before srv.Start(mux) because Start blocks.
 	client := asynq.NewClient(redisOpt)
 	defer client.Close()
 	if _, err := client.Enqueue(asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
@@ -182,6 +178,16 @@ func main() {
 		log.Warn().Err(err).Msg("initial gemini scrape enqueue failed")
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
+
+	// Run the asynq server in a goroutine — srv.Start blocks until Shutdown
+	// is called. Running it in the foreground prevented the health server,
+	// initial enqueue, and signal handler from ever executing.
+	log.Info().Str("env", cfg.AppEnv).Int("concurrency", 10).Msg("worker started")
+	go func() {
+		if err := srv.Start(mux); err != nil {
+			log.Fatal().Err(err).Msg("worker error")
+		}
+	}()
 
 	// Start a minimal HTTP server for Railway health checks. The worker is a
 	// pure asynq consumer with no Fiber router, but Railway expects every
