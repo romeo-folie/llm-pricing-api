@@ -13,6 +13,8 @@ interface SourceNode {
   cx: number;
   cy: number;
   tier: "primary" | "aggregator";
+  /** Pre-computed index within the tier — used for stable animation timing. */
+  tierIdx: number;
 }
 
 /**
@@ -23,14 +25,14 @@ interface SourceNode {
  * like distant stars orbiting the main cluster.
  */
 const SOURCES: SourceNode[] = [
-  // Primary — tight cluster
-  { name: "OpenAI",    sub: "direct",  cx: 100, cy: 72,  tier: "primary" },
-  { name: "Anthropic", sub: "direct",  cx: 135, cy: 170, tier: "primary" },
-  { name: "Google",    sub: "direct",  cx: 90,  cy: 268, tier: "primary" },
-  // Aggregators — scattered wider
-  { name: "OpenRouter",   sub: "6h",    cx: 210, cy: 32,  tier: "aggregator" },
-  { name: "LiteLLM",      sub: "daily", cx: 230, cy: 135, tier: "aggregator" },
-  { name: "Hugging Face", sub: "daily", cx: 220, cy: 300, tier: "aggregator" },
+  // Primary — tight cluster; scraped @every 24h (daily)
+  { name: "OpenAI",    sub: "daily",    cx: 100, cy: 72,  tier: "primary",     tierIdx: 0 },
+  { name: "Anthropic", sub: "daily",    cx: 135, cy: 170, tier: "primary",     tierIdx: 1 },
+  { name: "Google",    sub: "daily",    cx: 90,  cy: 268, tier: "primary",     tierIdx: 2 },
+  // Aggregators — scattered wider; scrape cadences vary
+  { name: "OpenRouter",   sub: "every 6h", cx: 210, cy: 32,  tier: "aggregator", tierIdx: 0 },
+  { name: "LiteLLM",      sub: "daily",    cx: 230, cy: 135, tier: "aggregator", tierIdx: 1 },
+  { name: "Hugging Face", sub: "daily",    cx: 220, cy: 300, tier: "aggregator", tierIdx: 2 },
 ];
 
 const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
@@ -102,10 +104,6 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  // Per-tier indices for stable animation durations.
-  const primaryNodes = SOURCES.filter((s) => s.tier === "primary");
-  const aggregatorNodes = SOURCES.filter((s) => s.tier === "aggregator");
-
   return (
     <div
       className={className}
@@ -141,12 +139,9 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
           const d = curvedPath(s.cx, s.cy, r);
           const baseColor = "var(--green)";
-          const tierIdx = isPrimary
-            ? primaryNodes.indexOf(s)
-            : aggregatorNodes.indexOf(s);
           const dur = isPrimary
-            ? `${2.4 + tierIdx * 0.3}s`
-            : `${3.0 + tierIdx * 0.4}s`;
+            ? `${2.4 + s.tierIdx * 0.3}s`
+            : `${3.0 + s.tierIdx * 0.4}s`;
 
           return (
             <g key={`flow-${s.name}`}>
@@ -181,12 +176,9 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           const isPrimary = s.tier === "primary";
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
           const glowR = isPrimary ? 24 : 14;
-          const tierIdx = isPrimary
-            ? primaryNodes.indexOf(s)
-            : aggregatorNodes.indexOf(s);
           // Stagger pulse phase per node so they don't breathe in sync.
           const pulseDur = isPrimary ? "3.5s" : "4.5s";
-          const pulseDelay = `${tierIdx * -1.2}s`;
+          const pulseDelay = `${s.tierIdx * -1.2}s`;
 
           return (
             <g key={`planet-${s.name}`}>
@@ -194,7 +186,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
                 fill={isPrimary ? `url(#${gradPrimary})` : `url(#${gradAggregator})`}
-                className={mounted ? "planet-glow" : undefined}
+                className="planet-glow"
                 style={{
                   "--planet-pulse-dur": pulseDur,
                   "--planet-pulse-delay": pulseDelay,
