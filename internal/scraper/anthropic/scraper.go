@@ -398,17 +398,23 @@ func canonicalAnthropicSlug(name string) string {
 		name = strings.TrimSpace(name[:idx])
 	}
 
-	// Expected format: "Claude <Variant> <Major>.<Minor>"
+	// Expected formats:
+	//   "Claude <Variant> <Major>.<Minor>"  → claude-<major>-<minor>-<variant>
+	//   "Claude <Variant> <Major>"          → claude-<major>-<variant>
 	// Split on spaces; token[0]="Claude", token[1]=variant, token[2]=version.
 	parts := strings.Fields(name)
 	if len(parts) == 3 && strings.EqualFold(parts[0], "claude") {
 		variant := strings.ToLower(parts[1])
-		version := parts[2] // e.g. "4.6" or "3.5"
+		version := parts[2] // e.g. "4.6", "3.5", or "4"
 		verParts := strings.SplitN(version, ".", 2)
 		if len(verParts) == 2 {
 			major := strings.ReplaceAll(verParts[0], ".", "-")
 			minor := strings.ReplaceAll(verParts[1], ".", "-")
 			return fmt.Sprintf("claude-%s-%s-%s", major, minor, variant)
+		}
+		// Major-only version (no dot): "Claude Opus 4" → "claude-4-opus"
+		if len(verParts) == 1 && verParts[0] != "" {
+			return fmt.Sprintf("claude-%s-%s", verParts[0], variant)
 		}
 	}
 
