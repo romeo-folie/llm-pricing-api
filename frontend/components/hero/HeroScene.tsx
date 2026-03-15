@@ -105,7 +105,12 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           const d = curvedPath(s.x, s.y, s.w, s.h);
           const isPrimary = s.tier === "primary";
           const baseColor = isPrimary ? "var(--accent)" : "var(--muted)";
-          const dur = isPrimary ? `${2.4 + i * 0.3}s` : `${3.0 + (i - 3) * 0.4}s`;
+          // Use per-tier index for durations so timing stays stable if SOURCES ordering changes.
+          const primaryIdx  = SOURCES.filter((n) => n.tier === "primary").indexOf(s);
+          const aggregatorIdx = SOURCES.filter((n) => n.tier === "aggregator").indexOf(s);
+          const dur = isPrimary
+            ? `${2.4 + primaryIdx * 0.3}s`
+            : `${3.0 + aggregatorIdx * 0.4}s`;
 
           return (
             <g key={`flow-${s.name}`}>
@@ -212,7 +217,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           x={E_X + E_W / 2} y={E_Y0 - 8}
           fontSize="8" fontWeight="600"
           fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" textAnchor="middle" letterSpacing="1"
+          fill="var(--hero-label, var(--dim))" textAnchor="middle" letterSpacing="1"
         >
           API
         </text>
@@ -224,15 +229,15 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g key={ep}>
               <rect
                 x={E_X} y={y} width={E_W} height={E_H} rx="4"
-                fill="var(--surfaceHi)"
-                stroke="var(--border)"
+                fill="var(--hero-endpoint-bg, var(--surfaceHi))"
+                stroke="var(--hero-endpoint-border, var(--border))"
                 strokeWidth="1"
               />
               <text
                 x={E_X + 10} y={y + E_H / 2 - 3}
                 fontSize="10" fontWeight="600"
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--ink)" dominantBaseline="middle"
+                fill="var(--hero-endpoint-text, var(--ink))" dominantBaseline="middle"
               >
                 {ep}
               </text>
@@ -252,7 +257,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         <text
           x={RCX} y={VH - 8}
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" textAnchor="middle" opacity="0.85"
+          fill="var(--hero-label, var(--dim))" textAnchor="middle" opacity="0.85"
         >
           6 sources · 2,330 models · &lt;60s latency
         </text>
