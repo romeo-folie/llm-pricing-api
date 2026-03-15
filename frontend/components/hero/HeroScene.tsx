@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { OrbitalReactor } from "./OrbitalReactor";
@@ -60,11 +61,18 @@ const E_Y0 = RCY - E_H / 2 - E_DY * 1.5;
 
 function endpointY(i: number) { return E_Y0 + i * E_DY; }
 
+/**
+ * Reactor connection offset: outer ellipse rx=56, rendered at scale=1.1 →
+ * visual radius ≈ 62. Both source→reactor and reactor→endpoint paths use
+ * this constant so curves terminate at the reactor's visible edge.
+ */
+const REACTOR_EDGE = 62;
+
 /** Smooth cubic bezier from planet edge to reactor left edge. */
 function curvedPath(sx: number, sy: number, r: number): string {
   const startX = sx + r;
   const startY = sy;
-  const endX = RCX - 58;
+  const endX = RCX - REACTOR_EDGE;
   const endY = RCY;
   const midX = startX + (endX - startX) * 0.5;
   return `M ${startX},${startY} C ${midX},${startY} ${midX},${endY} ${endX},${endY}`;
@@ -181,11 +189,12 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
                 fill={isPrimary ? "url(#glow-primary)" : "url(#glow-aggregator)"}
-                style={mounted && !reducedMotion ? {
-                  animation: `planetPulse ${pulseDur} ease-in-out infinite`,
-                  animationDelay: pulseDelay,
+                className={mounted && !reducedMotion ? "planet-glow" : undefined}
+                style={{
+                  "--planet-pulse-dur": pulseDur,
+                  "--planet-pulse-delay": pulseDelay,
                   transformOrigin: `${s.cx}px ${s.cy}px`,
-                } : undefined}
+                } as React.CSSProperties}
               />
               {/* Bright dot core — no ring, no fill container */}
               <circle
@@ -235,7 +244,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         {ENDPOINTS.map((_, i) => {
           const ey = endpointY(i) + E_H / 2;
           const fanY = RCY - 15 + i * 10;
-          const startX = RCX + 58;
+          const startX = RCX + REACTOR_EDGE;
           const midX = startX + (E_X - startX) * 0.5;
           const d = `M ${startX},${fanY} C ${midX},${fanY} ${midX},${ey} ${E_X},${ey}`;
           return (
@@ -301,16 +310,6 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           6 sources · 2,330 models · &lt;60s latency
         </text>
 
-        {/* Pulse animation for planet glow halos */}
-        <style>{`
-          @keyframes planetPulse {
-            0%, 100% { opacity: 0.6; transform: scale(1); }
-            50% { opacity: 0.85; transform: scale(1.06); }
-          }
-          @media (prefers-reduced-motion: reduce) {
-            @keyframes planetPulse { 0%, 100% { opacity: 0.8; transform: none; } }
-          }
-        `}</style>
       </svg>
     </div>
   );

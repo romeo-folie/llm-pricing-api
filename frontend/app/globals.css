@@ -194,9 +194,22 @@ body {
   animation: hero-dash 1.2s linear infinite;
 }
 
+/* ─── Planet-glow pulse (HeroScene constellation) ───────────────────────── */
+
+@keyframes planetPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 0.85; transform: scale(1.06); }
+}
+
+.planet-glow {
+  animation: planetPulse var(--planet-pulse-dur, 3.5s) ease-in-out infinite;
+  animation-delay: var(--planet-pulse-delay, 0s);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-breathe { animation: none; opacity: 0.5; }
   .hero-dash    { animation: none; }
+  .planet-glow  { animation: none; }
 }
 
 /* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */
