@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { ArrowUpRight } from "lucide-react"
 import HeroScene from "@/components/hero/HeroScene"
+import { PricingTicker } from "@/components/hero/PricingTicker"
 import { FeatureSections } from "@/components/features"
 import { getModels, getProviders, getChanges } from "@/lib/api"
 
@@ -268,6 +269,8 @@ export default async function Home() {
           </div>
         </div>
         </div>
+        {/* Live pricing ticker */}
+        <PricingTicker />
       </section>
 
       {/* ── Data Sources Bar ───────────────────────────────────────────── */}
