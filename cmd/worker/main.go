@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -58,14 +59,26 @@ func (a *asynqLogger) Warn(args ...any)  { a.l.Warn().Msgf("%v", args) }
 func (a *asynqLogger) Error(args ...any) { a.l.Error().Msgf("%v", args) }
 func (a *asynqLogger) Fatal(args ...any) { a.l.Fatal().Msgf("%v", args) }
 
+// main is the entry point. All logic lives in run() so that deferred
+// cleanup executes before os.Exit is called on a non-zero exit.
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+// run contains the full worker lifecycle. It returns a non-nil error
+// whenever the process should exit with a non-zero status, allowing main
+// to call os.Exit(1) after all deferred cleanup has run.
+func run() error {
 	_ = godotenv.Load()
 
 	cfg, err := config.Load()
 	if err != nil {
 		// Logger not yet available — write directly to stderr.
 		l := zerolog.New(os.Stderr)
-		l.Fatal().Err(err).Msg("config error")
+		l.Error().Err(err).Msg("config error")
+		return err
 	}
 
 	zerolog.TimeFieldFormat = time.RFC3339Nano
@@ -79,7 +92,8 @@ func main() {
 
 	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5, log)
 	if err != nil {
-		log.Fatal().Err(err).Msg("could not connect to database")
+		log.Error().Err(err).Msg("could not connect to database")
+		return err
 	}
 	defer db.Close()
 
@@ -131,26 +145,33 @@ func main() {
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 
 	if _, err := scheduler.Register("@every 6h", asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register openrouter")
+		log.Error().Err(err).Msg("scheduler: register openrouter")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register litellm")
+		log.Error().Err(err).Msg("scheduler: register litellm")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register huggingface")
+		log.Error().Err(err).Msg("scheduler: register huggingface")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskOpenAIScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register openai")
+		log.Error().Err(err).Msg("scheduler: register openai")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskAnthropicScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register anthropic")
+		log.Error().Err(err).Msg("scheduler: register anthropic")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskGeminiScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register gemini")
+		log.Error().Err(err).Msg("scheduler: register gemini")
+		return err
 	}
 
 	if err := scheduler.Start(); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: start")
+		log.Error().Err(err).Msg("scheduler: start")
+		return err
 	}
 	defer scheduler.Shutdown()
 
@@ -234,25 +255,31 @@ func main() {
 	select {
 	case <-quit:
 		log.Info().Msg("worker shutting down...")
-	case err := <-srvErrCh:
-		// srv.Start returned before a shutdown signal — treat as a fatal startup error.
-		// All deferred cleanup (db.Close, scheduler.Shutdown, etc.) still runs because
-		// we return normally instead of calling os.Exit via log.Fatal.
-		log.Error().Err(err).Msg("worker exited unexpectedly")
+	case srvErr := <-srvErrCh:
+		// srv.Start returned before a shutdown signal — treat as a fatal startup/runtime
+		// error. Returning a non-nil error from run() causes main() to call os.Exit(1)
+		// so the platform/supervisor registers this as a crash. All deferred cleanup
+		// (db.Close, scheduler.Shutdown, redisClient.Close, etc.) still runs because
+		// we return via run() rather than calling os.Exit directly.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = healthSrv.Shutdown(shutdownCtx)
-		return
+		if srvErr != nil {
+			log.Error().Err(srvErr).Msg("worker exited unexpectedly")
+			return srvErr
+		}
+		log.Error().Msg("worker stopped without shutdown signal")
+		return fmt.Errorf("worker stopped without shutdown signal")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = healthSrv.Shutdown(shutdownCtx)
 	srv.Shutdown()
-	// Wait for the srv.Start goroutine to fully unwind before main returns.
+	// Wait for the srv.Start goroutine to fully unwind before run returns.
 	// A timeout guards against a stuck handler holding up the shutdown past the
 	// platform's (e.g. Railway's) SIGKILL deadline — if the goroutine hasn't
-	// returned within 10 s after srv.Shutdown(), we log and let main exit so
+	// returned within 10 s after srv.Shutdown(), we log and let run exit so
 	// deferred cleanup still runs.
 	select {
 	case err := <-srvErrCh:
@@ -262,4 +289,6 @@ func main() {
 	case <-time.After(10 * time.Second):
 		log.Warn().Msg("worker shutdown timed out — forcing exit")
 	}
+
+	return nil
 }
