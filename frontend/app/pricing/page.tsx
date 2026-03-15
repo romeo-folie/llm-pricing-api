@@ -103,10 +103,7 @@ export default function FeaturesPage() {
 
         {/* Header */}
         <header style={{ textAlign: "center", marginBottom: "48px" }}>
-          <span className="font-orbitron text-xs tracking-widest" style={{ color: "var(--dim)" }}>
-            [ API FEATURES ]
-          </span>
-          <h1 className="font-outfit text-3xl font-bold" style={{ color: "var(--ink)", marginTop: "12px" }}>
+          <h1 className="font-outfit text-3xl font-bold" style={{ color: "var(--ink)" }}>
             Features
           </h1>
           <p className="font-outfit text-base" style={{ color: "var(--muted)", maxWidth: "600px", margin: "12px auto 0", lineHeight: 1.7 }}>
@@ -143,20 +140,12 @@ export default function FeaturesPage() {
                         borderBottom: "1px dashed var(--border)",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <span
-                          className="font-orbitron text-xs"
-                          style={{ color: "var(--dim)", letterSpacing: "0.08em" }}
-                        >
-                          [ {group.tag} ]
-                        </span>
-                        <span
+                      <span
                           className="font-outfit text-sm font-semibold"
                           style={{ color: "var(--ink)" }}
                         >
                           {group.title}
                         </span>
-                      </div>
                     </td>
                   </tr>
 
@@ -220,12 +209,6 @@ export default function FeaturesPage() {
         {/* FAQ */}
         <section aria-labelledby="faq-heading">
           <div className="mx-auto max-w-4xl px-6 py-8 sm:px-10">
-            <span
-              className="font-orbitron text-xs tracking-widest"
-              style={{ color: "var(--dim)", display: "block", textAlign: "center", marginBottom: "8px" }}
-            >
-              [ FAQ ]
-            </span>
             <h2
               id="faq-heading"
               className="font-outfit text-3xl font-bold text-center"
