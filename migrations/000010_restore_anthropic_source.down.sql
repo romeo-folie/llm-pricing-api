@@ -1,5 +1,5 @@
 -- Revert: remove the anthropic source row inserted/updated by the up migration.
--- Restores the post-000008 state where anthropic was absent from sources.
+-- Restores the post-000008 state where anthropic was removed from sources.
 --
 -- Dependent rows (prices, price_history, review_queue) must be removed first
 -- because sources.id is referenced with RESTRICT (no CASCADE).  The subquery

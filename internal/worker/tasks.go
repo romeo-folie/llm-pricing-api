@@ -14,7 +14,7 @@ const (
 	// TaskAnthropicScrape triggers the HTML scraper for
 	// https://platform.claude.com/docs/en/about-claude/pricing
 	TaskAnthropicScrape = "scrape:anthropic"
-	// TaskGeminiScrape triggers the HTML scraper for ai.google.dev/gemini-api/docs/pricing.
+	// TaskGeminiScrape triggers the HTML scraper for https://ai.google.dev/gemini-api/docs/pricing
 	TaskGeminiScrape = "scrape:gemini"
 )
 
