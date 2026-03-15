@@ -56,27 +56,27 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
         />
       </g>
 
-      {/* Data particles */}
+      {/* Data particles — bright green to match reactor "sun" */}
       <g className={styles.dot1Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--green)" opacity="0.6" className={styles.dot} />
+        <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--greenBright)" opacity="0.7" className={styles.dot} />
       </g>
       <g className={styles.dot2Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx + 56} cy={cy} r={3} fill="var(--green)" className={styles.dot} />
+        <circle cx={cx + 56} cy={cy} r={3} fill="var(--greenBright)" opacity="0.8" className={styles.dot} />
       </g>
       <g className={styles.dot3Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx - 52} cy={cy} r={3} fill="var(--accentLt)" className={styles.dot} />
+        <circle cx={cx - 52} cy={cy} r={3} fill="var(--greenBright)" opacity="0.6" className={styles.dot} />
       </g>
 
-      {/* Core */}
-      <circle cx={cx} cy={cy} r={12} fill="var(--accentDk)" className={styles.core} />
+      {/* Core — bright green "sun" */}
+      <circle cx={cx} cy={cy} r={12} fill="var(--greenBright)" className={styles.core} />
 
-      {/* Outer echo ring */}
+      {/* Outer echo ring — green glow halo around the sun */}
       <circle
         cx={cx} cy={cy} r={18}
         fill="none"
-        stroke="var(--accent)"
-        strokeWidth={0.3}
-        opacity={0.18}
+        stroke="var(--greenBright)"
+        strokeWidth={0.5}
+        opacity={0.25}
         className={styles.coreEcho}
       />
     </g>
