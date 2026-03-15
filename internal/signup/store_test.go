@@ -3,7 +3,6 @@ package signup_test
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"llm-pricing-api/internal/signup"
 )
@@ -50,10 +49,11 @@ func TestSentinels_AreDistinct(t *testing.T) {
 	}
 }
 
-// ── ConsumeToken logic tests (in-memory mock via fake token state) ─────────────
-// ConsumeToken is the critical path that enforces one-time-use semantics.
-// We test the exported error values here; DB-level concurrent race is covered
-// by integration tests.
+// ── HashToken fixed-vector tests ──────────────────────────────────────────────
+// ConsumeToken's one-time-use and expiry semantics are covered by integration
+// tests (TestIntegration_ConsumeToken_*) that require a live DB. Unit coverage
+// of ConsumeToken belongs there; the following tests verify HashToken output
+// format and known SHA-256 vectors.
 
 func TestHashToken_FixedVector(t *testing.T) {
 	// SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -95,18 +95,4 @@ func TestToken_ZeroValue(t *testing.T) {
 	}
 }
 
-// ── Time-based expiry helpers ─────────────────────────────────────────────────
 
-func TestTokenExpiry_NotExpiredWhenFuture(t *testing.T) {
-	expiresAt := time.Now().Add(15 * time.Minute)
-	if !time.Now().Before(expiresAt) {
-		t.Error("token with future expires_at should not be expired yet")
-	}
-}
-
-func TestTokenExpiry_ExpiredWhenPast(t *testing.T) {
-	expiresAt := time.Now().Add(-1 * time.Second)
-	if !time.Now().After(expiresAt) {
-		t.Error("token with past expires_at should be expired")
-	}
-}

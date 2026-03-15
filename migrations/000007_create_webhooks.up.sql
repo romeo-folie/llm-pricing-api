@@ -1,5 +1,8 @@
--- Ensure pgcrypto is available for gen_random_uuid() on DBs that ran 000001
--- before pgcrypto was added. IF NOT EXISTS makes this fully idempotent.
+-- Guard for environments that applied 000001 before pgcrypto was declared there.
+-- Since golang-migrate does not re-run already-applied migrations, those
+-- environments won't have pgcrypto from 000001; this declaration makes it
+-- available when 000007 (the first migration using gen_random_uuid()) runs.
+-- IF NOT EXISTS is fully idempotent for fresh installs and later migrations.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE webhooks (

@@ -4,6 +4,7 @@ package signup_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -126,7 +127,7 @@ func TestIntegration_ConsumeToken_OneTimeUse(t *testing.T) {
 	if err == nil {
 		t.Fatal("second ConsumeToken should have failed")
 	}
-	if err.Error() != signup.ErrTokenUsed.Error() && err != signup.ErrTokenUsed {
+	if !errors.Is(err, signup.ErrTokenUsed) {
 		t.Errorf("second ConsumeToken: got %v, want ErrTokenUsed", err)
 	}
 }
