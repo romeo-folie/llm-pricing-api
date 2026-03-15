@@ -120,7 +120,7 @@ const DATA_SOURCES = [
   { name: "Anthropic",    logo: "/provider-logos/anthropic.svg" },
   { name: "Google",       logo: "/provider-logos/google.svg" },
   { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg" },
-  { name: "LiteLLM",      logo: "/provider-logos/litellm.png" },
+  { name: "LiteLLM",      logo: "/provider-logos/litellm.svg" },
   { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
 ]
 
