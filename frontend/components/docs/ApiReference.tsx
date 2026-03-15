@@ -7,11 +7,6 @@ import "@scalar/api-reference-react/style.css"
 // and teal accent. Scalar exposes CSS custom properties on `.scalar-app` and
 // the `.light-mode` / `.dark-mode` scope classes.
 const customCss = `
-  /* Hide the dark/light mode toggle — site is light-mode only */
-  .darklight-reference button {
-    display: none !important;
-  }
-
   .light-mode,
   .scalar-app {
     --scalar-color-1:        #1C1917;
@@ -30,6 +25,25 @@ const customCss = `
     --scalar-color-red:      #DC2626;
     --scalar-color-purple:   #7C3AED;
   }
+
+  .dark-mode {
+    --scalar-color-1:        #E8E4E0;
+    --scalar-color-2:        #9C9491;
+    --scalar-color-3:        #6B6461;
+    --scalar-background-1:   #2B2A28;
+    --scalar-background-2:   #343230;
+    --scalar-background-3:   #3E3C3A;
+    --scalar-background-4:   #514E4B;
+    --scalar-border-color:   #413F3C;
+    --scalar-color-accent:   #13A092;
+    --scalar-button-1:       #13A092;
+    --scalar-button-1-color: #FFFFFF;
+    --scalar-color-green:    #10B981;
+    --scalar-color-blue:     #60A5FA;
+    --scalar-color-orange:   #FBBF24;
+    --scalar-color-red:      #F87171;
+    --scalar-color-purple:   #A78BFA;
+  }
 `
 
 interface ApiReferenceProps {
@@ -43,7 +57,6 @@ export default function ApiReference({ specUrl }: ApiReferenceProps) {
         url: specUrl,
         theme: "default",
         customCss,
-        darkMode: false,
       }}
     />
   )

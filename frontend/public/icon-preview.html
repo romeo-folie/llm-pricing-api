@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Provider Icon Options</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; padding: 32px; }
+  h1 { font-size: 20px; margin-bottom: 24px; }
+  h2 { font-size: 16px; margin: 24px 0 12px; color: #666; }
+  .row { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .card {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 20px; border-radius: 12px; min-width: 120px;
+  }
+  .card img { width: 40px; height: 40px; }
+  .card span { font-size: 12px; font-weight: 500; }
+  .dark { background: #1a1a1a; color: #e0e0e0; }
+  .light { background: #f5f5f5; color: #222; }
+  .section { margin-bottom: 40px; }
+
+  /* Option labels */
+  .option-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #999; margin-bottom: 4px;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+  th { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .color-swatch {
+    display: inline-block; width: 20px; height: 20px; border-radius: 4px;
+    vertical-align: middle; margin-right: 8px; border: 1px solid rgba(0,0,0,0.1);
+  }
+</style>
+</head>
+<body>
+  <h1>🎨 Provider Icon Options — Dark Mode vs Light Mode</h1>
+
+  <div class="section">
+    <h2>Option A: Color icons for dark mode, black (currentColor) icons for light mode</h2>
+    <p style="color:#666; font-size:13px; margin-bottom:16px;">
+      Colorful brand icons pop on dark backgrounds. Black monochrome icons are clean on light backgrounds.
+    </p>
+
+    <div class="row">
+      <div>
+        <div class="option-label">Dark Mode</div>
+        <div class="row">
+          <div class="card dark">
+            <img src="provider-logos/openai-color.svg" alt="OpenAI">
+            <span>OpenAI</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/anthropic-color.svg" alt="Anthropic">
+            <span>Anthropic</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/google-color.svg" alt="Google">
+            <span>Google</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/huggingface-color.svg" alt="Hugging Face">
+            <span>Hugging Face</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/litellm-color.svg" alt="LiteLLM">
+            <span>LiteLLM</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/openrouter-color.svg" alt="OpenRouter">
+            <span>OpenRouter</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 16px;">
+      <div class="option-label">Light Mode</div>
+      <div class="row">
+        <div class="card light">
+          <img src="provider-logos/openai.svg" alt="OpenAI" style="color: #000;">
+          <span>OpenAI</span>
+        </div>
+        <div class="card light">
+          <img src="provider-logos/anthropic.svg" alt="Anthropic" style="color: #000;">
+          <span>Anthropic</span>
+        </div>
+        <div class="card light">
+          <img src="provider-logos/google.svg" alt="Google" style="color: #000;">
+          <span>Google</span>
+        </div>
+        <div class="card light">
+          <img src="provider-logos/huggingface.svg" alt="Hugging Face" style="color: #000;">
+          <span>Hugging Face</span>
+        </div>
+        <div class="card light">
+          <img src="provider-logos/litellm.svg" alt="LiteLLM" style="color: #000;">
+          <span>LiteLLM</span>
+        </div>
+        <div class="card light">
+          <img src="provider-logos/openrouter.svg" alt="OpenRouter" style="color: #000;">
+          <span>OpenRouter</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Option B: Color icons everywhere (both modes)</h2>
+    <p style="color:#666; font-size:13px; margin-bottom:16px;">
+      Same colorful icons in both light and dark mode. Recognizable, but may feel busy.
+    </p>
+
+    <div class="row">
+      <div>
+        <div class="option-label">Dark Mode</div>
+        <div class="row">
+          <div class="card dark">
+            <img src="provider-logos/openai-color.svg" alt="OpenAI">
+            <span>OpenAI</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/anthropic-color.svg" alt="Anthropic">
+            <span>Anthropic</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/google-color.svg" alt="Google">
+            <span>Google</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/huggingface-color.svg" alt="Hugging Face">
+            <span>Hugging Face</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/litellm-color.svg" alt="LiteLLM">
+            <span>LiteLLM</span>
+          </div>
+          <div class="card dark">
+            <img src="provider-logos/openrouter-color.svg" alt="OpenRouter">
+            <span>OpenRouter</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="option-label">Light Mode</div>
+        <div class="row">
+          <div class="card light">
+            <img src="provider-logos/openai-color.svg" alt="OpenAI">
+            <span>OpenAI</span>
+          </div>
+          <div class="card light">
+            <img src="provider-logos/anthropic-color.svg" alt="Anthropic">
+            <span>Anthropic</span>
+          </div>
+          <div class="card light">
+            <img src="provider-logos/google-color.svg" alt="Google">
+            <span>Google</span>
+          </div>
+          <div class="card light">
+            <img src="provider-logos/huggingface-color.svg" alt="Hugging Face">
+            <span>Hugging Face</span>
+          </div>
+          <div class="card light">
+            <img src="provider-logos/litellm-color.svg" alt="LiteLLM">
+            <span>LiteLLM</span>
+          </div>
+          <div class="card light">
+            <img src="provider-logos/openrouter-color.svg" alt="OpenRouter">
+            <span>OpenRouter</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Brand Color Reference</h2>
+    <table>
+      <tr><th>Provider</th><th>Brand Color</th><th>Hex</th><th>Notes</th></tr>
+      <tr>
+        <td>OpenAI</td>
+        <td><span class="color-swatch" style="background:#10A37F;"></span>#10A37F</td>
+        <td>Teal Green</td>
+        <td>Their most recognizable color icon. Official brand is technically black/white, but teal is widely associated with OpenAI.</td>
+      </tr>
+      <tr>
+        <td>Anthropic</td>
+        <td><span class="color-swatch" style="background:#D97757;"></span>#D97757</td>
+        <td>Warm Coral</td>
+        <td>Official Anthropic accent/brand orange.</td>
+      </tr>
+      <tr>
+        <td>Google</td>
+        <td><span class="color-swatch" style="background:#4285F4;"></span>Multi</td>
+        <td>Blue/Red/Yellow/Green</td>
+        <td>Classic 4-color Google "G". Unmistakable.</td>
+      </tr>
+      <tr>
+        <td>Hugging Face</td>
+        <td><span class="color-swatch" style="background:#FFD21E;"></span>#FFD21E</td>
+        <td>Yellow</td>
+        <td>Official brand yellow — the one Romeo wants restored.</td>
+      </tr>
+      <tr>
+        <td>LiteLLM</td>
+        <td><span class="color-swatch" style="background:#3B88C3;"></span>#3B88C3</td>
+        <td>Boston Blue</td>
+        <td>From Brandfetch. Their "L" mark in blue.</td>
+      </tr>
+      <tr>
+        <td>OpenRouter</td>
+        <td><span class="color-swatch" style="background:#6467F2;"></span>#6467F2</td>
+        <td>Cornflower Blue</td>
+        <td>Official brand purple-blue from Brandfetch.</td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

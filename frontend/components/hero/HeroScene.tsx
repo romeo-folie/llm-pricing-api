@@ -2,14 +2,14 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
-import { OrbitalReactor } from "./OrbitalReactor";
+import { WireframeCube } from "./WireframeCube";
 
 /* ─── Static data ──────────────────────────────────────────────────────────── */
 
 const PRIMARY_SOURCES = [
-  { name: "OpenAI",    sub: "api pricing page" },
-  { name: "Anthropic", sub: "api pricing page" },
-  { name: "Google",    sub: "api pricing page" },
+  { name: "OpenAI",    sub: "every 6h" },
+  { name: "Anthropic", sub: "every 6h" },
+  { name: "Google",    sub: "every 6h" },
 ];
 
 const AGGREGATOR_SOURCES = [
@@ -107,21 +107,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           API
         </text>
 
-        {/* ── Tier labels ───────────────────────────────────────────────── */}
-        <text
-          x={S_X} y={P_Y0 - 8}
-          fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" letterSpacing="0.5"
-        >
-          direct
-        </text>
-        <text
-          x={S_X} y={A_Y0 - 8}
-          fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" letterSpacing="0.5"
-        >
-          indexed
-        </text>
+        {/* ── Tier labels (removed per design update) ──────────────────── */}
 
         {/* ── Primary source → merge flow lines ─────────────────────────── */}
         {PRIMARY_SOURCES.map((_, i) => {
@@ -263,7 +249,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 x={S_X + 12} y={y + S_H / 2 - 3}
                 fontSize="11" fontWeight="600"
                 fontFamily="var(--font-geist-sans), sans-serif"
-                fill="var(--muted)" dominantBaseline="middle"
+                fill="var(--ink)" dominantBaseline="middle"
               >
                 {p.name}
               </text>
@@ -271,7 +257,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 x={S_X + 12} y={y + S_H / 2 + 11}
                 fontSize="8.5"
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--dim)" dominantBaseline="middle" opacity="0.8"
+                fill="var(--muted)" dominantBaseline="middle"
               >
                 {p.sub}
               </text>
@@ -280,11 +266,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         })}
 
         {/* ── Orbital Reactor (engine) ──────────────────────────────────── */}
-        <OrbitalReactor cx={RCX} cy={RCY} />
+        <WireframeCube cx={RCX} cy={RCY} />
 
         {/* Reactor label */}
         <text
-          x={RCX} y={RCY + 30}
+          x={RCX} y={RCY + 68}
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
           fill="var(--accent)" textAnchor="middle" letterSpacing="0.5" opacity="0.85"
         >
@@ -324,7 +310,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
 
         {/* Stats footnote */}
         <text
-          x={VW / 2} y={VH - 8}
+          x={(S_X + E_X + E_W) / 2} y={VH - 8}
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
           fill="var(--dim)" textAnchor="middle" opacity="0.7"
         >
