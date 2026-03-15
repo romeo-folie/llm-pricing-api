@@ -2,6 +2,9 @@
 
 import styles from "./OrbitalReactor.module.css";
 
+/** Outer ellipse rx (ring 2) — exported so HeroScene can derive REACTOR_EDGE without duplication. */
+export const ORBITAL_REACTOR_OUTER_RX = 56;
+
 interface OrbitalReactorProps {
   cx?: number;
   cy?: number;

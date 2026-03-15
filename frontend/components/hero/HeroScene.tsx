@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useId, useState } from "react";
-import { OrbitalReactor } from "./OrbitalReactor";
+import { OrbitalReactor, ORBITAL_REACTOR_OUTER_RX } from "./OrbitalReactor";
 
 /* ─── Static data ──────────────────────────────────────────────────────────── */
 
@@ -65,8 +65,8 @@ function endpointY(i: number) { return E_Y0 + i * E_DY; }
  * (rx=56, see OrbitalReactor.tsx) multiplied by the scale prop used below (1.1).
  * Computed here so any change to either value propagates automatically.
  */
-const REACTOR_OUTER_RX = 56;  // OrbitalReactor outer ellipse rx
-const REACTOR_SCALE = 1.1;    // scale prop passed to OrbitalReactor
+const REACTOR_OUTER_RX = ORBITAL_REACTOR_OUTER_RX; // imported from OrbitalReactor — single source of truth
+const REACTOR_SCALE = 1.1;                         // scale prop passed to OrbitalReactor
 const REACTOR_EDGE = Math.round(REACTOR_OUTER_RX * REACTOR_SCALE); // ≈ 62
 
 /** Smooth cubic bezier from planet edge to reactor left edge. */
@@ -242,7 +242,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
           fill="var(--accent)" textAnchor="middle" letterSpacing="0.5" opacity="0.85"
         >
-          reconcile · 2-source
+          reconcile · 6-source
         </text>
 
         {/* ── Output flow lines: reactor → endpoints ────────────────── */}
