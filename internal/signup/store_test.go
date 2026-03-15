@@ -156,7 +156,7 @@ func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProvide
 	return m.InsertKey(context.Background(), identityID, newProviderKeyID)
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
+// ─── Mock store tests ─────────────────────────────────────────────────────────
 
 func TestUpsertIdentity_NewAndIdempotent(t *testing.T) {
 	store := newMock()
@@ -346,5 +346,83 @@ func TestDeleteExpiredTokens(t *testing.T) {
 	// valid token still consumable
 	if _, err := store.ConsumeToken(ctx, "valid1"); err != nil {
 		t.Errorf("valid token should still be consumable: %v", err)
+	}
+}
+
+// ── HashToken ─────────────────────────────────────────────────────────────────
+
+func TestHashToken_Deterministic(t *testing.T) {
+	raw := "test-token-abc123"
+	h1 := signup.HashToken(raw)
+	h2 := signup.HashToken(raw)
+	if h1 != h2 {
+		t.Errorf("HashToken is not deterministic: %q vs %q", h1, h2)
+	}
+}
+
+func TestHashToken_DifferentInputsDifferentOutputs(t *testing.T) {
+	h1 := signup.HashToken("token-a")
+	h2 := signup.HashToken("token-b")
+	if h1 == h2 {
+		t.Error("HashToken collision: different inputs produced same hash")
+	}
+}
+
+func TestHashToken_EmptyString(t *testing.T) {
+	h := signup.HashToken("")
+	if h == "" {
+		t.Error("HashToken of empty string should not be empty")
+	}
+}
+
+func TestHashToken_FixedVector(t *testing.T) {
+	cases := []struct {
+		raw    string
+		prefix string // first 8 hex chars of expected SHA-256
+	}{
+		{"", "e3b0c442"},
+		{"abc", "ba7816bf"},
+	}
+	for _, tc := range cases {
+		got := signup.HashToken(tc.raw)
+		if len(got) < 8 || got[:8] != tc.prefix {
+			t.Errorf("HashToken(%q): got %q, want prefix %q", tc.raw, got, tc.prefix)
+		}
+	}
+}
+
+// ── Sentinel error tests ──────────────────────────────────────────────────────
+
+func TestSentinels_AreDistinct(t *testing.T) {
+	if errors.Is(signup.ErrNotFound, signup.ErrTokenConsumed) {
+		t.Error("ErrNotFound and ErrTokenConsumed must be distinct")
+	}
+	if errors.Is(signup.ErrNotFound, signup.ErrTokenExpired) {
+		t.Error("ErrNotFound and ErrTokenExpired must be distinct")
+	}
+	if errors.Is(signup.ErrTokenConsumed, signup.ErrTokenExpired) {
+		t.Error("ErrTokenConsumed and ErrTokenExpired must be distinct")
+	}
+}
+
+// ── Zero-value sanity ─────────────────────────────────────────────────────────
+
+func TestKeyRecord_ZeroValue(t *testing.T) {
+	var k signup.KeyRecord
+	if k.Status != "" {
+		t.Error("zero-value KeyRecord should have empty Status")
+	}
+	if k.RevokedAt != nil {
+		t.Error("zero-value KeyRecord.RevokedAt should be nil")
+	}
+}
+
+func TestMagicLinkToken_ZeroValue(t *testing.T) {
+	var tok signup.MagicLinkToken
+	if tok.UsedAt != nil {
+		t.Error("zero-value MagicLinkToken.UsedAt should be nil (unused)")
+	}
+	if !tok.ExpiresAt.IsZero() {
+		t.Error("zero-value MagicLinkToken.ExpiresAt should be zero time")
 	}
 }

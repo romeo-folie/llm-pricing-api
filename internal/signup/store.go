@@ -1,41 +1,70 @@
-// Package signup implements the store layer for the free-key-issuance epic.
-// It covers api_identities, magic_link_tokens, and api_keys_registry.
+// Package signup provides the data-access layer for the free API-key
+// onboarding flow: email identity management, magic-link token lifecycle,
+// and the Unkey-backed API key registry.
+//
+// Use NewPgxStore to obtain a PgxStore from a *pgxpool.Pool. All operations are
+// methods on PgxStore; there is no package-level state.
 package signup
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ErrNotFound is returned when a lookup finds no matching row.
-var ErrNotFound = errors.New("signup: record not found")
+// ErrNotFound is returned when a queried row does not exist.
+var ErrNotFound = errors.New("signup: not found")
 
-// ErrTokenConsumed is returned when a token has already been used.
+// ErrTokenConsumed is returned when a magic-link token has already been consumed.
 var ErrTokenConsumed = errors.New("signup: token already used")
 
-// ErrTokenExpired is returned when the token TTL has elapsed.
+// ErrTokenExpired is returned when a magic-link token is past its expires_at.
 var ErrTokenExpired = errors.New("signup: token expired")
 
-// ErrDuplicateActiveKey is returned when a second active key would violate the
-// one-active-key-per-identity policy.
+// ErrDuplicateActiveKey is returned when an identity already has an active key
+// and a second insertion is attempted.
 var ErrDuplicateActiveKey = errors.New("signup: identity already has an active key")
 
-// ─── Domain types ─────────────────────────────────────────────────────────────
+// ── Store interface ───────────────────────────────────────────────────────────
+
+// Store abstracts all database access for the signup flow.
+// The production implementation is PgxStore; tests use an in-memory mock.
+type Store interface {
+	// Identity operations
+	UpsertIdentity(ctx context.Context, email, ipHash, uaHash string) (*Identity, error)
+	GetIdentityByEmail(ctx context.Context, email string) (*Identity, error)
+	GetIdentityByID(ctx context.Context, id string) (*Identity, error)
+	MarkEmailVerified(ctx context.Context, identityID string) error
+
+	// Token operations
+	InsertToken(ctx context.Context, identityID, tokenHash string, expiresAt time.Time) (*MagicLinkToken, error)
+	ConsumeToken(ctx context.Context, tokenHash string) (*MagicLinkToken, error)
+	DeleteExpiredTokens(ctx context.Context) (int64, error)
+
+	// Key registry operations
+	GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error)
+	InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error)
+	RevokeKey(ctx context.Context, identityID, providerKeyID string) error
+	RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error)
+}
+
+// ── Domain types ──────────────────────────────────────────────────────────────
 
 // Identity represents a row in api_identities.
 type Identity struct {
-	ID               string
-	Email            string
-	EmailVerifiedAt  *time.Time
-	IPHash           string
-	UAHash           string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID              string
+	Email           string
+	EmailVerifiedAt *time.Time
+	IPHash          string
+	UAHash          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // MagicLinkToken represents a row in magic_link_tokens.
@@ -52,74 +81,58 @@ type MagicLinkToken struct {
 type KeyRecord struct {
 	ID            string
 	IdentityID    string
-	ProviderKeyID string // Unkey key.id
-	Status        string // "active" | "revoked"
+	ProviderKeyID string
+	Status        string
 	CreatedAt     time.Time
 	RevokedAt     *time.Time
 }
 
-// ─── Store interface ──────────────────────────────────────────────────────────
+// ── Production implementation ─────────────────────────────────────────────────
 
-// Store abstracts all database access for the signup flow.
-// The production implementation is pgxStore; tests use a mock.
-type Store interface {
-	// Identity operations
-	UpsertIdentity(ctx context.Context, email, ipHash, uaHash string) (*Identity, error)
-	GetIdentityByEmail(ctx context.Context, email string) (*Identity, error)
-	GetIdentityByID(ctx context.Context, id string) (*Identity, error)
-	MarkEmailVerified(ctx context.Context, identityID string) error
-
-	// Token operations
-	InsertToken(ctx context.Context, identityID, tokenHash string, expiresAt time.Time) (*MagicLinkToken, error)
-	// ConsumeToken atomically finds the token by hash, validates it has not been
-	// used and has not expired, marks it used, and returns the token record.
-	// Returns ErrNotFound, ErrTokenConsumed, or ErrTokenExpired on failure.
-	ConsumeToken(ctx context.Context, tokenHash string) (*MagicLinkToken, error)
-	DeleteExpiredTokens(ctx context.Context) (int64, error)
-
-	// Key registry operations
-	GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error)
-	InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error)
-	RevokeKey(ctx context.Context, identityID, providerKeyID string) error
-	// RevokeAndInsertKey atomically revokes the old key and inserts the new one
-	// in a single transaction. Returns the new KeyRecord. If oldProviderKeyID is
-	// empty, only the insert is performed.
-	RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error)
-}
-
-// ─── Production implementation ────────────────────────────────────────────────
-
-type pgxStore struct {
+// PgxStore is the production Store backed by a pgx connection pool.
+type PgxStore struct {
 	db *pgxpool.Pool
 }
 
 // NewStore returns a production Store backed by the given connection pool.
 func NewStore(db *pgxpool.Pool) Store {
-	return &pgxStore{db: db}
+	return &PgxStore{db: db}
+}
+
+// HashToken returns the hex-encoded SHA-256 of the raw token string.
+// The hash is what gets stored; the raw token is sent in the email link.
+func HashToken(raw string) string {
+	h := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("%x", h)
 }
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 
 // UpsertIdentity inserts a new identity for email (normalized to lower-case) or
 // returns the existing one. ipHash and uaHash are set only on initial creation.
-func (s *pgxStore) UpsertIdentity(ctx context.Context, email, ipHash, uaHash string) (*Identity, error) {
+// Returns an error if the normalized email is empty.
+func (s *PgxStore) UpsertIdentity(ctx context.Context, email, ipHash, uaHash string) (*Identity, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, fmt.Errorf("signup.UpsertIdentity: email must not be empty")
+	}
 	row := s.db.QueryRow(ctx, `
-		INSERT INTO api_identities (email, ip_hash, ua_hash)
-		VALUES (LOWER($1), $2, $3)
-		ON CONFLICT ((LOWER(email))) DO UPDATE
-			SET updated_at = NOW()
-		RETURNING id, email, email_verified_at, ip_hash, ua_hash, created_at, updated_at`,
+		INSERT INTO api_identities (email, signup_ip_hash, signup_ua_hash)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
+		RETURNING id, email, email_verified_at, signup_ip_hash, signup_ua_hash, created_at, updated_at`,
 		email, nullStr(ipHash), nullStr(uaHash),
 	)
 	return scanIdentity(row)
 }
 
-// GetIdentityByEmail looks up an identity by normalized email.
-func (s *pgxStore) GetIdentityByEmail(ctx context.Context, email string) (*Identity, error) {
+// GetIdentityByEmail returns the identity for the given (normalized) email.
+// Returns ErrNotFound when no row matches.
+func (s *PgxStore) GetIdentityByEmail(ctx context.Context, email string) (*Identity, error) {
+	email = normalizeEmail(email)
 	row := s.db.QueryRow(ctx, `
-		SELECT id, email, email_verified_at, ip_hash, ua_hash, created_at, updated_at
-		FROM api_identities WHERE LOWER(email) = LOWER($1)`,
-		email,
+		SELECT id, email, email_verified_at, signup_ip_hash, signup_ua_hash, created_at, updated_at
+		FROM api_identities WHERE email = $1`, email,
 	)
 	id, err := scanIdentity(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -128,12 +141,12 @@ func (s *pgxStore) GetIdentityByEmail(ctx context.Context, email string) (*Ident
 	return id, err
 }
 
-// GetIdentityByID looks up an identity by UUID.
-func (s *pgxStore) GetIdentityByID(ctx context.Context, id string) (*Identity, error) {
+// GetIdentityByID returns the identity for the given UUID string.
+// Returns ErrNotFound when no row matches.
+func (s *PgxStore) GetIdentityByID(ctx context.Context, id string) (*Identity, error) {
 	row := s.db.QueryRow(ctx, `
-		SELECT id, email, email_verified_at, ip_hash, ua_hash, created_at, updated_at
-		FROM api_identities WHERE id = $1`,
-		id,
+		SELECT id, email, email_verified_at, signup_ip_hash, signup_ua_hash, created_at, updated_at
+		FROM api_identities WHERE id = $1`, id,
 	)
 	ident, err := scanIdentity(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -143,7 +156,7 @@ func (s *pgxStore) GetIdentityByID(ctx context.Context, id string) (*Identity, e
 }
 
 // MarkEmailVerified stamps email_verified_at = NOW() for an identity.
-func (s *pgxStore) MarkEmailVerified(ctx context.Context, identityID string) error {
+func (s *PgxStore) MarkEmailVerified(ctx context.Context, identityID string) error {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE api_identities
 		SET email_verified_at = NOW(), updated_at = NOW()
@@ -162,8 +175,11 @@ func (s *pgxStore) MarkEmailVerified(ctx context.Context, identityID string) err
 
 // ── Token ─────────────────────────────────────────────────────────────────────
 
-// InsertToken creates a new magic-link token record.
-func (s *pgxStore) InsertToken(ctx context.Context, identityID, tokenHash string, expiresAt time.Time) (*MagicLinkToken, error) {
+// InsertToken creates a new magic-link token record with a pre-hashed token.
+func (s *PgxStore) InsertToken(ctx context.Context, identityID, tokenHash string, expiresAt time.Time) (*MagicLinkToken, error) {
+	if tokenHash == "" {
+		return nil, fmt.Errorf("signup.InsertToken: tokenHash must not be empty")
+	}
 	row := s.db.QueryRow(ctx, `
 		INSERT INTO magic_link_tokens (identity_id, token_hash, expires_at)
 		VALUES ($1, $2, $3)
@@ -174,7 +190,16 @@ func (s *pgxStore) InsertToken(ctx context.Context, identityID, tokenHash string
 }
 
 // ConsumeToken atomically validates and marks a token as used.
-func (s *pgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLinkToken, error) {
+// Returns ErrNotFound, ErrTokenConsumed, or ErrTokenExpired as appropriate.
+//
+// Uses FOR UPDATE row locking to prevent concurrent consumption. Expiry is
+// checked in the application layer after the lock so the disambiguating error
+// is always precise.
+func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLinkToken, error) {
+	if tokenHash == "" {
+		return nil, ErrNotFound
+	}
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -183,14 +208,13 @@ func (s *pgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 
 	// Lock row for update to prevent concurrent consumption.
 	var t MagicLinkToken
-	var usedAt *time.Time
 	err = tx.QueryRow(ctx, `
 		SELECT id, identity_id, token_hash, expires_at, used_at, created_at
 		FROM magic_link_tokens
 		WHERE token_hash = $1
 		FOR UPDATE`,
 		tokenHash,
-	).Scan(&t.ID, &t.IdentityID, &t.TokenHash, &t.ExpiresAt, &usedAt, &t.CreatedAt)
+	).Scan(&t.ID, &t.IdentityID, &t.TokenHash, &t.ExpiresAt, &t.UsedAt, &t.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -198,8 +222,7 @@ func (s *pgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 		return nil, err
 	}
 
-	t.UsedAt = usedAt
-	if usedAt != nil {
+	if t.UsedAt != nil {
 		return nil, ErrTokenConsumed
 	}
 	if time.Now().After(t.ExpiresAt) {
@@ -220,10 +243,10 @@ func (s *pgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 }
 
 // DeleteExpiredTokens removes tokens that expired and have not been consumed.
-func (s *pgxStore) DeleteExpiredTokens(ctx context.Context) (int64, error) {
+func (s *PgxStore) DeleteExpiredTokens(ctx context.Context) (int64, error) {
 	tag, err := s.db.Exec(ctx, `
 		DELETE FROM magic_link_tokens
-		WHERE expires_at < NOW() AND used_at IS NULL`)
+		WHERE expires_at <= NOW() AND used_at IS NULL`)
 	if err != nil {
 		return 0, err
 	}
@@ -233,7 +256,7 @@ func (s *pgxStore) DeleteExpiredTokens(ctx context.Context) (int64, error) {
 // ── Key registry ──────────────────────────────────────────────────────────────
 
 // GetActiveKey returns the active key for an identity, or ErrNotFound.
-func (s *pgxStore) GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error) {
+func (s *PgxStore) GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error) {
 	row := s.db.QueryRow(ctx, `
 		SELECT id, identity_id, provider_key_id, status, created_at, revoked_at
 		FROM api_keys_registry
@@ -249,7 +272,12 @@ func (s *pgxStore) GetActiveKey(ctx context.Context, identityID string) (*KeyRec
 
 // InsertKey creates a new active key record. Returns ErrDuplicateActiveKey if
 // the identity already has an active key (enforced by the unique partial index).
-func (s *pgxStore) InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error) {
+// Returns an error if providerKeyID is empty or blank.
+func (s *PgxStore) InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error) {
+	providerKeyID = strings.TrimSpace(providerKeyID)
+	if providerKeyID == "" {
+		return nil, fmt.Errorf("signup.InsertKey: providerKeyID must not be empty")
+	}
 	row := s.db.QueryRow(ctx, `
 		INSERT INTO api_keys_registry (identity_id, provider_key_id)
 		VALUES ($1, $2)
@@ -258,7 +286,6 @@ func (s *pgxStore) InsertKey(ctx context.Context, identityID, providerKeyID stri
 	)
 	k, err := scanKey(row)
 	if err != nil {
-		// Unique partial index violation → duplicate active key.
 		if isPgUniqueViolation(err) {
 			return nil, ErrDuplicateActiveKey
 		}
@@ -268,7 +295,12 @@ func (s *pgxStore) InsertKey(ctx context.Context, identityID, providerKeyID stri
 }
 
 // RevokeKey marks the given Unkey key ID as revoked for the identity.
-func (s *pgxStore) RevokeKey(ctx context.Context, identityID, providerKeyID string) error {
+// Returns an error if providerKeyID is empty or blank.
+func (s *PgxStore) RevokeKey(ctx context.Context, identityID, providerKeyID string) error {
+	providerKeyID = strings.TrimSpace(providerKeyID)
+	if providerKeyID == "" {
+		return fmt.Errorf("signup.RevokeKey: providerKeyID must not be empty")
+	}
 	tag, err := s.db.Exec(ctx, `
 		UPDATE api_keys_registry
 		SET status = 'revoked', revoked_at = NOW()
@@ -284,17 +316,24 @@ func (s *pgxStore) RevokeKey(ctx context.Context, identityID, providerKeyID stri
 	return nil
 }
 
-// RevokeAndInsertKey atomically revokes the old key and inserts the new one.
-func (s *pgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error) {
+// RevokeAndInsertKey atomically revokes the old key and inserts the new one
+// in a single transaction. Returns the new KeyRecord. If oldProviderKeyID is
+// empty, only the insert is performed.
+func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error) {
+	newProviderKeyID = strings.TrimSpace(newProviderKeyID)
+	if newProviderKeyID == "" {
+		return nil, fmt.Errorf("signup.RevokeAndInsertKey: newProviderKeyID must not be empty")
+	}
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Revoke old key if specified.
 	if oldProviderKeyID != "" {
-		tag, err := tx.Exec(ctx, `
+		_, err := tx.Exec(ctx, `
 			UPDATE api_keys_registry
 			SET status = 'revoked', revoked_at = NOW()
 			WHERE identity_id = $1 AND provider_key_id = $2 AND status = 'active'`,
@@ -303,9 +342,7 @@ func (s *pgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 		if err != nil {
 			return nil, fmt.Errorf("revoke old key: %w", err)
 		}
-		if tag.RowsAffected() == 0 {
-			// Old key already revoked or missing — not fatal for regeneration.
-		}
+		// Old key already revoked or missing is not fatal for regeneration.
 	}
 
 	// Insert new key.
@@ -329,7 +366,7 @@ func (s *pgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 	return k, nil
 }
 
-// ─── Scan helpers ─────────────────────────────────────────────────────────────
+// ── Scan helpers ──────────────────────────────────────────────────────────────
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -373,7 +410,7 @@ func scanKey(row rowScanner) (*KeyRecord, error) {
 	return &k, nil
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 func nullStr(s string) any {
 	if s == "" {
@@ -387,26 +424,10 @@ func isPgUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, errUniqueViolation{}) ||
-		containsSQLState(err, "23505")
-}
-
-type errUniqueViolation struct{}
-
-func (errUniqueViolation) Error() string { return "unique violation" }
-func (errUniqueViolation) Is(err error) bool {
-	type pgErr interface{ SQLState() string }
-	if pe, ok := err.(pgErr); ok {
-		return pe.SQLState() == "23505"
-	}
-	return false
-}
-
-func containsSQLState(err error, code string) bool {
 	type sqlStater interface{ SQLState() string }
 	var target sqlStater
 	if errors.As(err, &target) {
-		return target.SQLState() == code
+		return target.SQLState() == "23505"
 	}
 	return false
 }
