@@ -310,7 +310,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
 
         {/* Stats footnote */}
         <text
-          x={VW / 2} y={VH - 8}
+          x={RCX} y={VH - 8}
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
           fill="var(--dim)" textAnchor="middle" opacity="0.7"
         >

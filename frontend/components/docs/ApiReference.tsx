@@ -46,6 +46,31 @@ const customCss = `
     --scalar-color-purple:   #A78BFA;
   }
 
+  /* Force dark palette when system preference is dark, even if Scalar
+     renders with .light-mode class (its detection can miss the preference). */
+  @media (prefers-color-scheme: dark) {
+    .light-mode,
+    .scalar-app {
+      --scalar-color-1:        #E8E4E0 !important;
+      --scalar-color-2:        #9C9491 !important;
+      --scalar-color-3:        #6B6461 !important;
+      --scalar-background-1:   #2B2A28 !important;
+      --scalar-background-2:   #343230 !important;
+      --scalar-background-3:   #3E3C3A !important;
+      --scalar-background-4:   #514E4B !important;
+      --scalar-border-color:   #413F3C !important;
+      --scalar-color-accent:   #13A092 !important;
+      --scalar-button-1:       #13A092 !important;
+      --scalar-button-1-color: #FFFFFF !important;
+      --scalar-color-green:    #10B981 !important;
+      --scalar-color-blue:     #60A5FA !important;
+      --scalar-color-orange:   #FBBF24 !important;
+      --scalar-color-red:      #F87171 !important;
+      --scalar-color-purple:   #A78BFA !important;
+      color-scheme: dark !important;
+    }
+  }
+
   /* Theme is driven by system preference (prefers-color-scheme) via the
      site's global dark-mode class. Hide Scalar's built-in toggle so users
      aren't presented with a conflicting manual control. */
