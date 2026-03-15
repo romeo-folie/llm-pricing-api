@@ -284,15 +284,15 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g key={ep}>
               <rect
                 x={E_X} y={y} width={E_W} height={E_H} rx="3"
-                fill="var(--surfaceHi)"
-                stroke="var(--border)"
+                fill="var(--hero-endpoint-bg, var(--surfaceHi))"
+                stroke="var(--hero-endpoint-border, var(--border))"
                 strokeWidth="1"
               />
               <text
                 x={E_X + 10} y={y + E_H / 2 - 3}
                 fontSize="10" fontWeight="600"
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--ink)" dominantBaseline="middle"
+                fill="var(--hero-endpoint-text, var(--ink))" dominantBaseline="middle"
               >
                 {ep}
               </text>
