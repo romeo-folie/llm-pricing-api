@@ -207,10 +207,12 @@ func TestFetch_PriceConversion(t *testing.T) {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
+	found := false
 	for _, m := range models {
 		if m.Slug != "google/gemini-2.5-pro" {
 			continue
 		}
+		found = true
 		// $0.25 / 1M = 0.00000025
 		const wantInput = 0.25 / 1_000_000
 		if m.InputCostPerToken != wantInput {
@@ -221,6 +223,9 @@ func TestFetch_PriceConversion(t *testing.T) {
 		if m.OutputCostPerToken != wantOutput {
 			t.Errorf("gemini-2.5-pro OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
+	}
+	if !found {
+		t.Error("expected model google/gemini-2.5-pro not found in scraped results")
 	}
 }
 
@@ -239,10 +244,12 @@ func TestFetch_TieredContextPrice(t *testing.T) {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
+	found := false
 	for _, m := range models {
 		if m.Slug != "google/gemini-3.1-pro-preview" {
 			continue
 		}
+		found = true
 		const wantInput = 2.00 / 1_000_000  // first line: $2.00
 		const wantOutput = 12.00 / 1_000_000 // first line: $12.00
 		if m.InputCostPerToken != wantInput {
@@ -251,6 +258,9 @@ func TestFetch_TieredContextPrice(t *testing.T) {
 		if m.OutputCostPerToken != wantOutput {
 			t.Errorf("tiered output: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
+	}
+	if !found {
+		t.Error("expected model google/gemini-3.1-pro-preview not found in scraped results")
 	}
 }
 
@@ -267,8 +277,10 @@ func TestFetch_EmojiStripped(t *testing.T) {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
+	foundImagePreview := false
 	for _, m := range models {
 		if strings.Contains(m.Slug, "image-preview") {
+			foundImagePreview = true
 			// Must NOT contain the 🍌 emoji or any non-ASCII in the slug.
 			for _, r := range m.Slug {
 				if r > 127 {
@@ -276,6 +288,9 @@ func TestFetch_EmojiStripped(t *testing.T) {
 				}
 			}
 		}
+	}
+	if !foundImagePreview {
+		t.Error("expected at least one image-preview slug in scraped results (emoji-stripping not exercised)")
 	}
 }
 
@@ -294,14 +309,19 @@ func TestFetch_MultiLineOutputTextPrice(t *testing.T) {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
+	found := false
 	for _, m := range models {
 		if m.Slug != "google/gemini-3.1-flash-image-preview" {
 			continue
 		}
+		found = true
 		const wantOutput = 3.0 / 1_000_000
 		if m.OutputCostPerToken != wantOutput {
 			t.Errorf("multi-line output: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
+	}
+	if !found {
+		t.Error("expected model google/gemini-3.1-flash-image-preview not found in scraped results")
 	}
 }
 

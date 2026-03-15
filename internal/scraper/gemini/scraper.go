@@ -359,10 +359,13 @@ func isEmoji(r rune) bool {
 		(r >= 0x2600 && r <= 0x27BF) // Misc Symbols
 }
 
-// normalizeSlug lowercases and replaces spaces/dots/underscores with hyphens.
+// normalizeSlug lowercases and replaces spaces and underscores with hyphens.
+// Dots are intentionally preserved so "Gemini 2.5 Pro" stays "gemini-2.5-pro"
+// and matches canonical slugs used by other scrapers (e.g. OpenRouter/LiteLLM),
+// enabling cross-source diff/reconciliation to work correctly.
 func normalizeSlug(name string) string {
 	name = strings.ToLower(name)
-	name = strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
+	name = strings.NewReplacer(" ", "-", "_", "-").Replace(name)
 	return name
 }
 
