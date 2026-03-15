@@ -70,24 +70,22 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
       {/* Core — deeper green, luminosity comes from the glow rings not the core */}
       <circle cx={cx} cy={cy} r={12} fill="var(--green)" className={styles.core} />
 
-      {/* Inner glow halo — tight, bright */}
+      {/* Inner glow halo — tight, bright (pulses 0.2→0.38) */}
       <circle
         cx={cx} cy={cy} r={22}
         fill="none"
         stroke="var(--greenBright)"
         strokeWidth={1.5}
-        opacity={0.2}
-        className={styles.coreEcho}
+        className={styles.coreEchoInner}
       />
 
-      {/* Outer glow halo — wider, softer */}
+      {/* Outer glow halo — wider, softer (pulses 0.1→0.20) */}
       <circle
         cx={cx} cy={cy} r={32}
         fill="none"
         stroke="var(--greenBright)"
         strokeWidth={0.8}
-        opacity={0.1}
-        className={styles.coreEcho}
+        className={styles.coreEchoOuter}
       />
     </g>
   );

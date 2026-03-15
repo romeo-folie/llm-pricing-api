@@ -10,19 +10,31 @@
 
 .dot   { animation: dotPulse 2s ease-in-out infinite; }
 .core  { animation: corePulse 2.8s ease-in-out infinite; }
-.coreEcho {
-  animation: corePulse 2.8s ease-in-out infinite;
+
+/* Separate classes so each halo pulses within its own baseline opacity range,
+   preserving the inner (0.2) vs outer (0.1) intensity differentiation. */
+.coreEchoInner {
+  animation: coreEchoInnerPulse 2.8s ease-in-out infinite;
+  animation-delay: -1.4s;
+}
+.coreEchoOuter {
+  animation: coreEchoOuterPulse 2.8s ease-in-out infinite;
   animation-delay: -1.4s;
 }
 
-@keyframes orbitalSpin { to { transform: rotate(360deg); } }
-@keyframes corePulse   { 0%,100%{ opacity:0.6 } 50%{ opacity:1 } }
-@keyframes dotPulse    { 0%,100%{ opacity:0.5 } 50%{ opacity:1 } }
+@keyframes orbitalSpin       { to { transform: rotate(360deg); } }
+@keyframes corePulse         { 0%,100%{ opacity:0.6 } 50%{ opacity:1 } }
+@keyframes dotPulse          { 0%,100%{ opacity:0.5 } 50%{ opacity:1 } }
+/* Halo keyframes stay within each ring's intended baseline — inner brighter than outer */
+@keyframes coreEchoInnerPulse { 0%,100%{ opacity:0.2 } 50%{ opacity:0.38 } }
+@keyframes coreEchoOuterPulse { 0%,100%{ opacity:0.1 } 50%{ opacity:0.20 } }
 
 @media (prefers-reduced-motion: reduce) {
   .ring1, .ring2, .ring3,
   .dot1Wrap, .dot2Wrap, .dot3Wrap { animation: none; }
   .core { animation: none; }
-  .coreEcho { animation: none; }
+  /* Static baseline opacities preserve ring differentiation without motion */
+  .coreEchoInner { animation: none; opacity: 0.2; }
+  .coreEchoOuter { animation: none; opacity: 0.1; }
   .dot { animation: none; opacity: 0.7; }
 }
