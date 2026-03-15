@@ -250,8 +250,16 @@ func main() {
 	_ = healthSrv.Shutdown(shutdownCtx)
 	srv.Shutdown()
 	// Wait for the srv.Start goroutine to fully unwind before main returns.
-	// This ensures the goroutine has exited and all deferred cleanup runs in order.
-	if err := <-srvErrCh; err != nil {
-		log.Error().Err(err).Msg("worker error")
+	// A timeout guards against a stuck handler holding up the shutdown past the
+	// platform's (e.g. Railway's) SIGKILL deadline — if the goroutine hasn't
+	// returned within 10 s after srv.Shutdown(), we log and let main exit so
+	// deferred cleanup still runs.
+	select {
+	case err := <-srvErrCh:
+		if err != nil {
+			log.Error().Err(err).Msg("worker error")
+		}
+	case <-time.After(10 * time.Second):
+		log.Warn().Msg("worker shutdown timed out — forcing exit")
 	}
 }
