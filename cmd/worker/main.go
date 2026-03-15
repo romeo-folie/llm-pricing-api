@@ -57,14 +57,19 @@ func (a *asynqLogger) Debug(args ...any) { a.l.Debug().Msgf("%v", args) }
 func (a *asynqLogger) Info(args ...any)  { a.l.Info().Msgf("%v", args) }
 func (a *asynqLogger) Warn(args ...any)  { a.l.Warn().Msgf("%v", args) }
 func (a *asynqLogger) Error(args ...any) { a.l.Error().Msgf("%v", args) }
-// Fatal logs at Error level rather than calling zerolog.Logger.Fatal (which
-// invokes os.Exit and would bypass all deferred cleanup in run()).
-func (a *asynqLogger) Fatal(args ...any) { a.l.Error().Msgf("%v", args) }
+// Fatal logs at FatalLevel (so downstream log processors and alerting rules
+// still see a fatal-severity event) without calling zerolog.Logger.Fatal,
+// which invokes os.Exit and would bypass all deferred cleanup in run().
+func (a *asynqLogger) Fatal(args ...any) { a.l.WithLevel(zerolog.FatalLevel).Msgf("%v", args) }
 
 // main is the entry point. All logic lives in run() so that deferred
 // cleanup executes before os.Exit is called on a non-zero exit.
 func main() {
 	if err := run(); err != nil {
+		// run() logs most errors at their origin, but print to stderr here
+		// so that any error that bubbles up silently (e.g. an early-return
+		// before the logger is initialised) is still visible in platform logs.
+		fmt.Fprintf(os.Stderr, "worker: fatal: %v\n", err)
 		os.Exit(1)
 	}
 }
