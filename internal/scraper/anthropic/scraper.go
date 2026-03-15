@@ -408,9 +408,12 @@ func canonicalAnthropicSlug(name string) string {
 		version := parts[2] // e.g. "4.6", "3.5", or "4"
 		verParts := strings.SplitN(version, ".", 2)
 		if len(verParts) == 2 {
-			major := strings.ReplaceAll(verParts[0], ".", "-")
+			// SplitN with n=2 guarantees verParts[0] has no dots;
+			// verParts[1] is the remainder (e.g. "5" from "3.5").
+			// Replace any residual dots in the minor segment with
+			// hyphens to handle hypothetical "3.5.1" → "3-5-1".
 			minor := strings.ReplaceAll(verParts[1], ".", "-")
-			return fmt.Sprintf("claude-%s-%s-%s", major, minor, variant)
+			return fmt.Sprintf("claude-%s-%s-%s", verParts[0], minor, variant)
 		}
 		// Major-only version (no dot): "Claude Opus 4" → "claude-4-opus"
 		if len(verParts) == 1 && verParts[0] != "" {
