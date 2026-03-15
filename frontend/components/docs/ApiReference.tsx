@@ -9,7 +9,7 @@ import { useEffect, useState } from "react"
 // the `.light-mode` / `.dark-mode` scope classes.
 const customCss = `
   .light-mode,
-  .scalar-app {
+  .scalar-app:not(.dark-mode) {
     --scalar-color-1:        #1C1917;
     --scalar-color-2:        #78716C;
     --scalar-color-3:        #A8A29E;
@@ -71,9 +71,10 @@ const customCss = `
     }
   }
 
-  /* Theme is driven by system preference (prefers-color-scheme) via the
-     site's global dark-mode class. Hide Scalar's built-in toggle so users
-     aren't presented with a conflicting manual control. */
+  /* Theme is driven entirely by system preference (prefers-color-scheme media
+     query). The component passes forceDarkModeState to Scalar so it applies
+     the correct .dark-mode / .light-mode class; the toggle is hidden so users
+     aren't presented with a conflicting manual override. */
   .scalar-app [data-cy="darkmode-toggle"],
   .scalar-app .darkmode-toggle,
   .scalar-app [aria-label*="dark mode"],

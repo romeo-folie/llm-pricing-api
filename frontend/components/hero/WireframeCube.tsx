@@ -120,7 +120,8 @@ export function WireframeCube({
       return [cx + v[0] * size * scale, cy + v[1] * size * scale];
     }
 
-    function frame() {
+    // draw() only updates geometry — no scheduling side-effects.
+    function draw() {
       angleRef.current += speed;
       const projected: [number, number][] = [];
 
@@ -144,12 +145,17 @@ export function WireframeCube({
           .join(" ");
         faceEls[i].setAttribute("points", pts);
       }
+    }
 
+    // frame() = draw + re-schedule (animation loop only; never called for static render).
+    function frame() {
+      draw();
       rafRef.current = requestAnimationFrame(frame);
     }
 
-    // Draw one static frame so the cube is visible even without animation.
-    frame();
+    // Render one static frame so the cube is visible immediately.
+    // For reduced motion we stop here — no RAF loop is started.
+    draw();
 
     if (!reducedMotion) {
       rafRef.current = requestAnimationFrame(frame);
