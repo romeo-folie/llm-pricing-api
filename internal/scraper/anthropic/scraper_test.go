@@ -179,7 +179,6 @@ func TestFetch_PriceConversion(t *testing.T) {
 	s := &Scraper{client: srv.Client(), url: srv.URL}
 	models, err := s.Fetch(context.Background())
 	if err != nil {
-
 		t.Fatalf("Fetch returned unexpected error: %v", err)
 	}
 
@@ -216,7 +215,6 @@ func TestFetch_DeprecatedSuffix(t *testing.T) {
 	s := &Scraper{client: srv.Client(), url: srv.URL}
 	models, err := s.Fetch(context.Background())
 	if err != nil {
-
 		t.Fatalf("Fetch returned unexpected error: %v", err)
 	}
 
