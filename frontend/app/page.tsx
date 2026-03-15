@@ -158,6 +158,7 @@ export default async function Home() {
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
+          hour12: false,
           timeZone: "UTC",
         }).format(parsedDate)
       : null
@@ -223,7 +224,7 @@ export default async function Home() {
                 <div className="flex flex-col gap-0.5">
                   <span
                     className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--accent)" }}
+                    style={{ color: "var(--ink)" }}
                   >
                     {(modelCount ?? 340).toLocaleString()}
                   </span>
@@ -237,7 +238,7 @@ export default async function Home() {
                 <div className="flex flex-col gap-0.5">
                   <span
                     className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--accent)" }}
+                    style={{ color: "var(--ink)" }}
                   >
                     {(providerCount ?? 7).toLocaleString()}
                   </span>
@@ -251,7 +252,7 @@ export default async function Home() {
                 <div className="flex flex-col gap-0.5">
                   <span
                     className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--accent)" }}
+                    style={{ color: "var(--ink)" }}
                   >
                     {lastChangeLabel ?? "<60s ago"}
                   </span>
