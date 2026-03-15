@@ -197,7 +197,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                   "--planet-pulse-dur": pulseDur,
                   "--planet-pulse-delay": pulseDelay,
                   transformOrigin: `${s.cx}px ${s.cy}px`,
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
               {/* Bright dot core — no ring, no fill container */}
               <circle

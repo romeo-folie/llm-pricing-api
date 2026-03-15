@@ -209,7 +209,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hero-breathe { animation: none; opacity: 0.5; }
   .hero-dash    { animation: none; }
-  .planet-glow  { animation: none; }
+  .planet-glow  { animation: none; opacity: 0.6; transform: scale(1); }
 }
 
 /* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */
