@@ -110,6 +110,9 @@
     --hero-endpoint-bg:      #FFFFFF;
     --hero-endpoint-border:  #E0DCD8;
     --hero-endpoint-text:    #1C1917;
+
+    /* Hero diagram labels — Anthropic coral for legibility on dark bg */
+    --hero-label:            #D97757;
   }
 
 

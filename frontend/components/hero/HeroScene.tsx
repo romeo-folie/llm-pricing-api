@@ -94,7 +94,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           x={S_X + S_W / 2} y={12}
           fontSize="8" fontWeight="600"
           fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" textAnchor="middle" letterSpacing="1"
+          fill="var(--hero-label, var(--dim))" textAnchor="middle" letterSpacing="1"
         >
           SOURCES
         </text>
@@ -102,7 +102,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           x={E_X + E_W / 2} y={12}
           fontSize="8" fontWeight="600"
           fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" textAnchor="middle" letterSpacing="1"
+          fill="var(--hero-label, var(--dim))" textAnchor="middle" letterSpacing="1"
         >
           API
         </text>
@@ -312,7 +312,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         <text
           x={RCX} y={VH - 8}
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--dim)" textAnchor="middle" opacity="0.7"
+          fill="var(--hero-label, var(--dim))" textAnchor="middle" opacity="0.85"
         >
           6 sources · 2,330 models · &lt;60s latency
         </text>
