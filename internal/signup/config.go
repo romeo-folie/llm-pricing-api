@@ -29,11 +29,10 @@ type HandlerConfig struct {
 	SessionSecure     bool          // default true in production
 
 	// Abuse controls
-	ResendCooldown      time.Duration // default 60s
-	MaxRequestsPerHour  int           // per-IP; default 5
-	MaxVerifyAttempts   int           // per token; default 5
-	BlockDisposable     bool
-	RegenerateCooldown  time.Duration // default 0 (no cooldown)
+	ResendCooldown     time.Duration // default 60s
+	MaxRequestsPerHour int           // per-IP; default 5
+	BlockDisposable    bool
+	RegenerateCooldown time.Duration // default 0 (no cooldown)
 }
 
 // LoadHandlerConfig reads all signup env vars with sensible defaults.
@@ -57,7 +56,6 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		SessionSecure:      getEnvBool("SIGNUP_SESSION_SECURE", true),
 		ResendCooldown:     parseDurationSeconds("SIGNUP_RESEND_COOLDOWN_SECONDS", 60),
 		MaxRequestsPerHour: getEnvInt("SIGNUP_MAX_REQUESTS_PER_IP_PER_HOUR", 5),
-		MaxVerifyAttempts:  getEnvInt("SIGNUP_MAX_VERIFY_ATTEMPTS_PER_TOKEN", 5),
 		BlockDisposable:    getEnvBool("SIGNUP_DISPOSABLE_EMAIL_BLOCK", true),
 		RegenerateCooldown: parseDurationSeconds("SIGNUP_REGENERATE_COOLDOWN_SECONDS", 0),
 	}

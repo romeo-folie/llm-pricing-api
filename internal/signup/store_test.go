@@ -143,6 +143,19 @@ func (m *mockStore) RevokeKey(_ context.Context, identityID, _ string) error {
 	return nil
 }
 
+func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
+	// Revoke old (best-effort, mirrors real implementation).
+	if oldProviderKeyID != "" {
+		if k, ok := m.keys[identityID]; ok && k.Status == "active" {
+			now := time.Now()
+			k.Status = "revoked"
+			k.RevokedAt = &now
+		}
+	}
+	// Insert new.
+	return m.InsertKey(context.Background(), identityID, newProviderKeyID)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 func TestUpsertIdentity_NewAndIdempotent(t *testing.T) {

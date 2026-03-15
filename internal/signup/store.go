@@ -5,6 +5,7 @@ package signup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -80,6 +81,10 @@ type Store interface {
 	GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error)
 	InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error)
 	RevokeKey(ctx context.Context, identityID, providerKeyID string) error
+	// RevokeAndInsertKey atomically revokes the old key and inserts the new one
+	// in a single transaction. Returns the new KeyRecord. If oldProviderKeyID is
+	// empty, only the insert is performed.
+	RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error)
 }
 
 // ─── Production implementation ────────────────────────────────────────────────
@@ -277,6 +282,51 @@ func (s *pgxStore) RevokeKey(ctx context.Context, identityID, providerKeyID stri
 		return ErrNotFound
 	}
 	return nil
+}
+
+// RevokeAndInsertKey atomically revokes the old key and inserts the new one.
+func (s *pgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Revoke old key if specified.
+	if oldProviderKeyID != "" {
+		tag, err := tx.Exec(ctx, `
+			UPDATE api_keys_registry
+			SET status = 'revoked', revoked_at = NOW()
+			WHERE identity_id = $1 AND provider_key_id = $2 AND status = 'active'`,
+			identityID, oldProviderKeyID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("revoke old key: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			// Old key already revoked or missing — not fatal for regeneration.
+		}
+	}
+
+	// Insert new key.
+	row := tx.QueryRow(ctx, `
+		INSERT INTO api_keys_registry (identity_id, provider_key_id)
+		VALUES ($1, $2)
+		RETURNING id, identity_id, provider_key_id, status, created_at, revoked_at`,
+		identityID, newProviderKeyID,
+	)
+	k, err := scanKey(row)
+	if err != nil {
+		if isPgUniqueViolation(err) {
+			return nil, ErrDuplicateActiveKey
+		}
+		return nil, fmt.Errorf("insert new key: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+	return k, nil
 }
 
 // ─── Scan helpers ─────────────────────────────────────────────────────────────

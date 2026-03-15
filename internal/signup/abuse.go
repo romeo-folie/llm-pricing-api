@@ -28,6 +28,9 @@ func NewAbuseGuard(rdb *redis.Client, cfg *HandlerConfig) *AbuseGuard {
 //  2. Email resend cooldown: min interval between consecutive emails.
 //  3. Optional disposable-domain block.
 func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) error {
+	if g.rdb == nil {
+		return nil
+	}
 	// 1. IP hourly rate limit.
 	if g.cfg.MaxRequestsPerHour > 0 {
 		key := fmt.Sprintf("signup:rl:ip:%s", ip)
@@ -64,7 +67,7 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 
 // CheckRegenerateKey evaluates the optional key-regeneration cooldown.
 func (g *AbuseGuard) CheckRegenerateKey(ctx context.Context, identityID string) error {
-	if g.cfg.RegenerateCooldown <= 0 {
+	if g.rdb == nil || g.cfg.RegenerateCooldown <= 0 {
 		return nil
 	}
 	key := fmt.Sprintf("signup:regen:cooldown:%s", identityID)

@@ -59,11 +59,11 @@ type requestLinkBody struct {
 func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil || strings.TrimSpace(body.Email) == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(api.NewBadRequest("email is required"))
+		return api.NewBadRequest("email is required")
 	}
 	email := strings.ToLower(strings.TrimSpace(body.Email))
 	if !isValidEmail(email) {
-		return c.Status(fiber.StatusBadRequest).JSON(api.NewBadRequest("invalid email address"))
+		return api.NewBadRequest("invalid email address")
 	}
 
 	ip := c.IP()
@@ -80,7 +80,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	identity, err := h.store.UpsertIdentity(c.Context(), email, hashValue(ip), hashValue(c.Get("User-Agent")))
 	if err != nil {
 		h.log.Error().Err(err).Str("email", email).Msg("signup: upsert identity failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not process request"))
+		return api.NewInternalError("could not process request")
 	}
 
 	rawToken, tokenHash, magicLinkURL, expiresAt, err := GenerateToken(TokenConfig{
@@ -92,15 +92,16 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	_ = rawToken // only stored as hash
 	if err != nil {
 		h.log.Error().Err(err).Msg("signup: token generation failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not generate link"))
+		return api.NewInternalError("could not generate link")
 	}
 
 	if _, err := h.store.InsertToken(c.Context(), identity.ID, tokenHash, expiresAt); err != nil {
 		h.log.Error().Err(err).Msg("signup: insert token failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not store token"))
+		return api.NewInternalError("could not store token")
 	}
 
-	if err := h.mailer.SendMagicLink(c.Context(), email, magicLinkURL); err != nil {
+	ttlMinutes := int(h.cfg.TokenTTL.Minutes())
+	if err := h.mailer.SendMagicLink(c.Context(), email, magicLinkURL, ttlMinutes); err != nil {
 		h.log.Error().Err(err).Str("email", email).Msg("signup: email delivery failed")
 		// Don't expose delivery failure — return success anyway.
 	}
@@ -118,22 +119,22 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 func (h *Handlers) Verify(c *fiber.Ctx) error {
 	signed := c.Query("token")
 	if signed == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(api.NewBadRequest("token is required"))
+		return api.NewBadRequest("token is required")
 	}
 
 	_, tokenHash, err := ParseToken(signed, h.cfg.SigningSecret)
 	if err != nil {
 		h.log.Warn().Str("token_prefix", truncate(signed, 16)).Err(err).Msg("signup: token parse failed")
-		return c.Status(fiber.StatusUnauthorized).JSON(api.NewUnauthorized("invalid or expired link"))
+		return api.NewUnauthorized("invalid or expired link")
 	}
 
 	token, err := h.store.ConsumeToken(c.Context(), tokenHash)
 	if err != nil {
 		if errors.Is(err, ErrTokenConsumed) || errors.Is(err, ErrTokenExpired) || errors.Is(err, ErrNotFound) {
-			return c.Status(fiber.StatusUnauthorized).JSON(api.NewUnauthorized("invalid or expired link"))
+			return api.NewUnauthorized("invalid or expired link")
 		}
 		h.log.Error().Err(err).Msg("signup: consume token failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not verify link"))
+		return api.NewInternalError("could not verify link")
 	}
 
 	if err := h.store.MarkEmailVerified(c.Context(), token.IdentityID); err != nil {
@@ -148,7 +149,7 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 	cookieVal, err := EncodeSession(session, h.cfg.SigningSecret)
 	if err != nil {
 		h.log.Error().Err(err).Msg("signup: encode session failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not create session"))
+		return api.NewInternalError("could not create session")
 	}
 
 	c.Cookie(&fiber.Cookie{
@@ -171,11 +172,14 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 
 // Me returns the authenticated identity's email and key status.
 func (h *Handlers) Me(c *fiber.Ctx) error {
-	sess := sessionFromCtx(c)
+	sess, ok := sessionFromCtx(c)
+	if !ok {
+		return api.NewUnauthorized("authentication required")
+	}
 
 	identity, err := h.store.GetIdentityByID(c.Context(), sess.IdentityID)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(api.NewUnauthorized("identity not found"))
+		return api.NewUnauthorized("identity not found")
 	}
 
 	activeKey, _ := h.store.GetActiveKey(c.Context(), identity.ID)
@@ -196,7 +200,10 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 
 // IssueKey creates or returns the existing active key for the verified identity.
 func (h *Handlers) IssueKey(c *fiber.Ctx) error {
-	sess := sessionFromCtx(c)
+	sess, ok := sessionFromCtx(c)
+	if !ok {
+		return api.NewUnauthorized("authentication required")
+	}
 
 	// Return existing key metadata if one already exists.
 	existingKey, err := h.store.GetActiveKey(c.Context(), sess.IdentityID)
@@ -212,14 +219,14 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 	}
 	if !errors.Is(err, ErrNotFound) {
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: get active key failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not check key status"))
+		return api.NewInternalError("could not check key status")
 	}
 
 	// Create a new key in Unkey.
 	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), h.cfg.UnkeyAPIID, sess.IdentityID)
 	if err != nil {
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: create Unkey key failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not issue API key"))
+		return api.NewInternalError("could not issue API key")
 	}
 
 	// Persist to registry.
@@ -229,7 +236,7 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 			h.log.Error().Err(rErr).Str("provider_key_id", providerKeyID).Msg("signup: rollback revoke failed")
 		}
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: insert key registry failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not persist key"))
+		return api.NewInternalError("could not persist key")
 	}
 
 	h.log.Info().Str("identity_id", sess.IdentityID).Msg("signup: API key issued")
@@ -246,41 +253,47 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 
 // RegenerateKey revokes the existing key and issues a new one.
 func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
-	sess := sessionFromCtx(c)
+	sess, ok := sessionFromCtx(c)
+	if !ok {
+		return api.NewUnauthorized("authentication required")
+	}
 
 	if err := h.guard.CheckRegenerateKey(c.Context(), sess.IdentityID); err != nil {
-		return c.Status(fiber.StatusTooManyRequests).JSON(api.NewTooManyRequests(err.Error()))
+		return api.NewTooManyRequests(err.Error())
 	}
 
 	oldKey, err := h.store.GetActiveKey(c.Context(), sess.IdentityID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not check key status"))
+		return api.NewInternalError("could not check key status")
 	}
 
-	// Issue new key first so we can roll back if DB write fails.
+	// Issue new key in Unkey first — we can roll back if the DB write fails.
 	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), h.cfg.UnkeyAPIID, sess.IdentityID)
 	if err != nil {
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: create Unkey key failed (regen)")
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not create new key"))
+		return api.NewInternalError("could not create new key")
 	}
 
-	// Revoke the old key in Unkey.
+	// Atomically revoke old + insert new in the DB so the one-active-key
+	// invariant is never violated (no window where both are active or neither is).
+	var oldProviderKeyID string
 	if oldKey != nil {
-		if err := h.issuer.RevokeKey(c.Context(), oldKey.ProviderKeyID); err != nil {
-			h.log.Warn().Err(err).Str("provider_key_id", oldKey.ProviderKeyID).Msg("signup: revoke old Unkey key failed")
-			// Continue — the old key may already be gone; persist new key regardless.
-		}
-		if err := h.store.RevokeKey(c.Context(), sess.IdentityID, oldKey.ProviderKeyID); err != nil {
-			h.log.Warn().Err(err).Msg("signup: revoke old key in registry failed")
-		}
+		oldProviderKeyID = oldKey.ProviderKeyID
 	}
-
-	// Persist new key.
-	if _, err := h.store.InsertKey(c.Context(), sess.IdentityID, providerKeyID); err != nil {
+	if _, err := h.store.RevokeAndInsertKey(c.Context(), sess.IdentityID, oldProviderKeyID, providerKeyID); err != nil {
+		// DB failed — roll back the Unkey key we just created.
 		if rErr := h.issuer.RevokeKey(c.Context(), providerKeyID); rErr != nil {
 			h.log.Error().Err(rErr).Msg("signup: rollback new key revoke failed")
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(api.NewInternalError("could not persist new key"))
+		return api.NewInternalError("could not persist new key")
+	}
+
+	// DB committed — now revoke the old key in Unkey (best-effort, post-commit).
+	// Even if this fails, the DB already marks the old key as revoked.
+	if oldKey != nil {
+		if err := h.issuer.RevokeKey(c.Context(), oldKey.ProviderKeyID); err != nil {
+			h.log.Warn().Err(err).Str("provider_key_id", oldKey.ProviderKeyID).Msg("signup: revoke old Unkey key failed (post-commit)")
+		}
 	}
 
 	h.log.Info().Str("identity_id", sess.IdentityID).Msg("signup: API key regenerated")
@@ -302,19 +315,20 @@ func (h *Handlers) sessionMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		cookieVal := c.Cookies(h.cfg.SessionCookieName)
 		if cookieVal == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(api.NewUnauthorized("authentication required"))
+			return api.NewUnauthorized("authentication required")
 		}
 		sess, err := DecodeSession(cookieVal, h.cfg.SigningSecret)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(api.NewUnauthorized("session expired or invalid"))
+			return api.NewUnauthorized("session expired or invalid")
 		}
 		c.Locals(ctxKeySession, sess)
 		return c.Next()
 	}
 }
 
-func sessionFromCtx(c *fiber.Ctx) *Session {
-	return c.Locals(ctxKeySession).(*Session)
+func sessionFromCtx(c *fiber.Ctx) (*Session, bool) {
+	sess, ok := c.Locals(ctxKeySession).(*Session)
+	return sess, ok
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

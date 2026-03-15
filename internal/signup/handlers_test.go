@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/signup"
 )
 
@@ -21,7 +22,7 @@ import (
 
 type noopMailer struct{ err error }
 
-func (m *noopMailer) SendMagicLink(_ context.Context, _, _ string) error { return m.err }
+func (m *noopMailer) SendMagicLink(_ context.Context, _, _ string, _ int) error { return m.err }
 
 type mockIssuer struct {
 	createKeyID   string
@@ -62,9 +63,7 @@ func buildApp(store signup.Store, mailer signup.Mailer, issuer signup.KeyIssuer)
 	guard := signup.NewAbuseGuard(nil, cfg) // nil redis → guard fails open
 	h := signup.NewHandlers(store, mailer, issuer, guard, cfg, zerolog.Nop())
 
-	app := fiber.New(fiber.Config{ErrorHandler: func(c *fiber.Ctx, err error) error {
-		return c.Status(500).SendString(err.Error())
-	}})
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	h.Register(app.Group("/auth/signup"))
 	return app
 }
