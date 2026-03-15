@@ -116,8 +116,11 @@ const TESTIMONIALS = [
 ]
 
 const DATA_SOURCES = [
-  { name: "OpenRouter", logo: "/provider-logos/openrouter.svg" },
-  { name: "LiteLLM", logo: "/provider-logos/litellm.png" },
+  { name: "OpenAI",       logo: "/provider-logos/openai.svg" },
+  { name: "Anthropic",    logo: "/provider-logos/anthropic.svg" },
+  { name: "Google",       logo: "/provider-logos/google.svg" },
+  { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg" },
+  { name: "LiteLLM",      logo: "/provider-logos/litellm.png" },
   { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
 ]
 
@@ -269,8 +272,6 @@ export default async function Home() {
           </div>
         </div>
         </div>
-        {/* Live pricing ticker */}
-        <PricingTicker />
       </section>
 
       {/* ── Data Sources Bar ───────────────────────────────────────────── */}
@@ -284,7 +285,8 @@ export default async function Home() {
                   src={source.logo}
                   alt={source.name}
                   title={source.name}
-                  className="h-6 w-auto opacity-80"
+                  className="h-6 w-auto"
+                  style={{ opacity: 0.65, color: "var(--muted)" }}
                 />
                 <span className="font-outfit text-xs font-medium" style={{ color: "var(--muted)" }}>
                   {source.name}
@@ -294,6 +296,8 @@ export default async function Home() {
           </div>
         </div>
         </div>
+        {/* Live pricing ticker — below source list */}
+        <PricingTicker />
       </section>
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
