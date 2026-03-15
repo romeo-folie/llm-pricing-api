@@ -58,13 +58,13 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
 
       {/* Data particles */}
       <g className={styles.dot1Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--greenBright)" opacity="0.6" className={styles.dot} />
+        <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--greenBright)" className={styles.dot} />
       </g>
       <g className={styles.dot2Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx + 56} cy={cy} r={3} fill="var(--greenBright)" opacity="0.65" className={styles.dot} />
+        <circle cx={cx + 56} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
       </g>
       <g className={styles.dot3Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx - 52} cy={cy} r={3} fill="var(--greenBright)" opacity="0.5" className={styles.dot} />
+        <circle cx={cx - 52} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
       </g>
 
       {/* Core — deeper green, luminosity comes from the glow rings not the core */}

@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import type { CSSProperties } from "react";
 import { useEffect, useId, useState } from "react";
 import { OrbitalReactor } from "./OrbitalReactor";
