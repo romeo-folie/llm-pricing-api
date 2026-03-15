@@ -2,12 +2,17 @@ package gemini
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+const floatEps = 1e-14
+
+func floatEq(a, b float64) bool { return math.Abs(a-b) <= floatEps }
 
 // minimalPricingHTML is a structurally faithful replica of the Gemini pricing
 // page trimmed to the key cases under test.
@@ -215,12 +220,12 @@ func TestFetch_PriceConversion(t *testing.T) {
 		found = true
 		// $0.25 / 1M = 0.00000025
 		const wantInput = 0.25 / 1_000_000
-		if m.InputCostPerToken != wantInput {
+		if !floatEq(m.InputCostPerToken, wantInput) {
 			t.Errorf("gemini-2.5-pro InputCostPerToken: got %v, want %v", m.InputCostPerToken, wantInput)
 		}
 		// $3.00 / 1M = 0.000003
 		const wantOutput = 3.00 / 1_000_000
-		if m.OutputCostPerToken != wantOutput {
+		if !floatEq(m.OutputCostPerToken, wantOutput) {
 			t.Errorf("gemini-2.5-pro OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
 	}
@@ -252,10 +257,10 @@ func TestFetch_TieredContextPrice(t *testing.T) {
 		found = true
 		const wantInput = 2.00 / 1_000_000  // first line: $2.00
 		const wantOutput = 12.00 / 1_000_000 // first line: $12.00
-		if m.InputCostPerToken != wantInput {
+		if !floatEq(m.InputCostPerToken, wantInput) {
 			t.Errorf("tiered input: got %v, want %v", m.InputCostPerToken, wantInput)
 		}
-		if m.OutputCostPerToken != wantOutput {
+		if !floatEq(m.OutputCostPerToken, wantOutput) {
 			t.Errorf("tiered output: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
 	}
@@ -316,7 +321,7 @@ func TestFetch_MultiLineOutputTextPrice(t *testing.T) {
 		}
 		found = true
 		const wantOutput = 3.0 / 1_000_000
-		if m.OutputCostPerToken != wantOutput {
+		if !floatEq(m.OutputCostPerToken, wantOutput) {
 			t.Errorf("multi-line output: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
 	}
@@ -357,14 +362,6 @@ func TestFetch_EmptyHTML(t *testing.T) {
 }
 
 func TestParsePricePerMillion(t *testing.T) {
-	const eps = 1e-14
-	abs := func(x float64) float64 {
-		if x < 0 {
-			return -x
-		}
-		return x
-	}
-
 	cases := []struct {
 		input   string
 		wantVal float64
@@ -387,7 +384,7 @@ func TestParsePricePerMillion(t *testing.T) {
 			t.Errorf("parsePricePerMillion(%q): wantErr=%v, got err=%v", tc.input, tc.wantErr, err)
 			continue
 		}
-		if !tc.wantErr && abs(v-tc.wantVal) > eps {
+		if !tc.wantErr && !floatEq(v, tc.wantVal) {
 			t.Errorf("parsePricePerMillion(%q): got %v, want %v", tc.input, v, tc.wantVal)
 		}
 	}
