@@ -85,7 +85,7 @@ CREATE TABLE api_keys_registry (
 );
 
 -- Enforce one active key per identity at the database level.
-CREATE UNIQUE INDEX api_keys_registry_one_active_per_identity
+CREATE UNIQUE INDEX idx_api_keys_registry_one_active_per_identity
     ON api_keys_registry (identity_id)
     WHERE status = 'active';
 

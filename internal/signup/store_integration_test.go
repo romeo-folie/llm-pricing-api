@@ -144,8 +144,8 @@ func TestIntegration_ConsumeToken_ExpiredToken(t *testing.T) {
 	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
 
 	raw := "integ-test-token-expired"
-	// expires_at in the past
-	_, err = s.CreateToken(ctx, id.ID, raw, time.Now().Add(-1*time.Second))
+	// expires_at well in the past (-10s) to avoid false-pass due to DB/app clock skew.
+	_, err = s.CreateToken(ctx, id.ID, raw, time.Now().Add(-10*time.Second))
 	if err != nil {
 		t.Fatalf("CreateToken (expired): %v", err)
 	}
