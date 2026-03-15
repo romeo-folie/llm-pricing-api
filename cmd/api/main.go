@@ -20,11 +20,13 @@ import (
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
+	"llm-pricing-api/internal/auth"
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/logger"
+	"llm-pricing-api/internal/mailer"
 	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/review"
@@ -140,6 +142,20 @@ func main() {
 		middleware.Cache(redisClient),
 		middleware.RateLimit(redisClient),
 	)
+
+	// Register magic-link signup auth routes (public — no Unkey required).
+	signupStore := signup.NewStore(db)
+	ml := mailer.New(cfg.ResendAPIKey, cfg.EmailFrom)
+	authHandler := auth.New(signupStore, ml, auth.Config{
+		SigningSecret:           cfg.MagicLinkSigningSecret,
+		MagicLinkTTLMinutes:     cfg.MagicLinkTTLMinutes,
+		MagicLinkBaseURL:        cfg.MagicLinkBaseURL,
+		MagicLinkPath:           cfg.MagicLinkPath,
+		SignupSessionCookieName: cfg.SignupSessionCookieName,
+		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
+		SignupSessionSecure:     cfg.SignupSessionSecure,
+	})
+	auth.Register(app, authHandler)
 
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)

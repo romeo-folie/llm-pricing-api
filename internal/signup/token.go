@@ -1,0 +1,124 @@
+package signup
+
+// This file contains session signing helpers for the magic-link auth flow.
+// Token hashing (for storage) is handled by HashToken in store.go.
+// Session signing uses HMAC-SHA256 so the cookie is self-verifying.
+
+import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+// GenerateRawToken returns a cryptographically random 32-byte token encoded
+// as a URL-safe base64 string. This value is emailed to the user; only its
+// SHA-256 hash (HashToken) is stored.
+func GenerateRawToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("signup: generate token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// BuildVerifyURL constructs the full magic-link URL from config values and
+// the raw (un-hashed) token.
+func BuildVerifyURL(baseURL, path, rawToken string) string {
+	return baseURL + path + "?token=" + rawToken
+}
+
+// ── Session cookie ────────────────────────────────────────────────────────────
+
+// SessionPayload is the data embedded in the signed session cookie.
+type SessionPayload struct {
+	IdentityID string `json:"identity_id"`
+	Email      string `json:"email"`
+	IssuedAt   int64  `json:"iat"`
+	ExpiresAt  int64  `json:"exp"`
+}
+
+// SignSession encodes a SessionPayload as base64(JSON) and appends an
+// HMAC-SHA256 signature: "<payload>.<sig>".
+// The cookie value is self-contained — no server-side session store needed.
+func SignSession(secret string, p SessionPayload) (string, error) {
+	data, err := encodePayload(p)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(data))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return data + "." + sig, nil
+}
+
+// VerifySession parses and validates a signed session cookie value.
+// Returns the payload and nil on success; an error on tampering or expiry.
+func VerifySession(secret, cookieValue string) (SessionPayload, error) {
+	dot := lastDot(cookieValue)
+	if dot < 0 {
+		return SessionPayload{}, fmt.Errorf("signup: session: malformed cookie")
+	}
+	data, sig := cookieValue[:dot], cookieValue[dot+1:]
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(data))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(expected)) {
+		return SessionPayload{}, fmt.Errorf("signup: session: invalid signature")
+	}
+
+	var p SessionPayload
+	if err := decodePayload(data, &p); err != nil {
+		return SessionPayload{}, fmt.Errorf("signup: session: decode: %w", err)
+	}
+	if time.Now().Unix() > p.ExpiresAt {
+		return SessionPayload{}, fmt.Errorf("signup: session: expired")
+	}
+	return p, nil
+}
+
+// SetSessionCookie writes the signed session cookie onto the Fiber response.
+func SetSessionCookie(c *fiber.Ctx, name, value string, ttlHours int, secure bool) {
+	c.Cookie(&fiber.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   ttlHours * 3600,
+		Secure:   secure,
+		HTTPOnly: true,
+		SameSite: "Lax",
+	})
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+func encodePayload(p SessionPayload) (string, error) {
+	b, err := jsonMarshal(p)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func decodePayload(encoded string, p *SessionPayload) error {
+	b, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+	return jsonUnmarshal(b, p)
+}
+
+func lastDot(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '.' {
+			return i
+		}
+	}
+	return -1
+}

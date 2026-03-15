@@ -6,23 +6,6 @@ import (
 	"strconv"
 )
 
-// parseBoolEnv returns the boolean value of the named env var using
-// strconv.ParseBool (accepts "1", "t", "TRUE", "true", etc.).
-// Returns the default when the variable is empty. Returns an error when the
-// variable is non-empty but not a valid boolean — this prevents typos like
-// "treu" from silently disabling features.
-func parseBoolEnv(key string, def bool) (bool, error) {
-	val := os.Getenv(key)
-	if val == "" {
-		return def, nil
-	}
-	b, err := strconv.ParseBool(val)
-	if err != nil {
-		return false, fmt.Errorf("config: %s=%q is not a valid boolean: %w", key, val, err)
-	}
-	return b, nil
-}
-
 type Config struct {
 	DatabaseURL      string
 	RedisURL         string
@@ -44,10 +27,33 @@ type Config struct {
 	// MetricsPort is the port for the internal Prometheus /metrics HTTP server.
 	// Defaults to "9091". Set to empty to disable.
 	MetricsPort string
-	// SignupEnabled controls whether the free-key signup endpoints are mounted.
-	// Accepts any value recognised by strconv.ParseBool (e.g. "true", "TRUE", "1").
-	// Defaults to false (off by default until DNS/Resend configured).
-	SignupEnabled bool
+
+	// ── Magic-link signup (Epic #69) ─────────────────────────────────────────
+
+	// ResendAPIKey is the Resend API key used to send magic-link emails.
+	ResendAPIKey string
+	// EmailFrom is the sender address for outbound magic-link emails.
+	// Example: "LLMRates <noreply@llmrates.live>"
+	EmailFrom string
+	// MagicLinkSigningSecret is a random secret used to HMAC-sign raw tokens
+	// before hashing for storage. Prevents offline brute-force of token_hash.
+	MagicLinkSigningSecret string
+	// MagicLinkTTLMinutes is the lifetime of a magic-link token. Defaults to 15.
+	MagicLinkTTLMinutes int
+	// MagicLinkBaseURL is the public base URL of the site (no trailing slash).
+	// Example: "https://llmrates.live"
+	MagicLinkBaseURL string
+	// MagicLinkPath is the path the verify endpoint lives at.
+	// Example: "/signup/verify"
+	MagicLinkPath string
+	// SignupSessionCookieName is the name of the session cookie set after
+	// successful verification. Defaults to "llmrates_signup".
+	SignupSessionCookieName string
+	// SignupSessionTTLHours is the lifetime of the session cookie. Defaults to 24.
+	SignupSessionTTLHours int
+	// SignupSessionSecure controls the Secure flag on the session cookie.
+	// Defaults to true; set to false only in local dev (HTTP).
+	SignupSessionSecure bool
 }
 
 // Load reads configuration from environment variables.
@@ -68,11 +74,6 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
-	signupEnabled, err := parseBoolEnv("SIGNUP_ENABLED", false)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Config{
 		DatabaseURL:      dbURL,
 		RedisURL:         getEnv("REDIS_URL", "localhost:6379"),
@@ -87,7 +88,16 @@ func Load() (*Config, error) {
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
 		MetricsPort:      getEnv("METRICS_PORT", "9091"),
-		SignupEnabled:    signupEnabled,
+
+		ResendAPIKey:            os.Getenv("RESEND_API_KEY"),
+		EmailFrom:               getEnv("EMAIL_FROM", "LLMRates <noreply@llmrates.live>"),
+		MagicLinkSigningSecret:  os.Getenv("MAGIC_LINK_SIGNING_SECRET"),
+		MagicLinkTTLMinutes:     getEnvInt("MAGIC_LINK_TTL_MINUTES", 15),
+		MagicLinkBaseURL:        getEnv("MAGIC_LINK_BASE_URL", "https://llmrates.live"),
+		MagicLinkPath:           getEnv("MAGIC_LINK_PATH", "/signup/verify"),
+		SignupSessionCookieName: getEnv("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
+		SignupSessionTTLHours:   getEnvInt("SIGNUP_SESSION_TTL_HOURS", 24),
+		SignupSessionSecure:     getEnv("APP_ENV", "development") != "development",
 	}, nil
 }
 
@@ -96,4 +106,29 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		var i int
+		if _, err := fmt.Sscanf(v, "%d", &i); err == nil {
+			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvIntPositive(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("parse error: %w", err)
+	}
+	if i <= 0 {
+		return 0, fmt.Errorf("value must be positive, got %d", i)
+	}
+	return i, nil
 }
