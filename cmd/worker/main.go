@@ -290,12 +290,14 @@ func run() error {
 		shutdownDone <- <-srvErrCh // then drain the Start goroutine
 	}()
 	select {
-	case err := <-shutdownDone:
-		if err != nil {
-			log.Error().Err(err).Msg("worker error on exit")
+	case shutdownErr := <-shutdownDone:
+		if shutdownErr != nil {
+			log.Error().Err(shutdownErr).Msg("worker error on exit")
+			return shutdownErr
 		}
 	case <-time.After(10 * time.Second):
 		log.Warn().Msg("worker shutdown timed out — forcing exit")
+		return fmt.Errorf("worker shutdown timed out")
 	}
 
 	return nil
