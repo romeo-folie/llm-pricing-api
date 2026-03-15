@@ -105,6 +105,14 @@
     --blueLt:      rgba(96, 165, 250, 0.12);
     --purple:      #A78BFA;
     --purpleLt:    rgba(167, 139, 250, 0.12);
+
+    /* Hero endpoint cards — white bg in dark mode for contrast */
+    --hero-endpoint-bg:      #E8E4E0;
+    --hero-endpoint-border:  #D0CBC5;
+    --hero-endpoint-text:    #1C1917;
+
+    /* Hero diagram labels — match provider name text (--ink) for consistency */
+    --hero-label:            #F0EDE9;
   }
 
 

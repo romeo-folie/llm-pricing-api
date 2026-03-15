@@ -56,7 +56,7 @@ export default function ModelCard({ model }: ModelCardProps) {
         transition: "background-color 0.12s",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "#FDFAF7"
+        e.currentTarget.style.backgroundColor = "var(--surface)"
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.backgroundColor = "transparent"

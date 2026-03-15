@@ -116,11 +116,11 @@ const TESTIMONIALS = [
 ]
 
 const DATA_SOURCES = [
-  { name: "OpenAI",       logo: "/provider-logos/openai.svg" },
-  { name: "Anthropic",    logo: "/provider-logos/anthropic.svg" },
-  { name: "Google",       logo: "/provider-logos/google.svg" },
-  { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg" },
-  { name: "LiteLLM",      logo: "/provider-logos/litellm.svg" },
+  { name: "OpenAI",       logo: "/provider-logos/openai.svg",       logoDark: "/provider-logos/openai-color.svg" },
+  { name: "Anthropic",    logo: "/provider-logos/anthropic.svg",    logoDark: "/provider-logos/anthropic-color.svg" },
+  { name: "Google",       logo: "/provider-logos/google-color.svg" },
+  { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg",   logoDark: "/provider-logos/openrouter-color.svg" },
+  { name: "LiteLLM",      logo: "/provider-logos/litellm.png" },
   { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
 ]
 
@@ -282,13 +282,24 @@ export default async function Home() {
           <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
             {DATA_SOURCES.map((source) => (
               <div key={source.name} className="flex flex-col items-center gap-1.5">
-                <img
-                  src={source.logo}
-                  alt={source.name}
-                  title={source.name}
-                  className="h-6 w-auto"
-                  style={{ opacity: 0.65, color: "var(--muted)" }}
-                />
+                {source.logoDark ? (
+                  <picture>
+                    <source srcSet={source.logoDark} media="(prefers-color-scheme: dark)" />
+                    <img
+                      src={source.logo}
+                      alt={source.name}
+                      title={source.name}
+                      className="h-6 w-auto"
+                    />
+                  </picture>
+                ) : (
+                  <img
+                    src={source.logo}
+                    alt={source.name}
+                    title={source.name}
+                    className="h-6 w-auto"
+                  />
+                )}
                 <span className="font-outfit text-xs font-medium" style={{ color: "var(--muted)" }}>
                   {source.name}
                 </span>
@@ -306,12 +317,6 @@ export default async function Home() {
         <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-6xl mx-auto px-6 py-16">
           <div className="mb-10">
-            <span
-              className="font-orbitron text-xs tracking-widest"
-              style={{ color: "var(--dim)" }}
-            >
-              [ WHAT MAKES IT DIFFERENT ]
-            </span>
             <h2
               id="features-heading"
               className="font-outfit text-2xl font-bold mt-3 mb-2"
@@ -375,12 +380,6 @@ export default async function Home() {
           <div className="flex flex-col lg:flex-row gap-12 items-start">
             {/* Left copy */}
             <div className="flex flex-col gap-4 lg:max-w-sm">
-              <span
-                className="font-orbitron text-xs tracking-widest"
-                style={{ color: "var(--dim)" }}
-              >
-                [ AGENT-OPTIMIZED ]
-              </span>
               <h2
                 id="agent-heading"
                 className="font-outfit text-2xl font-bold"

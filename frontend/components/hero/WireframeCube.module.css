@@ -1,0 +1,81 @@
+/* =============================================
+   WireframeCube — 3D rotating wireframe
+   
+   Pure SVG <g> element with JS projection.
+   Drop inside any <svg> parent.
+
+   Usage:
+     <svg viewBox="0 0 680 340">
+       <WireframeCube cx={380} cy={170} />
+     </svg>
+
+   Color overrides — swap these for your palette:
+     --cube-edge    → wireframe stroke (default: #107E72)
+     --cube-face    → transparent face fill (default: rgba(16,126,114,.04))
+     --cube-core    → center dot (default: #0A524A)
+     --cube-glow    → outer ring stroke (default: #107E72)
+   ============================================= */
+
+.edge {
+  stroke: var(--cube-edge, #107E72);
+  stroke-width: 0.75;
+  fill: none;
+  opacity: 0.45;
+}
+
+.face {
+  fill: var(--cube-face, rgba(16, 126, 114, 0.04));
+  stroke: none;
+}
+
+.core {
+  fill: var(--cube-core, #0A524A);
+  animation: cubePulse 2.8s ease-in-out infinite;
+}
+
+.glow {
+  fill: none;
+  stroke: var(--cube-glow, #107E72);
+  stroke-width: 0.4;
+  opacity: 0.25;
+  animation: cubePulse 2.8s ease-in-out infinite;
+  animation-delay: -1.4s;
+}
+
+@keyframes cubePulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .edge {
+    stroke: var(--cube-edge, #13A092);
+    opacity: 0.55;
+  }
+
+  .face {
+    fill: var(--cube-face, rgba(19, 160, 146, 0.06));
+  }
+
+  .core {
+    fill: var(--cube-core, #13A092);
+  }
+
+  .glow {
+    stroke: var(--cube-glow, #13A092);
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .core,
+  .glow {
+    animation: none;
+    opacity: 0.7;
+  }
+}
