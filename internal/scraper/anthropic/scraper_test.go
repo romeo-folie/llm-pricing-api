@@ -51,6 +51,14 @@ const minimalPricingHTML = `<!DOCTYPE html><html><body>
       <td>$4 / MTok</td>
     </tr>
     <tr>
+      <td>Claude Opus 4</td>
+      <td>$15 / MTok</td>
+      <td>$18.75 / MTok</td>
+      <td>$30 / MTok</td>
+      <td>$1.50 / MTok</td>
+      <td>$75 / MTok</td>
+    </tr>
+    <tr>
       <td>No Price Model</td>
       <td>-</td>
       <td>-</td>
@@ -121,6 +129,7 @@ func TestFetch(t *testing.T) {
 		"anthropic/claude-4-6-opus":   {},
 		"anthropic/claude-4-5-sonnet": {},
 		"anthropic/claude-3-5-haiku":  {},
+		"anthropic/claude-4-opus":     {}, // major-only: "Claude Opus 4"
 	}
 
 	if len(models) != len(want) {
@@ -298,15 +307,27 @@ func TestCleanModelName(t *testing.T) {
 	}
 }
 
-func TestNormalizeSlug(t *testing.T) {
+func TestCanonicalAnthropicSlug(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"Claude Opus 4.6", "claude-opus-4-6"},
-		{"Claude Haiku 3.5", "claude-haiku-3-5"},
-		{"claude-opus-4", "claude-opus-4"},
+		// Major.Minor format → claude-<major>-<minor>-<variant>
+		{"Claude Opus 4.6", "claude-4-6-opus"},
+		{"Claude Sonnet 4.5", "claude-4-5-sonnet"},
+		{"Claude Haiku 3.5", "claude-3-5-haiku"},
+		{"Claude Sonnet 3.7", "claude-3-7-sonnet"},
+		// Major-only format → claude-<major>-<variant>
+		{"Claude Opus 4", "claude-4-opus"},
+		{"Claude Opus 3", "claude-3-opus"},
+		{"Claude Sonnet 5", "claude-5-sonnet"},
+		// Parenthetical suffix stripped before slugging
+		{"Claude Haiku 3.5 (deprecated)", "claude-3-5-haiku"},
+		{"Claude Next (beta)", "claude-next"},
+		// Fallback: unknown format → lowercase-hyphenated
+		{"Some Future Model", "some-future-model"},
+		{"claude-already-a-slug", "claude-already-a-slug"},
 	}
 	for _, tc := range cases {
-		if got := normalizeSlug(tc.in); got != tc.want {
-			t.Errorf("normalizeSlug(%q): got %q, want %q", tc.in, got, tc.want)
+		if got := canonicalAnthropicSlug(tc.in); got != tc.want {
+			t.Errorf("canonicalAnthropicSlug(%q): got %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -327,11 +348,4 @@ func TestFetch_ContextCancellation(t *testing.T) {
 	}
 }
 
-// normalizeSlug is a test-only helper used by TestNormalizeSlug.
-// It was previously in scraper.go but is only exercised in tests, so it lives
-// here to keep the production surface minimal.
-func normalizeSlug(name string) string {
-	name = strings.ToLower(name)
-	name = strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
-	return name
-}
+
