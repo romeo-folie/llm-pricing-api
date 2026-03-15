@@ -9,36 +9,36 @@ import { OrbitalReactor } from "./OrbitalReactor";
 interface SourceNode {
   name: string;
   sub: string;
-  /** Position in viewBox coordinates (staggered constellation layout). */
-  x: number;
-  y: number;
-  /** Card dimensions. */
-  w: number;
-  h: number;
+  /** Centre in viewBox coordinates (constellation layout). */
+  cx: number;
+  cy: number;
   tier: "primary" | "aggregator";
 }
 
 /**
- * Constellation layout:
- *   - Primary sources (OpenAI, Anthropic, Google) clustered close to the
- *     reactor in a tight triangle, larger cards, bolder styling.
- *   - Aggregators (OpenRouter, LiteLLM, HF) scattered wider, smaller cards,
- *     dimmer/dashed styling — like distant stars in the constellation.
+ * Constellation layout — glowing planet nodes.
  *
- * The goal is organic asymmetry with clear visual hierarchy.
+ * Primary sources sit closer to the reactor in a loose triangle, larger and
+ * brighter. Aggregators are scattered wider with a dimmer, smaller glow —
+ * like distant stars orbiting the main cluster.
  */
 const SOURCES: SourceNode[] = [
-  // Primary — tight cluster, larger
-  { name: "OpenAI",    sub: "direct",  x: 42,  y: 60,   w: 118, h: 44, tier: "primary" },
-  { name: "Anthropic", sub: "direct",  x: 80,  y: 150,  w: 118, h: 44, tier: "primary" },
-  { name: "Google",    sub: "direct",  x: 30,  y: 240,  w: 118, h: 44, tier: "primary" },
-  // Aggregators — scattered wider, smaller
-  { name: "OpenRouter",   sub: "6h",    x: 175, y: 18,   w: 100, h: 36, tier: "aggregator" },
-  { name: "LiteLLM",      sub: "daily", x: 195, y: 120,  w: 100, h: 36, tier: "aggregator" },
-  { name: "Hugging Face", sub: "daily", x: 185, y: 280,  w: 100, h: 36, tier: "aggregator" },
+  // Primary — tight cluster
+  { name: "OpenAI",    sub: "direct",  cx: 100, cy: 72,  tier: "primary" },
+  { name: "Anthropic", sub: "direct",  cx: 135, cy: 170, tier: "primary" },
+  { name: "Google",    sub: "direct",  cx: 90,  cy: 268, tier: "primary" },
+  // Aggregators — scattered wider
+  { name: "OpenRouter",   sub: "6h",    cx: 210, cy: 32,  tier: "aggregator" },
+  { name: "LiteLLM",      sub: "daily", cx: 230, cy: 135, tier: "aggregator" },
+  { name: "Hugging Face", sub: "daily", cx: 220, cy: 300, tier: "aggregator" },
 ];
 
 const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
+
+/* ─── Planet radii ─────────────────────────────────────────────────────────── */
+
+const PRIMARY_R = 18;
+const AGGREGATOR_R = 11;
 
 /* ─── Layout constants ─────────────────────────────────────────────────────── */
 
@@ -60,11 +60,11 @@ const E_Y0 = RCY - E_H / 2 - E_DY * 1.5;
 
 function endpointY(i: number) { return E_Y0 + i * E_DY; }
 
-/** Generate a smooth cubic bezier path from source card right edge to reactor. */
-function curvedPath(sx: number, sy: number, sw: number, sh: number): string {
-  const startX = sx + sw;
-  const startY = sy + sh / 2;
-  const endX = RCX - 58; // reactor left edge
+/** Smooth cubic bezier from planet edge to reactor left edge. */
+function curvedPath(sx: number, sy: number, r: number): string {
+  const startX = sx + r;
+  const startY = sy;
+  const endX = RCX - 58;
   const endY = RCY;
   const midX = startX + (endX - startX) * 0.5;
   return `M ${startX},${startY} C ${midX},${startY} ${midX},${endY} ${endX},${endY}`;
@@ -87,6 +87,10 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  // Per-tier indices for stable animation durations.
+  const primaryNodes = SOURCES.filter((s) => s.tier === "primary");
+  const aggregatorNodes = SOURCES.filter((s) => s.tier === "aggregator");
+
   return (
     <div
       className={className}
@@ -100,21 +104,37 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         xmlns="http://www.w3.org/2000/svg"
         style={{ width: "100%", height: "auto", display: "block" }}
       >
-        {/* ── Constellation flow lines (source → reactor) ───────────── */}
-        {SOURCES.map((s, i) => {
-          const d = curvedPath(s.x, s.y, s.w, s.h);
+        {/* ── Glow definitions ──────────────────────────────────────── */}
+        <defs>
+          {/* Primary planet glow — green-tinted */}
+          <radialGradient id="glow-primary">
+            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.7" />
+            <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.2" />
+            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
+          </radialGradient>
+          {/* Aggregator planet glow — accent-tinted */}
+          <radialGradient id="glow-aggregator">
+            <stop offset="0%"  stopColor="var(--accent)"  stopOpacity="0.5" />
+            <stop offset="40%" stopColor="var(--accent)"  stopOpacity="0.12" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        {/* ── Flow lines (planet → reactor) ─────────────────────────── */}
+        {SOURCES.map((s) => {
           const isPrimary = s.tier === "primary";
+          const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
+          const d = curvedPath(s.cx, s.cy, r);
           const baseColor = isPrimary ? "var(--accent)" : "var(--muted)";
-          // Use per-tier index for durations so timing stays stable if SOURCES ordering changes.
-          const primaryIdx  = SOURCES.filter((n) => n.tier === "primary").indexOf(s);
-          const aggregatorIdx = SOURCES.filter((n) => n.tier === "aggregator").indexOf(s);
+          const tierIdx = isPrimary
+            ? primaryNodes.indexOf(s)
+            : aggregatorNodes.indexOf(s);
           const dur = isPrimary
-            ? `${2.4 + primaryIdx * 0.3}s`
-            : `${3.0 + aggregatorIdx * 0.4}s`;
+            ? `${2.4 + tierIdx * 0.3}s`
+            : `${3.0 + tierIdx * 0.4}s`;
 
           return (
             <g key={`flow-${s.name}`}>
-              {/* Ghost path */}
               <path
                 d={d}
                 stroke="var(--borderDk)"
@@ -123,7 +143,6 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 opacity={isPrimary ? 0.4 : 0.25}
                 fill="none"
               />
-              {/* Accent overlay */}
               <path
                 d={d}
                 stroke={baseColor}
@@ -133,7 +152,6 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 fill="none"
                 className="hero-dash"
               />
-              {/* Animated bead */}
               {!reducedMotion && (
                 <circle r={isPrimary ? 2.5 : 1.8} fill={baseColor} opacity={isPrimary ? 0.85 : 0.55}>
                   <animateMotion dur={dur} repeatCount="indefinite" path={d} />
@@ -143,35 +161,63 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           );
         })}
 
-        {/* ── Source cards (constellation) ───────────────────────────── */}
+        {/* ── Planet nodes (sources) ────────────────────────────────── */}
         {SOURCES.map((s) => {
           const isPrimary = s.tier === "primary";
+          const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
+          const glowR = r * 2.2;
+          const tierIdx = isPrimary
+            ? primaryNodes.indexOf(s)
+            : aggregatorNodes.indexOf(s);
+          // Stagger pulse phase per node so they don't breathe in sync.
+          const pulseDur = isPrimary ? "3.5s" : "4.5s";
+          const pulseDelay = `${tierIdx * -1.2}s`;
+
           return (
-            <g key={s.name}>
-              <rect
-                x={s.x} y={s.y} width={s.w} height={s.h} rx="4"
+            <g key={`planet-${s.name}`}>
+              {/* Outer glow halo */}
+              <circle
+                cx={s.cx} cy={s.cy} r={glowR}
+                fill={isPrimary ? "url(#glow-primary)" : "url(#glow-aggregator)"}
+                style={!reducedMotion ? {
+                  animation: `planetPulse ${pulseDur} ease-in-out infinite`,
+                  animationDelay: pulseDelay,
+                  transformOrigin: `${s.cx}px ${s.cy}px`,
+                } : undefined}
+              />
+              {/* Solid core */}
+              <circle
+                cx={s.cx} cy={s.cy} r={r}
                 fill={isPrimary ? "var(--greenLt)" : "var(--accentLt)"}
                 stroke={isPrimary ? "var(--green)" : "var(--accent)"}
-                strokeWidth={isPrimary ? 1 : 0.75}
-                strokeOpacity={isPrimary ? 0.4 : 0.2}
-                strokeDasharray={isPrimary ? "none" : "3 2"}
+                strokeWidth={isPrimary ? 1.2 : 0.75}
+                strokeOpacity={isPrimary ? 0.6 : 0.3}
               />
+              {/* Inner bright spot */}
+              <circle
+                cx={s.cx} cy={s.cy}
+                r={isPrimary ? 6 : 4}
+                fill={isPrimary ? "var(--green)" : "var(--accent)"}
+                opacity={isPrimary ? 0.35 : 0.2}
+              />
+              {/* Name label */}
               <text
-                x={s.x + 12} y={s.y + s.h / 2 - 3}
-                fontSize={isPrimary ? 11 : 9.5}
+                x={s.cx} y={s.cy + r + 14}
+                fontSize={isPrimary ? 10 : 8.5}
                 fontWeight="600"
                 fontFamily="var(--font-geist-sans), sans-serif"
-                fill="var(--ink)"
-                dominantBaseline="middle"
+                fill="var(--hero-label, var(--ink))"
+                textAnchor="middle"
               >
                 {s.name}
               </text>
+              {/* Subtitle */}
               <text
-                x={s.x + 12} y={s.y + s.h / 2 + (isPrimary ? 11 : 9)}
-                fontSize={isPrimary ? 8.5 : 7.5}
+                x={s.cx} y={s.cy + r + (isPrimary ? 25 : 23)}
+                fontSize={isPrimary ? 7.5 : 6.5}
                 fontFamily="var(--font-geist-mono), monospace"
                 fill={isPrimary ? "var(--green)" : "var(--muted)"}
-                dominantBaseline="middle"
+                textAnchor="middle"
                 opacity="0.8"
               >
                 {s.sub}
@@ -261,6 +307,17 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         >
           6 sources · 2,330 models · &lt;60s latency
         </text>
+
+        {/* Pulse animation for planet glow halos */}
+        <style>{`
+          @keyframes planetPulse {
+            0%, 100% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.15); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            @keyframes planetPulse { 0%, 100% { opacity: 0.8; transform: none; } }
+          }
+        `}</style>
       </svg>
     </div>
   );
