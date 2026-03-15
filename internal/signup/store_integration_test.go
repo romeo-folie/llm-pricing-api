@@ -154,7 +154,7 @@ func TestIntegration_ConsumeToken_ExpiredToken(t *testing.T) {
 	if err == nil {
 		t.Fatal("ConsumeToken of expired token should have failed")
 	}
-	if err != signup.ErrTokenExpired {
+	if !errors.Is(err, signup.ErrTokenExpired) {
 		t.Errorf("got %v, want ErrTokenExpired", err)
 	}
 }
@@ -164,7 +164,7 @@ func TestIntegration_ConsumeToken_NotFound(t *testing.T) {
 	s := signup.NewStore(newTestPool(t))
 
 	_, err := s.ConsumeToken(ctx, "nonexistent-token-xyz")
-	if err != signup.ErrNotFound {
+	if !errors.Is(err, signup.ErrNotFound) {
 		t.Errorf("got %v, want ErrNotFound", err)
 	}
 }

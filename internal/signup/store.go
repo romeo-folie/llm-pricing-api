@@ -188,6 +188,9 @@ func (s *Store) CreateToken(ctx context.Context, identityID, rawToken string, ex
 // clock, eliminating the TOCTOU window between the pre-check SELECT and the
 // UPDATE present in a two-step approach.
 func (s *Store) ConsumeToken(ctx context.Context, rawToken string) (identityID string, err error) {
+	if rawToken == "" {
+		return "", ErrNotFound
+	}
 	hash := HashToken(rawToken)
 
 	var id, iid string
@@ -268,7 +271,8 @@ type KeyRecord struct {
 // (RevokeKey) to satisfy the one-active-key-per-identity constraint.
 // Returns an error if providerKeyID is empty or blank.
 func (s *Store) RegisterKey(ctx context.Context, identityID, providerKeyID string) (KeyRecord, error) {
-	if strings.TrimSpace(providerKeyID) == "" {
+	providerKeyID = strings.TrimSpace(providerKeyID)
+	if providerKeyID == "" {
 		return KeyRecord{}, fmt.Errorf("signup.RegisterKey: providerKeyID must not be empty")
 	}
 	var k KeyRecord
@@ -305,7 +309,8 @@ func (s *Store) FindActiveKey(ctx context.Context, identityID string) (KeyRecord
 // Returns ErrNotFound if the key doesn't exist or is already revoked.
 // Returns an error if providerKeyID is empty or blank.
 func (s *Store) RevokeKey(ctx context.Context, providerKeyID string) error {
-	if strings.TrimSpace(providerKeyID) == "" {
+	providerKeyID = strings.TrimSpace(providerKeyID)
+	if providerKeyID == "" {
 		return fmt.Errorf("signup.RevokeKey: providerKeyID must not be empty")
 	}
 	tag, err := s.db.Exec(ctx, `

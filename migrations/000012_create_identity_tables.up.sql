@@ -74,7 +74,7 @@ CREATE TABLE api_keys_registry (
 
     CONSTRAINT api_keys_registry_provider_key_unique   UNIQUE (provider_key_id),
     -- Reject empty/whitespace-only provider_key_id at the DB level.
-    CONSTRAINT api_keys_registry_provider_key_nonempty CHECK (provider_key_id <> ''),
+    CONSTRAINT api_keys_registry_provider_key_nonempty CHECK (btrim(provider_key_id) <> ''),
     -- Enforce consistent status/revoked_at states: active rows must have no
     -- revocation timestamp; revoked rows must have one.
     CONSTRAINT api_keys_registry_status_revoked_at_consistent
