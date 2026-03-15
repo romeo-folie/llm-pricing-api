@@ -111,8 +111,8 @@
     --hero-endpoint-border:  #D0CBC5;
     --hero-endpoint-text:    #1C1917;
 
-    /* Hero diagram labels — Anthropic coral for legibility on dark bg */
-    --hero-label:            #D97757;
+    /* Hero diagram labels — match provider name text (--ink) for consistency */
+    --hero-label:            #F0EDE9;
   }
 
 
