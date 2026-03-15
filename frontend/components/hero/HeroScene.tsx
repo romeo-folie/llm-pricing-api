@@ -37,8 +37,8 @@ const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
 
 /* ─── Planet radii ─────────────────────────────────────────────────────────── */
 
-const PRIMARY_R = 18;
-const AGGREGATOR_R = 11;
+const PRIMARY_R = 8;
+const AGGREGATOR_R = 4.5;
 
 /* ─── Layout constants ─────────────────────────────────────────────────────── */
 
@@ -108,17 +108,19 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
       >
         {/* ── Glow definitions ──────────────────────────────────────── */}
         <defs>
-          {/* Primary planet glow — green-tinted */}
+          {/* Primary planet glow — bright green */}
           <radialGradient id="glow-primary">
-            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.7" />
-            <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.2" />
+            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.9" />
+            <stop offset="30%" stopColor="var(--green)"  stopOpacity="0.4" />
+            <stop offset="70%" stopColor="var(--green)"  stopOpacity="0.08" />
             <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
           </radialGradient>
-          {/* Aggregator planet glow — accent-tinted */}
+          {/* Aggregator planet glow — dimmer green */}
           <radialGradient id="glow-aggregator">
-            <stop offset="0%"  stopColor="var(--accent)"  stopOpacity="0.5" />
-            <stop offset="40%" stopColor="var(--accent)"  stopOpacity="0.12" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.6" />
+            <stop offset="30%" stopColor="var(--green)"  stopOpacity="0.2" />
+            <stop offset="70%" stopColor="var(--green)"  stopOpacity="0.04" />
+            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
           </radialGradient>
         </defs>
 
@@ -127,7 +129,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           const isPrimary = s.tier === "primary";
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
           const d = curvedPath(s.cx, s.cy, r);
-          const baseColor = isPrimary ? "var(--accent)" : "var(--muted)";
+          const baseColor = "var(--green)";
           const tierIdx = isPrimary
             ? primaryNodes.indexOf(s)
             : aggregatorNodes.indexOf(s);
@@ -167,7 +169,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         {SOURCES.map((s) => {
           const isPrimary = s.tier === "primary";
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
-          const glowR = r * 2.2;
+          const glowR = isPrimary ? 32 : 18;
           const tierIdx = isPrimary
             ? primaryNodes.indexOf(s)
             : aggregatorNodes.indexOf(s);
@@ -177,7 +179,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
 
           return (
             <g key={`planet-${s.name}`}>
-              {/* Outer glow halo */}
+              {/* Glow halo — no container, just radial gradient */}
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
                 fill={isPrimary ? "url(#glow-primary)" : "url(#glow-aggregator)"}
@@ -187,20 +189,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                   transformOrigin: `${s.cx}px ${s.cy}px`,
                 } : undefined}
               />
-              {/* Solid core */}
+              {/* Bright dot core — no ring, no fill container */}
               <circle
                 cx={s.cx} cy={s.cy} r={r}
-                fill={isPrimary ? "var(--greenLt)" : "var(--accentLt)"}
-                stroke={isPrimary ? "var(--green)" : "var(--accent)"}
-                strokeWidth={isPrimary ? 1.2 : 0.75}
-                strokeOpacity={isPrimary ? 0.6 : 0.3}
-              />
-              {/* Inner bright spot */}
-              <circle
-                cx={s.cx} cy={s.cy}
-                r={isPrimary ? 6 : 4}
-                fill={isPrimary ? "var(--green)" : "var(--accent)"}
-                opacity={isPrimary ? 0.35 : 0.2}
+                fill="var(--green)"
+                opacity={isPrimary ? 0.95 : 0.55}
               />
               {/* Name label */}
               <text
