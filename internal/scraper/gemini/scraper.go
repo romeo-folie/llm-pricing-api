@@ -371,14 +371,14 @@ func normalizeSlug(name string) string {
 
 // --- HTML helpers ---------------------------------------------------------
 
-// cleanText returns the trimmed text content of n.
-// Leading/trailing whitespace is stripped; use textContent directly if
-// raw whitespace is needed.
+// cleanText is a convenience alias for textContent.
+// Both trim whitespace; this wrapper exists for call-site readability
+// where the intent is explicitly "give me clean display text".
 func cleanText(n *html.Node) string {
-	return strings.TrimSpace(textContent(n))
+	return textContent(n)
 }
 
-// textContent returns the concatenated text of all text nodes under n.
+// textContent returns the concatenated, trimmed text of all text nodes under n.
 func textContent(n *html.Node) string {
 	if n == nil {
 		return ""
