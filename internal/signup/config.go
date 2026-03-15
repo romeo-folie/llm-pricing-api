@@ -27,6 +27,7 @@ type HandlerConfig struct {
 	SessionTTL        time.Duration // default 24h
 	SessionCookieName string        // default llmrates_signup
 	SessionSecure     bool          // default true in production
+	SessionSameSite   string        // default Lax; configurable via SIGNUP_SESSION_SAMESITE
 
 	// Abuse controls
 	ResendCooldown     time.Duration // default 60s
@@ -36,6 +37,7 @@ type HandlerConfig struct {
 }
 
 // LoadHandlerConfig reads all signup env vars with sensible defaults.
+// Returns an error if any required env var is missing.
 func LoadHandlerConfig() (*HandlerConfig, error) {
 	secret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
 	if secret == "" {
@@ -54,11 +56,25 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		SessionTTL:         parseDurationHours("SIGNUP_SESSION_TTL_HOURS", 24),
 		SessionCookieName:  getEnvOr("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
 		SessionSecure:      getEnvBool("SIGNUP_SESSION_SECURE", true),
+		SessionSameSite:    getEnvOr("SIGNUP_SESSION_SAMESITE", "Lax"),
 		ResendCooldown:     parseDurationSeconds("SIGNUP_RESEND_COOLDOWN_SECONDS", 60),
 		MaxRequestsPerHour: getEnvInt("SIGNUP_MAX_REQUESTS_PER_IP_PER_HOUR", 5),
 		BlockDisposable:    getEnvBool("SIGNUP_DISPOSABLE_EMAIL_BLOCK", true),
 		RegenerateCooldown: parseDurationSeconds("SIGNUP_REGENERATE_COOLDOWN_SECONDS", 0),
 	}
+
+	// Validate required env vars so misconfigured deployments fail at startup
+	// rather than at first request (Resend/Unkey calls would silently fail).
+	if cfg.ResendAPIKey == "" {
+		return nil, fmt.Errorf("RESEND_API_KEY is required when signup is enabled")
+	}
+	if cfg.UnkeyRootKey == "" {
+		return nil, fmt.Errorf("UNKEY_ROOT_KEY is required when signup is enabled")
+	}
+	if cfg.UnkeyAPIID == "" {
+		return nil, fmt.Errorf("UNKEY_API_ID is required when signup is enabled")
+	}
+
 	return cfg, nil
 }
 

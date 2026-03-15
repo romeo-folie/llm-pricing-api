@@ -124,7 +124,8 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 
 	_, tokenHash, err := ParseToken(signed, h.cfg.SigningSecret)
 	if err != nil {
-		h.log.Warn().Str("token_prefix", truncate(signed, 16)).Err(err).Msg("signup: token parse failed")
+		// Log a hash-derived prefix — never log raw or truncated credential material.
+		h.log.Warn().Str("token_sha256_prefix", truncate(hashValue(signed), 12)).Err(err).Msg("signup: token parse failed")
 		return api.NewUnauthorized("invalid or expired link")
 	}
 
@@ -158,7 +159,7 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 		Expires:  session.ExpiresAt,
 		HTTPOnly: true,
 		Secure:   h.cfg.SessionSecure,
-		SameSite: "Lax",
+		SameSite: h.cfg.SessionSameSite,
 	})
 
 	h.log.Info().Str("identity_id", token.IdentityID).Msg("signup: email verified, session created")
@@ -231,9 +232,26 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 
 	// Persist to registry.
 	if _, err := h.store.InsertKey(c.Context(), sess.IdentityID, providerKeyID); err != nil {
-		// If DB write fails, revoke the Unkey key to keep state consistent.
+		// Revoke the Unkey key we just created — DB is the source of truth.
 		if rErr := h.issuer.RevokeKey(c.Context(), providerKeyID); rErr != nil {
 			h.log.Error().Err(rErr).Str("provider_key_id", providerKeyID).Msg("signup: rollback revoke failed")
+		}
+		// ErrDuplicateActiveKey: a concurrent request already inserted a key
+		// (race on the unique partial index). The new Unkey key has been revoked;
+		// return the same "existing key" response as the early-exit path above.
+		if errors.Is(err, ErrDuplicateActiveKey) {
+			h.log.Warn().Str("identity_id", sess.IdentityID).Msg("signup: duplicate active key race — returning existing")
+			existing, gErr := h.store.GetActiveKey(c.Context(), sess.IdentityID)
+			if gErr != nil {
+				return api.NewInternalError("could not retrieve existing key")
+			}
+			return c.JSON(fiber.Map{
+				"data": fiber.Map{
+					"status":     "existing",
+					"created_at": existing.CreatedAt,
+					"message":    "You already have an active API key. Use regenerate-key to replace it.",
+				},
+			})
 		}
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: insert key registry failed")
 		return api.NewInternalError("could not persist key")

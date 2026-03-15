@@ -106,7 +106,7 @@ func (s *pgxStore) UpsertIdentity(ctx context.Context, email, ipHash, uaHash str
 	row := s.db.QueryRow(ctx, `
 		INSERT INTO api_identities (email, ip_hash, ua_hash)
 		VALUES (LOWER($1), $2, $3)
-		ON CONFLICT (LOWER(email)) DO UPDATE
+		ON CONFLICT ((LOWER(email))) DO UPDATE
 			SET updated_at = NOW()
 		RETURNING id, email, email_verified_at, ip_hash, ua_hash, created_at, updated_at`,
 		email, nullStr(ipHash), nullStr(uaHash),

@@ -28,7 +28,7 @@ func NewResendMailer(apiKey, from string) Mailer {
 
 // SendMagicLink sends a magic-link email to `to`. ttlMinutes is rendered into
 // the email body so the stated expiry always matches the configured token TTL.
-func (m *resendMailer) SendMagicLink(_ context.Context, to, magicLinkURL string, ttlMinutes int) error {
+func (m *resendMailer) SendMagicLink(ctx context.Context, to, magicLinkURL string, ttlMinutes int) error {
 	params := &resend.SendEmailRequest{
 		From:    m.from,
 		To:      []string{to},
@@ -52,6 +52,6 @@ func (m *resendMailer) SendMagicLink(_ context.Context, to, magicLinkURL string,
 			magicLinkURL, ttlMinutes,
 		),
 	}
-	_, err := m.client.Emails.Send(params)
+	_, err := m.client.Emails.SendWithContext(ctx, params)
 	return err
 }
