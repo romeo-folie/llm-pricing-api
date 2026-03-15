@@ -183,11 +183,14 @@ func main() {
 	// Run the asynq server in a goroutine — srv.Start blocks until Shutdown
 	// is called. Running it in the foreground prevented the health server
 	// and signal handler from ever executing.
+	//
+	// srvErrCh receives the return value of srv.Start so that failures route
+	// to the main goroutine for a controlled shutdown rather than calling
+	// log.Fatal (which calls os.Exit and skips all deferred cleanup).
 	log.Info().Str("env", cfg.AppEnv).Int("concurrency", workerConcurrency).Msg("worker started")
+	srvErrCh := make(chan error, 1)
 	go func() {
-		if err := srv.Start(mux); err != nil {
-			log.Fatal().Err(err).Msg("worker error")
-		}
+		srvErrCh <- srv.Start(mux)
 	}()
 
 	// Start a minimal HTTP server for Railway health checks. The worker is a
@@ -223,14 +226,32 @@ func main() {
 		}
 	}()
 
-	// Block until SIGINT or SIGTERM, then shut down gracefully.
+	// Block until SIGINT/SIGTERM or an unexpected asynq server exit.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
-	<-quit
-	log.Info().Msg("worker shutting down...")
+
+	select {
+	case <-quit:
+		log.Info().Msg("worker shutting down...")
+	case err := <-srvErrCh:
+		// srv.Start returned before a shutdown signal — treat as a fatal startup error.
+		// All deferred cleanup (db.Close, scheduler.Shutdown, etc.) still runs because
+		// we return normally instead of calling os.Exit via log.Fatal.
+		log.Error().Err(err).Msg("worker exited unexpectedly")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = healthSrv.Shutdown(shutdownCtx)
+		return
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = healthSrv.Shutdown(shutdownCtx)
 	srv.Shutdown()
+	// Wait for the srv.Start goroutine to fully unwind before main returns.
+	// This ensures the goroutine has exited and all deferred cleanup runs in order.
+	if err := <-srvErrCh; err != nil {
+		log.Error().Err(err).Msg("worker error")
+	}
 }
