@@ -2,9 +2,11 @@
 -- Tables: api_identities, magic_link_tokens, api_keys_registry
 -- Requires: 000003 (set_updated_at function), pgcrypto (for gen_random_uuid)
 
--- Belt-and-suspenders: guarantee pgcrypto is present on every upgrade path
--- (fresh installs already get it from 000001; existing DBs that were migrated
--- before 000001 declared pgcrypto get it from 000007). IF NOT EXISTS is idempotent.
+-- Belt-and-suspenders: guarantee pgcrypto is present on every upgrade path.
+-- Fresh installs get it from 000001. Existing DBs that already applied 000001
+-- before pgcrypto was declared there (and 000007 before 000007 was patched) may
+-- have missed both earlier guards; this declaration closes that gap.
+-- All three declarations are IF NOT EXISTS — fully idempotent.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── api_identities ───────────────────────────────────────────────────────────

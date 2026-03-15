@@ -33,8 +33,8 @@ func TestHashToken_EmptyString(t *testing.T) {
 	}
 }
 
-// ── normalizeEmail (via CreateIdentity + FindIdentityByEmail) ─────────────────
-// These tests exercise the exported error sentinels without a live DB.
+// ── Sentinel error tests ──────────────────────────────────────────────────────
+// These tests verify the exported error sentinels are distinct from one another.
 // Full DB-backed tests are integration tests gated by a DATABASE_URL env var.
 
 func TestSentinels_AreDistinct(t *testing.T) {
@@ -57,7 +57,8 @@ func TestSentinels_AreDistinct(t *testing.T) {
 
 func TestHashToken_FixedVector(t *testing.T) {
 	// SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-	// SHA-256("abc") = ba7816bf8f01cfea414140de5dae2ec73b00361bbef0469fa72a67b86e22ce15... (first 16 chars)
+	// SHA-256("abc") = ba7816bf8f01cfea414140de5dae2ec73b00361bbef0469fa72a67b86e22ce15...
+	// Each test case checks the first 8 hex characters of the expected digest.
 	cases := []struct {
 		raw    string
 		prefix string // first 8 hex chars of expected SHA-256

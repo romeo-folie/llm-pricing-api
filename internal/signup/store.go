@@ -61,8 +61,12 @@ func normalizeEmail(email string) string {
 // CreateIdentity inserts a new api_identities row and returns it.
 // email is normalized before insert. On duplicate email the existing row is
 // returned (updated_at is bumped so callers can detect a re-signup attempt).
+// Returns an error if the normalized email is empty.
 func (s *Store) CreateIdentity(ctx context.Context, email, ipHash, uaHash string) (Identity, error) {
 	email = normalizeEmail(email)
+	if email == "" {
+		return Identity{}, fmt.Errorf("signup.CreateIdentity: email must not be empty")
+	}
 	var id Identity
 	err := s.db.QueryRow(ctx, `
 		INSERT INTO api_identities (email, signup_ip_hash, signup_ua_hash)
@@ -157,7 +161,12 @@ func HashToken(raw string) string {
 }
 
 // CreateToken inserts a new magic_link_tokens row and returns it.
+// Returns an error if rawToken is empty — an empty token produces a constant
+// hash and would create an insecure, non-unique magic-link.
 func (s *Store) CreateToken(ctx context.Context, identityID, rawToken string, expiresAt time.Time) (Token, error) {
+	if rawToken == "" {
+		return Token{}, fmt.Errorf("signup.CreateToken: rawToken must not be empty")
+	}
 	hash := HashToken(rawToken)
 	var t Token
 	err := s.db.QueryRow(ctx, `
