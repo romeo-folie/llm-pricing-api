@@ -26,6 +26,9 @@ type Config struct {
 	// MetricsPort is the port for the internal Prometheus /metrics HTTP server.
 	// Defaults to "9091". Set to empty to disable.
 	MetricsPort string
+	// SignupEnabled controls whether the free-key signup endpoints are mounted.
+	// Set to "true" to enable. Defaults to false (off by default until DNS/Resend configured).
+	SignupEnabled bool
 }
 
 // Load reads configuration from environment variables.
@@ -60,6 +63,7 @@ func Load() (*Config, error) {
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
 		MetricsPort:      getEnv("METRICS_PORT", "9091"),
+		SignupEnabled:    os.Getenv("SIGNUP_ENABLED") == "true",
 	}, nil
 }
 

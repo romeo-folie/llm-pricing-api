@@ -28,6 +28,7 @@ import (
 	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/review"
+	"llm-pricing-api/internal/signup"
 )
 
 func main() {
@@ -142,6 +143,22 @@ func main() {
 
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)
+
+	// Register free-key signup routes when SIGNUP_ENABLED=true.
+	if cfg.SignupEnabled {
+		signupCfg, err := signup.LoadHandlerConfig()
+		if err != nil {
+			log.Fatal().Err(err).Msg("signup config error")
+		}
+		signupStore := signup.NewStore(db)
+		signupMailer := signup.NewResendMailer(signupCfg.ResendAPIKey, signupCfg.EmailFrom)
+		signupIssuer := signup.NewUnkeyIssuer(signupCfg.UnkeyRootKey, signupCfg.UnkeyAPIID)
+		signupGuard := signup.NewAbuseGuard(redisClient, signupCfg)
+		signupHandlers := signup.NewHandlers(signupStore, signupMailer, signupIssuer, signupGuard, signupCfg, log)
+		authGroup := app.Group("/auth/signup")
+		signupHandlers.Register(authGroup)
+		log.Info().Msg("signup endpoints enabled at /auth/signup")
+	}
 
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
