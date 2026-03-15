@@ -32,7 +32,8 @@
 @media (prefers-reduced-motion: reduce) {
   .ring1, .ring2, .ring3,
   .dot1Wrap, .dot2Wrap, .dot3Wrap { animation: none; }
-  .core { animation: none; }
+  /* Static opacity preserves intended baseline brightness (animated range: 0.6→1) */
+  .core { animation: none; opacity: 0.8; }
   /* Static baseline opacities preserve ring differentiation without motion */
   .coreEchoInner { animation: none; opacity: 0.2; }
   .coreEchoOuter { animation: none; opacity: 0.1; }

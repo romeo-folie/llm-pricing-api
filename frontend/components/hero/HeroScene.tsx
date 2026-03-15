@@ -61,11 +61,13 @@ const E_Y0 = RCY - E_H / 2 - E_DY * 1.5;
 function endpointY(i: number) { return E_Y0 + i * E_DY; }
 
 /**
- * Reactor connection offset: outer ellipse rx=56, rendered at scale=1.1 →
- * visual radius ≈ 62. Both source→reactor and reactor→endpoint paths use
- * this constant so curves terminate at the reactor's visible edge.
+ * Reactor connection offset: derived from OrbitalReactor's outer ellipse
+ * (rx=56, see OrbitalReactor.tsx) multiplied by the scale prop used below (1.1).
+ * Computed here so any change to either value propagates automatically.
  */
-const REACTOR_EDGE = 62;
+const REACTOR_OUTER_RX = 56;  // OrbitalReactor outer ellipse rx
+const REACTOR_SCALE = 1.1;    // scale prop passed to OrbitalReactor
+const REACTOR_EDGE = Math.round(REACTOR_OUTER_RX * REACTOR_SCALE); // ≈ 62
 
 /** Smooth cubic bezier from planet edge to reactor left edge. */
 function curvedPath(sx: number, sy: number, r: number): string {
@@ -192,7 +194,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
                 fill={isPrimary ? `url(#${gradPrimary})` : `url(#${gradAggregator})`}
-                className={mounted && !reducedMotion ? "planet-glow" : undefined}
+                className={mounted ? "planet-glow" : undefined}
                 style={{
                   "--planet-pulse-dur": pulseDur,
                   "--planet-pulse-delay": pulseDelay,
@@ -232,7 +234,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         })}
 
         {/* ── Orbital Reactor (engine) ──────────────────────────────── */}
-        <OrbitalReactor cx={RCX} cy={RCY} scale={1.1} />
+        <OrbitalReactor cx={RCX} cy={RCY} scale={REACTOR_SCALE} />
 
         {/* Reactor label */}
         <text
