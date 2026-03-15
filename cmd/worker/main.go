@@ -57,7 +57,9 @@ func (a *asynqLogger) Debug(args ...any) { a.l.Debug().Msgf("%v", args) }
 func (a *asynqLogger) Info(args ...any)  { a.l.Info().Msgf("%v", args) }
 func (a *asynqLogger) Warn(args ...any)  { a.l.Warn().Msgf("%v", args) }
 func (a *asynqLogger) Error(args ...any) { a.l.Error().Msgf("%v", args) }
-func (a *asynqLogger) Fatal(args ...any) { a.l.Fatal().Msgf("%v", args) }
+// Fatal logs at Error level rather than calling zerolog.Logger.Fatal (which
+// invokes os.Exit and would bypass all deferred cleanup in run()).
+func (a *asynqLogger) Fatal(args ...any) { a.l.Error().Msgf("%v", args) }
 
 // main is the entry point. All logic lives in run() so that deferred
 // cleanup executes before os.Exit is called on a non-zero exit.
@@ -275,16 +277,22 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = healthSrv.Shutdown(shutdownCtx)
-	srv.Shutdown()
-	// Wait for the srv.Start goroutine to fully unwind before run returns.
-	// A timeout guards against a stuck handler holding up the shutdown past the
-	// platform's (e.g. Railway's) SIGKILL deadline — if the goroutine hasn't
-	// returned within 10 s after srv.Shutdown(), we log and let run exit so
-	// deferred cleanup still runs.
+
+	// Bound the entire asynq shutdown path — srv.Shutdown() blocks while
+	// in-flight tasks complete, and the Start goroutine needs to fully unwind
+	// afterwards. A single 10 s deadline covers both phases so that a stuck
+	// handler cannot push the total wait past Railway's SIGKILL window.
+	// (Using a separate timer only for the srvErrCh drain would leave
+	// srv.Shutdown() itself unbounded.)
+	shutdownDone := make(chan error, 1)
+	go func() {
+		srv.Shutdown()           // blocks until in-flight tasks finish
+		shutdownDone <- <-srvErrCh // then drain the Start goroutine
+	}()
 	select {
-	case err := <-srvErrCh:
+	case err := <-shutdownDone:
 		if err != nil {
-			log.Error().Err(err).Msg("worker error")
+			log.Error().Err(err).Msg("worker error on exit")
 		}
 	case <-time.After(10 * time.Second):
 		log.Warn().Msg("worker shutdown timed out — forcing exit")
