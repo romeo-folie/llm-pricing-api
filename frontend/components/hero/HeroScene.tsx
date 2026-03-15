@@ -2,62 +2,73 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
-import { WireframeCube } from "./WireframeCube";
+import { OrbitalReactor } from "./OrbitalReactor";
 
 /* ─── Static data ──────────────────────────────────────────────────────────── */
 
-const PRIMARY_SOURCES = [
-  { name: "OpenAI",    sub: "daily" },
-  { name: "Anthropic", sub: "daily" },
-  { name: "Google",    sub: "daily" },
-];
+interface SourceNode {
+  name: string;
+  sub: string;
+  /** Position in viewBox coordinates (staggered constellation layout). */
+  x: number;
+  y: number;
+  /** Card dimensions. */
+  w: number;
+  h: number;
+  tier: "primary" | "aggregator";
+}
 
-const AGGREGATOR_SOURCES = [
-  { name: "OpenRouter",    sub: "every 6h" },
-  { name: "LiteLLM",      sub: "daily" },
-  { name: "Hugging Face",  sub: "daily" },
+/**
+ * Constellation layout:
+ *   - Primary sources (OpenAI, Anthropic, Google) clustered close to the
+ *     reactor in a tight triangle, larger cards, bolder styling.
+ *   - Aggregators (OpenRouter, LiteLLM, HF) scattered wider, smaller cards,
+ *     dimmer/dashed styling — like distant stars in the constellation.
+ *
+ * The goal is organic asymmetry with clear visual hierarchy.
+ */
+const SOURCES: SourceNode[] = [
+  // Primary — tight cluster, larger
+  { name: "OpenAI",    sub: "direct",  x: 42,  y: 60,   w: 118, h: 44, tier: "primary" },
+  { name: "Anthropic", sub: "direct",  x: 80,  y: 150,  w: 118, h: 44, tier: "primary" },
+  { name: "Google",    sub: "direct",  x: 30,  y: 240,  w: 118, h: 44, tier: "primary" },
+  // Aggregators — scattered wider, smaller
+  { name: "OpenRouter",   sub: "6h",    x: 175, y: 18,   w: 100, h: 36, tier: "aggregator" },
+  { name: "LiteLLM",      sub: "daily", x: 195, y: 120,  w: 100, h: 36, tier: "aggregator" },
+  { name: "Hugging Face", sub: "daily", x: 185, y: 280,  w: 100, h: 36, tier: "aggregator" },
 ];
 
 const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
 
 /* ─── Layout constants ─────────────────────────────────────────────────────── */
 
-// viewBox
 const VW = 680;
 const VH = 340;
 
-// Source cards
-const S_X  = 40;    // left edge
-const S_W  = 116;   // card width
-const S_H  = 42;    // card height
-const S_DY = 52;    // row pitch
-
-const P_Y0 = 26;    // first primary y
-const A_Y0 = 184;   // first aggregator y
-
-// Flow merge points
-const M_X  = 220;   // x of merge dots
-const MP_Y = P_Y0 + S_H / 2 + S_DY;   // primary merge y  ≈ 99
-const MA_Y = A_Y0 + S_H / 2 + S_DY;   // aggregator merge y ≈ 257
-
-// Engine / reactor center
+// Reactor center
 const RCX = 380;
-const RCY = Math.round(VH / 2);  // 170
+const RCY = Math.round(VH / 2); // 170
 
 // Endpoint cards
 const E_X = 540;
 const E_W = 120;
 const E_H = 36;
 const E_DY = 44;
-const E_Y0 = RCY - E_H / 2 - E_DY * 1.5;  // centres 4 cards around reactor
+const E_Y0 = RCY - E_H / 2 - E_DY * 1.5;
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 
-function primaryY(i: number)     { return P_Y0 + i * S_DY; }
-function aggregatorY(i: number)  { return A_Y0 + i * S_DY; }
-function endpointY(i: number)    { return E_Y0 + i * E_DY; }
+function endpointY(i: number) { return E_Y0 + i * E_DY; }
 
-function sourceCardCY(y: number) { return y + S_H / 2; }
+/** Generate a smooth cubic bezier path from source card right edge to reactor. */
+function curvedPath(sx: number, sy: number, sw: number, sh: number): string {
+  const startX = sx + sw;
+  const startY = sy + sh / 2;
+  const endX = RCX - 58; // reactor left edge
+  const endY = RCY;
+  const midX = startX + (endX - startX) * 0.5;
+  return `M ${startX},${startY} C ${midX},${startY} ${midX},${endY} ${endX},${endY}`;
+}
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
 
@@ -89,118 +100,104 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         xmlns="http://www.w3.org/2000/svg"
         style={{ width: "100%", height: "auto", display: "block" }}
       >
-        {/* ── Column labels ─────────────────────────────────────────────── */}
-        <text
-          x={S_X + S_W / 2} y={12}
-          fontSize="8" fontWeight="600"
-          fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--hero-label, var(--dim))" textAnchor="middle" letterSpacing="1"
-        >
-          SOURCES
-        </text>
-        <text
-          x={E_X + E_W / 2} y={E_Y0 - 8}
-          fontSize="8" fontWeight="600"
-          fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--hero-label, var(--dim))" textAnchor="middle" letterSpacing="1"
-        >
-          API
-        </text>
+        {/* ── Constellation flow lines (source → reactor) ───────────── */}
+        {SOURCES.map((s, i) => {
+          const d = curvedPath(s.x, s.y, s.w, s.h);
+          const isPrimary = s.tier === "primary";
+          const baseColor = isPrimary ? "var(--accent)" : "var(--muted)";
+          const dur = isPrimary ? `${2.4 + i * 0.3}s` : `${3.0 + (i - 3) * 0.4}s`;
 
-        {/* ── Tier labels (removed per design update) ──────────────────── */}
-
-        {/* ── Primary source → merge flow lines ─────────────────────────── */}
-        {PRIMARY_SOURCES.map((_, i) => {
-          const cy = sourceCardCY(primaryY(i));
-          const d = `M ${S_X + S_W},${cy} L ${M_X},${cy}`;
           return (
-            <g key={`pf-${i}`}>
-              <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" />
-              <path d={d} stroke="var(--accent)" strokeWidth="1" strokeDasharray="4 8" strokeOpacity="0.55" className="hero-dash" />
+            <g key={`flow-${s.name}`}>
+              {/* Ghost path */}
+              <path
+                d={d}
+                stroke="var(--borderDk)"
+                strokeWidth={isPrimary ? 1 : 0.75}
+                strokeDasharray={isPrimary ? "6 4" : "3 5"}
+                opacity={isPrimary ? 0.4 : 0.25}
+                fill="none"
+              />
+              {/* Accent overlay */}
+              <path
+                d={d}
+                stroke={baseColor}
+                strokeWidth={isPrimary ? 1.2 : 0.6}
+                strokeDasharray={isPrimary ? "4 8" : "3 6"}
+                strokeOpacity={isPrimary ? 0.5 : 0.25}
+                fill="none"
+                className="hero-dash"
+              />
+              {/* Animated bead */}
               {!reducedMotion && (
-                <circle r="2.5" fill="var(--accent)" opacity="0.9">
-                  <animateMotion dur={`${2.6 + i * 0.4}s`} repeatCount="indefinite" path={d} />
+                <circle r={isPrimary ? 2.5 : 1.8} fill={baseColor} opacity={isPrimary ? 0.85 : 0.55}>
+                  <animateMotion dur={dur} repeatCount="indefinite" path={d} />
                 </circle>
               )}
             </g>
           );
         })}
 
-        {/* Vertical primary merge connector */}
-        <line
-          x1={M_X} y1={sourceCardCY(primaryY(0))}
-          x2={M_X} y2={sourceCardCY(primaryY(2))}
-          stroke="var(--accent)" strokeWidth="0.75" opacity="0.25" strokeDasharray="4 4"
-        />
-        <circle cx={M_X} cy={MP_Y} r="3" fill="var(--accent)" opacity="0.6" />
-
-        {/* Primary bus → reactor left */}
-        {(() => {
-          const d = `M ${M_X},${MP_Y} L ${RCX - 58},${RCY}`;
+        {/* ── Source cards (constellation) ───────────────────────────── */}
+        {SOURCES.map((s) => {
+          const isPrimary = s.tier === "primary";
           return (
-            <g>
-              <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" />
-              <path d={d} stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 8" strokeOpacity="0.6" className="hero-dash" />
-              {!reducedMotion && (
-                <circle r="2.5" fill="var(--accent)" opacity="0.9">
-                  <animateMotion dur="2.4s" repeatCount="indefinite" path={d} />
-                </circle>
-              )}
-            </g>
-          );
-        })()}
-
-        {/* ── Aggregator source → merge flow lines ──────────────────────── */}
-        {AGGREGATOR_SOURCES.map((_, i) => {
-          const cy = sourceCardCY(aggregatorY(i));
-          const d = `M ${S_X + S_W},${cy} L ${M_X},${cy}`;
-          return (
-            <g key={`af-${i}`}>
-              <path d={d} stroke="var(--borderDk)" strokeWidth="0.75" strokeDasharray="3 4" opacity="0.5" />
-              <path d={d} stroke="var(--muted)" strokeWidth="0.75" strokeDasharray="3 6" strokeOpacity="0.35" className="hero-dash" />
-              {!reducedMotion && (
-                <circle r="2" fill="var(--muted)" opacity="0.65">
-                  <animateMotion dur={`${3.2 + i * 0.5}s`} repeatCount="indefinite" path={d} />
-                </circle>
-              )}
+            <g key={s.name}>
+              <rect
+                x={s.x} y={s.y} width={s.w} height={s.h} rx="4"
+                fill={isPrimary ? "var(--greenLt)" : "var(--accentLt)"}
+                stroke={isPrimary ? "var(--green)" : "var(--accent)"}
+                strokeWidth={isPrimary ? 1 : 0.75}
+                strokeOpacity={isPrimary ? 0.4 : 0.2}
+                strokeDasharray={isPrimary ? "none" : "3 2"}
+              />
+              <text
+                x={s.x + 12} y={s.y + s.h / 2 - 3}
+                fontSize={isPrimary ? 11 : 9.5}
+                fontWeight="600"
+                fontFamily="var(--font-geist-sans), sans-serif"
+                fill="var(--ink)"
+                dominantBaseline="middle"
+              >
+                {s.name}
+              </text>
+              <text
+                x={s.x + 12} y={s.y + s.h / 2 + (isPrimary ? 11 : 9)}
+                fontSize={isPrimary ? 8.5 : 7.5}
+                fontFamily="var(--font-geist-mono), monospace"
+                fill={isPrimary ? "var(--green)" : "var(--muted)"}
+                dominantBaseline="middle"
+                opacity="0.8"
+              >
+                {s.sub}
+              </text>
             </g>
           );
         })}
 
-        {/* Vertical aggregator merge connector */}
-        <line
-          x1={M_X} y1={sourceCardCY(aggregatorY(0))}
-          x2={M_X} y2={sourceCardCY(aggregatorY(2))}
-          stroke="var(--muted)" strokeWidth="0.5" opacity="0.2" strokeDasharray="3 4"
-        />
-        <circle cx={M_X} cy={MA_Y} r="2.5" fill="var(--muted)" opacity="0.45" />
+        {/* ── Orbital Reactor (engine) ──────────────────────────────── */}
+        <OrbitalReactor cx={RCX} cy={RCY} scale={1.1} />
 
-        {/* Aggregator bus → reactor left */}
-        {(() => {
-          const d = `M ${M_X},${MA_Y} L ${RCX - 58},${RCY + 20}`;
-          return (
-            <g>
-              <path d={d} stroke="var(--borderDk)" strokeWidth="0.75" strokeDasharray="3 4" opacity="0.5" />
-              <path d={d} stroke="var(--muted)" strokeWidth="1" strokeDasharray="3 6" strokeOpacity="0.35" className="hero-dash" />
-              {!reducedMotion && (
-                <circle r="2" fill="var(--muted)" opacity="0.65">
-                  <animateMotion dur="3s" repeatCount="indefinite" path={d} />
-                </circle>
-              )}
-            </g>
-          );
-        })()}
+        {/* Reactor label */}
+        <text
+          x={RCX} y={RCY + 72}
+          fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
+          fill="var(--accent)" textAnchor="middle" letterSpacing="0.5" opacity="0.85"
+        >
+          reconcile · 2-source
+        </text>
 
-        {/* ── Output flow lines: reactor → endpoints ────────────────────── */}
+        {/* ── Output flow lines: reactor → endpoints ────────────────── */}
         {ENDPOINTS.map((_, i) => {
           const ey = endpointY(i) + E_H / 2;
-          // Fan 4 output lines evenly from reactor right edge
           const fanY = RCY - 15 + i * 10;
-          const d = `M ${RCX + 58},${fanY} L ${E_X},${ey}`;
+          const startX = RCX + 58;
+          const midX = startX + (E_X - startX) * 0.5;
+          const d = `M ${startX},${fanY} C ${midX},${fanY} ${midX},${ey} ${E_X},${ey}`;
           return (
             <g key={`out-${i}`}>
-              <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" />
-              <path d={d} stroke="var(--green)" strokeWidth="1" strokeDasharray="4 8" strokeOpacity="0.45" className="hero-dash" />
+              <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" fill="none" opacity="0.4" />
+              <path d={d} stroke="var(--green)" strokeWidth="1" strokeDasharray="4 8" strokeOpacity="0.45" fill="none" className="hero-dash" />
               {!reducedMotion && (
                 <circle r="2.5" fill="var(--green)" opacity="0.85">
                   <animateMotion dur={`${2.5 + i * 0.3}s`} repeatCount="indefinite" path={d} />
@@ -210,99 +207,32 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           );
         })}
 
-        {/* ── Primary source cards ──────────────────────────────────────── */}
-        {PRIMARY_SOURCES.map((p, i) => {
-          const y = primaryY(i);
-          return (
-            <g key={p.name}>
-              <rect
-                x={S_X} y={y} width={S_W} height={S_H} rx="3"
-                fill="var(--greenLt)"
-                stroke="var(--green)"
-                strokeWidth="1"
-                strokeOpacity="0.35"
-              />
-              <text
-                x={S_X + 12} y={y + S_H / 2 - 3}
-                fontSize="11" fontWeight="600"
-                fontFamily="var(--font-geist-sans), sans-serif"
-                fill="var(--ink)" dominantBaseline="middle"
-              >
-                {p.name}
-              </text>
-              <text
-                x={S_X + 12} y={y + S_H / 2 + 11}
-                fontSize="8.5"
-                fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--green)" dominantBaseline="middle" opacity="0.8"
-              >
-                {p.sub}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* ── Aggregator source cards ───────────────────────────────────── */}
-        {AGGREGATOR_SOURCES.map((p, i) => {
-          const y = aggregatorY(i);
-          return (
-            <g key={p.name}>
-              <rect
-                x={S_X} y={y} width={S_W} height={S_H} rx="3"
-                fill="var(--accentLt)"
-                stroke="var(--accent)"
-                strokeWidth="0.75"
-                strokeOpacity="0.25"
-                strokeDasharray="3 2"
-              />
-              <text
-                x={S_X + 12} y={y + S_H / 2 - 3}
-                fontSize="11" fontWeight="600"
-                fontFamily="var(--font-geist-sans), sans-serif"
-                fill="var(--ink)" dominantBaseline="middle"
-              >
-                {p.name}
-              </text>
-              <text
-                x={S_X + 12} y={y + S_H / 2 + 11}
-                fontSize="8.5"
-                fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--muted)" dominantBaseline="middle"
-              >
-                {p.sub}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* ── Orbital Reactor (engine) ──────────────────────────────────── */}
-        <WireframeCube cx={RCX} cy={RCY} />
-
-        {/* Reactor label */}
+        {/* ── API label ─────────────────────────────────────────────── */}
         <text
-          x={RCX} y={RCY + 68}
-          fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--accent)" textAnchor="middle" letterSpacing="0.5" opacity="0.85"
+          x={E_X + E_W / 2} y={E_Y0 - 8}
+          fontSize="8" fontWeight="600"
+          fontFamily="var(--font-geist-mono), monospace"
+          fill="var(--dim)" textAnchor="middle" letterSpacing="1"
         >
-          reconcile · 2-source
+          API
         </text>
 
-        {/* ── Endpoint cards ────────────────────────────────────────────── */}
+        {/* ── Endpoint cards ────────────────────────────────────────── */}
         {ENDPOINTS.map((ep, i) => {
           const y = endpointY(i);
           return (
             <g key={ep}>
               <rect
-                x={E_X} y={y} width={E_W} height={E_H} rx="3"
-                fill="var(--hero-endpoint-bg, var(--surfaceHi))"
-                stroke="var(--hero-endpoint-border, var(--border))"
+                x={E_X} y={y} width={E_W} height={E_H} rx="4"
+                fill="var(--surfaceHi)"
+                stroke="var(--border)"
                 strokeWidth="1"
               />
               <text
                 x={E_X + 10} y={y + E_H / 2 - 3}
                 fontSize="10" fontWeight="600"
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--hero-endpoint-text, var(--ink))" dominantBaseline="middle"
+                fill="var(--ink)" dominantBaseline="middle"
               >
                 {ep}
               </text>
@@ -322,7 +252,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         <text
           x={RCX} y={VH - 8}
           fontSize="8.5" fontFamily="var(--font-geist-mono), monospace"
-          fill="var(--hero-label, var(--dim))" textAnchor="middle" opacity="0.85"
+          fill="var(--dim)" textAnchor="middle" opacity="0.85"
         >
           6 sources · 2,330 models · &lt;60s latency
         </text>
