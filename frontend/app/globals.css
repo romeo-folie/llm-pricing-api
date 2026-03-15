@@ -69,6 +69,50 @@
   --purpleLt:    #EDE9FE;
 }
 
+/* ─── Dark Mode — system preference only ─────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Base palette */
+    --bg:          #1A1714;
+    --surface:     #221F1C;
+    --surfaceLo:   #161412;
+    --surfaceHi:   #2D2926;
+
+    /* Borders */
+    --border:      #352F2A;
+    --borderDk:    #4A4340;
+
+    /* Text */
+    --text:        #E8E4E0;
+    --muted:       #9C9491;
+    --dim:         #6B6461;
+    --ink:         #F0EDE9;
+
+    /* Accent — slightly brighter teal for dark bg legibility */
+    --accent:      #13A092;
+    --accentLt:    rgba(19, 160, 146, 0.13);
+    --accentDk:    #0E7A6E;
+
+    /* Semantic — bump luminosity, use alpha washes for -lt */
+    --green:       #10B981;
+    --greenLt:     rgba(16, 185, 129, 0.11);
+    --red:         #F87171;
+    --redLt:       rgba(248, 113, 113, 0.12);
+    --yellow:      #FBBF24;
+    --yellowLt:    rgba(251, 191, 36, 0.12);
+    --blue:        #60A5FA;
+    --blueLt:      rgba(96, 165, 250, 0.12);
+    --purple:      #A78BFA;
+    --purpleLt:    rgba(167, 139, 250, 0.12);
+  }
+
+  /* PNG logos that need inversion on dark (SVG logos use currentColor) */
+  img[src*="litellm"] {
+    filter: invert(1) opacity(0.7);
+  }
+}
+
 /* ─── Base Styles ─────────────────────────────────────────────────────────── */
 
 *, *::before, *::after {
