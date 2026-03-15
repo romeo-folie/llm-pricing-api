@@ -120,12 +120,13 @@ func TestFetch(t *testing.T) {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
-	// Expect: gemini-2-5-pro, gemini-3-1-pro-preview, gemini-3-1-flash-image-preview
+	// Expect: gemini-2.5-pro, gemini-3.1-pro-preview, gemini-3.1-flash-image-preview
 	// Batch tiers skipped; "Gemini 3 Pro Preview" (no paid price) skipped.
+	// Dots are preserved in slugs (consistent with OpenAI scraper convention).
 	want := map[string]struct{}{
-		"google/gemini-2-5-pro":                  {},
-		"google/gemini-3-1-pro-preview":           {},
-		"google/gemini-3-1-flash-image-preview":   {},
+		"google/gemini-2.5-pro":                {},
+		"google/gemini-3.1-pro-preview":        {},
+		"google/gemini-3.1-flash-image-preview": {},
 	}
 
 	if len(models) != len(want) {
@@ -176,17 +177,20 @@ func TestFetch_BatchTierSkipped(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
 
 	// Batch tier for Gemini 2.5 Pro should not produce a second entry.
 	count := 0
 	for _, m := range models {
-		if m.Slug == "google/gemini-2-5-pro" {
+		if m.Slug == "google/gemini-2.5-pro" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("gemini-2-5-pro appeared %d times, want exactly 1 (Standard only)", count)
+		t.Errorf("gemini-2.5-pro appeared %d times, want exactly 1 (Standard only)", count)
 	}
 }
 
@@ -198,21 +202,24 @@ func TestFetch_PriceConversion(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
 
 	for _, m := range models {
-		if m.Slug != "google/gemini-2-5-pro" {
+		if m.Slug != "google/gemini-2.5-pro" {
 			continue
 		}
 		// $0.25 / 1M = 0.00000025
 		const wantInput = 0.25 / 1_000_000
 		if m.InputCostPerToken != wantInput {
-			t.Errorf("gemini-2-5-pro InputCostPerToken: got %v, want %v", m.InputCostPerToken, wantInput)
+			t.Errorf("gemini-2.5-pro InputCostPerToken: got %v, want %v", m.InputCostPerToken, wantInput)
 		}
 		// $3.00 / 1M = 0.000003
 		const wantOutput = 3.00 / 1_000_000
 		if m.OutputCostPerToken != wantOutput {
-			t.Errorf("gemini-2-5-pro OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
+			t.Errorf("gemini-2.5-pro OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
 	}
 }
@@ -227,10 +234,13 @@ func TestFetch_TieredContextPrice(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
 
 	for _, m := range models {
-		if m.Slug != "google/gemini-3-1-pro-preview" {
+		if m.Slug != "google/gemini-3.1-pro-preview" {
 			continue
 		}
 		const wantInput = 2.00 / 1_000_000  // first line: $2.00
@@ -252,7 +262,10 @@ func TestFetch_EmojiStripped(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
 
 	for _, m := range models {
 		if strings.Contains(m.Slug, "image-preview") {
@@ -276,10 +289,13 @@ func TestFetch_MultiLineOutputTextPrice(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
 
 	for _, m := range models {
-		if m.Slug != "google/gemini-3-1-flash-image-preview" {
+		if m.Slug != "google/gemini-3.1-flash-image-preview" {
 			continue
 		}
 		const wantOutput = 3.0 / 1_000_000
@@ -372,9 +388,10 @@ func TestCleanModelName(t *testing.T) {
 
 func TestNormalizeSlug(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"Gemini 2.5 Pro", "gemini-2-5-pro"},
-		{"Gemini 3.1 Flash Image Preview", "gemini-3-1-flash-image-preview"},
-		{"Gemini 2.5 Flash-Lite", "gemini-2-5-flash-lite"},
+		{"Gemini 2.5 Pro", "gemini-2.5-pro"},
+		{"Gemini 3.1 Flash Image Preview", "gemini-3.1-flash-image-preview"},
+		{"Gemini 2.5 Flash-Lite", "gemini-2.5-flash-lite"},
+		{"Gemini 2.5 Flash_Lite", "gemini-2.5-flash-lite"}, // underscores → hyphens
 	}
 	for _, tc := range cases {
 		if got := normalizeSlug(tc.in); got != tc.want {
