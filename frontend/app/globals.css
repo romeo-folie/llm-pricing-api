@@ -3,38 +3,38 @@
 /* ─── Design Tokens ─────────────────────────────────────────────────────── */
 
 @theme {
-  /* Base palette */
-  --color-bg:         #F2EDE8;
-  --color-surface:    #FDFAF7;
-  --color-surface-lo: #EDE8E2;
-  --color-surface-hi: #FFFFFF;
+  /* Base palette — reference :root custom props so dark mode overrides propagate */
+  --color-bg:         var(--bg);
+  --color-surface:    var(--surface);
+  --color-surface-lo: var(--surfaceLo);
+  --color-surface-hi: var(--surfaceHi);
 
   /* Borders */
-  --color-border:     #DDD7D0;
-  --color-border-dk:  #C8C0B6;
+  --color-border:     var(--border);
+  --color-border-dk:  var(--borderDk);
 
   /* Text */
-  --color-text:       #1C1917;
-  --color-muted:      #78716C;
-  --color-dim:        #A8A29E;
-  --color-ink:        #1E293B;
+  --color-text:       var(--text);
+  --color-muted:      var(--muted);
+  --color-dim:        var(--dim);
+  --color-ink:        var(--ink);
 
   /* Accent */
-  --color-accent:     #107E72;
-  --color-accent-lt:  #E0F5F2;
-  --color-accent-dk:  #0A524A;
+  --color-accent:     var(--accent);
+  --color-accent-lt:  var(--accentLt);
+  --color-accent-dk:  var(--accentDk);
 
   /* Semantic */
-  --color-green:      #059669;
-  --color-green-lt:   #D1FAE5;
-  --color-red:        #DC2626;
-  --color-red-lt:     #FEE2E2;
-  --color-yellow:     #D97706;
-  --color-yellow-lt:  #FEF3C7;
-  --color-blue:       #2563EB;
-  --color-blue-lt:    #DBEAFE;
-  --color-purple:     #7C3AED;
-  --color-purple-lt:  #EDE9FE;
+  --color-green:      var(--green);
+  --color-green-lt:   var(--greenLt);
+  --color-red:        var(--red);
+  --color-red-lt:     var(--redLt);
+  --color-yellow:     var(--yellow);
+  --color-yellow-lt:  var(--yellowLt);
+  --color-blue:       var(--blue);
+  --color-blue-lt:    var(--blueLt);
+  --color-purple:     var(--purple);
+  --color-purple-lt:  var(--purpleLt);
 
   /* Typography — Geist family (remapped from legacy token names) */
   --font-orbitron: var(--font-geist-mono), monospace;
@@ -67,6 +67,47 @@
   --blueLt:      #DBEAFE;
   --purple:      #7C3AED;
   --purpleLt:    #EDE9FE;
+}
+
+/* ─── Dark Mode — system preference only ─────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Base palette */
+    --bg:          #2B2A28;
+    --surface:     #343230;
+    --surfaceLo:   #222120;
+    --surfaceHi:   #3E3C3A;
+
+    /* Borders */
+    --border:      #413F3C;
+    --borderDk:    #514E4B;
+
+    /* Text */
+    --text:        #E8E4E0;
+    --muted:       #9C9491;
+    --dim:         #6B6461;
+    --ink:         #F0EDE9;
+
+    /* Accent — slightly brighter teal for dark bg legibility */
+    --accent:      #13A092;
+    --accentLt:    rgba(19, 160, 146, 0.13);
+    --accentDk:    #0E7A6E;
+
+    /* Semantic — bump luminosity, use alpha washes for -lt */
+    --green:       #10B981;
+    --greenLt:     rgba(16, 185, 129, 0.11);
+    --red:         #F87171;
+    --redLt:       rgba(248, 113, 113, 0.12);
+    --yellow:      #FBBF24;
+    --yellowLt:    rgba(251, 191, 36, 0.12);
+    --blue:        #60A5FA;
+    --blueLt:      rgba(96, 165, 250, 0.12);
+    --purple:      #A78BFA;
+    --purpleLt:    rgba(167, 139, 250, 0.12);
+  }
+
+
 }
 
 /* ─── Base Styles ─────────────────────────────────────────────────────────── */
@@ -141,6 +182,11 @@ body {
 
 .hero-dash {
   animation: hero-dash 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-breathe { animation: none; opacity: 0.5; }
+  .hero-dash    { animation: none; }
 }
 
 /* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */

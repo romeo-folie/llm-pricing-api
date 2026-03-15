@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { ArrowUpRight } from "lucide-react"
 import HeroScene from "@/components/hero/HeroScene"
+import { PricingTicker } from "@/components/hero/PricingTicker"
 import { FeatureSections } from "@/components/features"
 import { getModels, getProviders, getChanges } from "@/lib/api"
 
@@ -115,8 +116,11 @@ const TESTIMONIALS = [
 ]
 
 const DATA_SOURCES = [
-  { name: "OpenRouter", logo: "/provider-logos/openrouter.svg" },
-  { name: "LiteLLM", logo: "/provider-logos/litellm.png" },
+  { name: "OpenAI",       logo: "/provider-logos/openai.svg" },
+  { name: "Anthropic",    logo: "/provider-logos/anthropic.svg" },
+  { name: "Google",       logo: "/provider-logos/google.svg" },
+  { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg" },
+  { name: "LiteLLM",      logo: "/provider-logos/litellm.svg" },
   { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
 ]
 
@@ -154,6 +158,7 @@ export default async function Home() {
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
+          hour12: false,
           timeZone: "UTC",
         }).format(parsedDate)
       : null
@@ -219,7 +224,7 @@ export default async function Home() {
                 <div className="flex flex-col gap-0.5">
                   <span
                     className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--accent)" }}
+                    style={{ color: "var(--ink)" }}
                   >
                     {(modelCount ?? 340).toLocaleString()}
                   </span>
@@ -233,7 +238,7 @@ export default async function Home() {
                 <div className="flex flex-col gap-0.5">
                   <span
                     className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--accent)" }}
+                    style={{ color: "var(--ink)" }}
                   >
                     {(providerCount ?? 7).toLocaleString()}
                   </span>
@@ -247,7 +252,7 @@ export default async function Home() {
                 <div className="flex flex-col gap-0.5">
                   <span
                     className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--accent)" }}
+                    style={{ color: "var(--ink)" }}
                   >
                     {lastChangeLabel ?? "<60s ago"}
                   </span>
@@ -281,7 +286,8 @@ export default async function Home() {
                   src={source.logo}
                   alt={source.name}
                   title={source.name}
-                  className="h-6 w-auto opacity-80"
+                  className="h-6 w-auto"
+                  style={{ opacity: 0.65, color: "var(--muted)" }}
                 />
                 <span className="font-outfit text-xs font-medium" style={{ color: "var(--muted)" }}>
                   {source.name}
@@ -290,6 +296,8 @@ export default async function Home() {
             ))}
           </div>
         </div>
+        {/* Live pricing ticker — full-bleed inside bordered container */}
+        <PricingTicker />
         </div>
       </section>
 

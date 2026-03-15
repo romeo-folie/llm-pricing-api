@@ -1,0 +1,27 @@
+/* OrbitalReactor — SVG version, orbital spin animations */
+
+.ring1 { animation: orbitalSpin 5s linear infinite; }
+.ring2 { animation: orbitalSpin 7s linear infinite; }
+.ring3 { animation: orbitalSpin 9s linear infinite; }
+
+.dot1Wrap { animation: orbitalSpin 5s linear infinite; }
+.dot2Wrap { animation: orbitalSpin 7s linear infinite; }
+.dot3Wrap { animation: orbitalSpin 9s linear infinite; }
+
+.dot   { animation: dotPulse 2s ease-in-out infinite; }
+.core  { animation: corePulse 2.8s ease-in-out infinite; }
+.coreEcho {
+  animation: corePulse 2.8s ease-in-out infinite;
+  animation-delay: -1.4s;
+}
+
+@keyframes orbitalSpin { to { transform: rotate(360deg); } }
+@keyframes corePulse   { 0%,100%{ opacity:0.6 } 50%{ opacity:1 } }
+@keyframes dotPulse    { 0%,100%{ opacity:0.5 } 50%{ opacity:1 } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ring1, .ring2, .ring3,
+  .dot1Wrap, .dot2Wrap, .dot3Wrap { animation: none; }
+  .core, .coreEcho { animation: none; opacity: 0.8; }
+  .dot { animation: none; opacity: 0.7; }
+}
