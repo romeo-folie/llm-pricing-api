@@ -10,6 +10,11 @@ interface TickerModel {
   output: number;
 }
 
+// Illustrative sample prices ($/M tokens). These are static placeholders used
+// only in the hero ticker animation. The actual live pricing data is served by
+// the /v1/models and /v1/history API endpoints. Update periodically to stay
+// roughly current, but exact accuracy is not required — users click through to
+// the live data.
 const MODELS: TickerModel[] = [
   { provider: "OpenAI",    name: "gpt-4o",               input: 2.50,  output: 10.00 },
   { provider: "Anthropic", name: "claude-3-5-sonnet",    input: 3.00,  output: 15.00 },

@@ -1,4 +1,7 @@
+"use client";
+
 import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { OrbitalReactor } from "./OrbitalReactor";
 
 /* ─── Static data ──────────────────────────────────────────────────────────── */
@@ -64,6 +67,15 @@ interface HeroSceneProps {
 }
 
 export default function HeroScene({ className, style }: HeroSceneProps) {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   return (
     <div
       className={className}
@@ -119,9 +131,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g key={`pf-${i}`}>
               <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" />
               <path d={d} stroke="var(--accent)" strokeWidth="1" strokeDasharray="4 8" strokeOpacity="0.55" className="hero-dash" />
-              <circle r="2.5" fill="var(--accent)" opacity="0.9">
-                <animateMotion dur={`${2.6 + i * 0.4}s`} repeatCount="indefinite" path={d} />
-              </circle>
+              {!reducedMotion && (
+                <circle r="2.5" fill="var(--accent)" opacity="0.9">
+                  <animateMotion dur={`${2.6 + i * 0.4}s`} repeatCount="indefinite" path={d} />
+                </circle>
+              )}
             </g>
           );
         })}
@@ -141,9 +155,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g>
               <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" />
               <path d={d} stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 8" strokeOpacity="0.6" className="hero-dash" />
-              <circle r="2.5" fill="var(--accent)" opacity="0.9">
-                <animateMotion dur="2.4s" repeatCount="indefinite" path={d} />
-              </circle>
+              {!reducedMotion && (
+                <circle r="2.5" fill="var(--accent)" opacity="0.9">
+                  <animateMotion dur="2.4s" repeatCount="indefinite" path={d} />
+                </circle>
+              )}
             </g>
           );
         })()}
@@ -189,9 +205,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g key={`out-${i}`}>
               <path d={d} stroke="var(--borderDk)" strokeWidth="1" strokeDasharray="4 4" />
               <path d={d} stroke="var(--green)" strokeWidth="1" strokeDasharray="4 8" strokeOpacity="0.45" className="hero-dash" />
-              <circle r="2.5" fill="var(--green)" opacity="0.85">
-                <animateMotion dur={`${2.5 + i * 0.3}s`} repeatCount="indefinite" path={d} />
-              </circle>
+              {!reducedMotion && (
+                <circle r="2.5" fill="var(--green)" opacity="0.85">
+                  <animateMotion dur={`${2.5 + i * 0.3}s`} repeatCount="indefinite" path={d} />
+                </circle>
+              )}
             </g>
           );
         })}

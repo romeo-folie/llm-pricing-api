@@ -296,9 +296,9 @@ export default async function Home() {
             ))}
           </div>
         </div>
-        </div>
-        {/* Live pricing ticker — below source list */}
+        {/* Live pricing ticker — full-bleed inside bordered container */}
         <PricingTicker />
+        </div>
       </section>
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
