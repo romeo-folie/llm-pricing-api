@@ -86,8 +86,13 @@ export default function ModelDetailModal() {
   function addToCompare() {
     if (!modelId) return
     trackAddToCompare(modelId)
-    // Hard navigate to avoid conflict with modal's URL-based open state
-    window.location.href = `/compare?models=${encodeURIComponent(modelId)}`
+    // Close the modal first by removing the `model` query param, then navigate
+    // to /compare — keeps navigation SPA and avoids losing in-memory state.
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("model")
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    router.push(`/compare?models=${encodeURIComponent(modelId)}`)
   }
 
   const isOpen = !!modelId

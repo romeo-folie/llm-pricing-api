@@ -7,9 +7,9 @@ import { WireframeCube } from "./WireframeCube";
 /* ─── Static data ──────────────────────────────────────────────────────────── */
 
 const PRIMARY_SOURCES = [
-  { name: "OpenAI",    sub: "every 6h" },
-  { name: "Anthropic", sub: "every 6h" },
-  { name: "Google",    sub: "every 6h" },
+  { name: "OpenAI",    sub: "daily" },
+  { name: "Anthropic", sub: "daily" },
+  { name: "Google",    sub: "daily" },
 ];
 
 const AGGREGATOR_SOURCES = [

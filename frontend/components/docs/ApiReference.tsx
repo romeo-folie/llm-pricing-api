@@ -44,6 +44,18 @@ const customCss = `
     --scalar-color-red:      #F87171;
     --scalar-color-purple:   #A78BFA;
   }
+
+  /* Theme is driven by system preference (prefers-color-scheme) via the
+     site's global dark-mode class. Hide Scalar's built-in toggle so users
+     aren't presented with a conflicting manual control. */
+  .scalar-app [data-cy="darkmode-toggle"],
+  .scalar-app .darkmode-toggle,
+  .scalar-app [aria-label*="dark mode"],
+  .scalar-app [aria-label*="light mode"],
+  .scalar-app [aria-label*="Dark mode"],
+  .scalar-app [aria-label*="Light mode"] {
+    display: none !important;
+  }
 `
 
 interface ApiReferenceProps {

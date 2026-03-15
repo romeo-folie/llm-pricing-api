@@ -63,6 +63,11 @@ export function WireframeCube({
     const g = groupRef.current;
     if (!g) return;
 
+    // Respect prefers-reduced-motion: skip animation entirely.
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     const ns = "http://www.w3.org/2000/svg";
     const d = 7.5; // perspective distance — matches CSS perspective:300px on 80px cube
 
@@ -143,9 +148,22 @@ export function WireframeCube({
       rafRef.current = requestAnimationFrame(frame);
     }
 
-    rafRef.current = requestAnimationFrame(frame);
+    // Draw one static frame so the cube is visible even without animation.
+    frame();
 
-    return () => cancelAnimationFrame(rafRef.current);
+    if (!reducedMotion) {
+      rafRef.current = requestAnimationFrame(frame);
+    }
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      // Remove all imperatively created child nodes so effect re-runs
+      // (React 18 StrictMode double-invoke, prop changes) don't accumulate
+      // duplicate polygons/lines/circles in the DOM.
+      while (g.firstChild) {
+        g.removeChild(g.firstChild);
+      }
+    };
   }, [cx, cy, size, speed, tiltX]);
 
   return <g ref={groupRef} />;
