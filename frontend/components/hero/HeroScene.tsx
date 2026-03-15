@@ -99,7 +99,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           SOURCES
         </text>
         <text
-          x={E_X + E_W / 2} y={12}
+          x={E_X + E_W / 2} y={E_Y0 - 8}
           fontSize="8" fontWeight="600"
           fontFamily="var(--font-geist-mono), monospace"
           fill="var(--hero-label, var(--dim))" textAnchor="middle" letterSpacing="1"
@@ -158,6 +158,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g key={`af-${i}`}>
               <path d={d} stroke="var(--borderDk)" strokeWidth="0.75" strokeDasharray="3 4" opacity="0.5" />
               <path d={d} stroke="var(--muted)" strokeWidth="0.75" strokeDasharray="3 6" strokeOpacity="0.35" className="hero-dash" />
+              {!reducedMotion && (
+                <circle r="2" fill="var(--accent)" opacity="0.65">
+                  <animateMotion dur={`${3.2 + i * 0.5}s`} repeatCount="indefinite" path={d} />
+                </circle>
+              )}
             </g>
           );
         })}
@@ -177,6 +182,11 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
             <g>
               <path d={d} stroke="var(--borderDk)" strokeWidth="0.75" strokeDasharray="3 4" opacity="0.5" />
               <path d={d} stroke="var(--muted)" strokeWidth="1" strokeDasharray="3 6" strokeOpacity="0.35" className="hero-dash" />
+              {!reducedMotion && (
+                <circle r="2" fill="var(--accent)" opacity="0.65">
+                  <animateMotion dur="3s" repeatCount="indefinite" path={d} />
+                </circle>
+              )}
             </g>
           );
         })()}
