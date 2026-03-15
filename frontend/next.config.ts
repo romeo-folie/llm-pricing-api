@@ -65,6 +65,10 @@ const nextConfig: NextConfig = {
       { source: "/openapi.json",               destination: `${API_BASE}/openapi.json`               },
       { source: "/llms.txt",                   destination: `${API_BASE}/llms.txt`                   },
       { source: "/.well-known/ai-plugin.json", destination: `${API_BASE}/.well-known/ai-plugin.json` },
+      // Signup flow — proxy all /auth/signup/* calls to the Go backend.
+      // The backend handles session cookies and issues the redirect to
+      // /signup/free?verified=1 after magic-link verification.
+      { source: "/auth/signup/:path*",          destination: `${API_BASE}/auth/signup/:path*`          },
     ]
   },
   images: {

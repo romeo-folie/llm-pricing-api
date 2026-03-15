@@ -1,0 +1,24 @@
+/**
+ * /signup/verify — token verification landing page
+ *
+ * The magic-link URL format is:
+ *   https://llmrates.live/auth/signup/verify?token=<raw_token>
+ *
+ * The Go backend handles that route directly (session cookie + redirect to
+ * /signup/free?verified=1). This Next.js page exists only as a fallback in
+ * case someone bookmarks /signup/verify or the proxy strips the /auth prefix.
+ * It immediately redirects to the correct backend path.
+ */
+import { redirect } from "next/navigation";
+
+interface Props {
+  searchParams: Promise<{ token?: string }>;
+}
+
+export default async function VerifyPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const token = params.token ?? "";
+
+  // Forward to the backend handler which owns the cookie + redirect logic.
+  redirect(`/auth/signup/verify?token=${encodeURIComponent(token)}`);
+}
