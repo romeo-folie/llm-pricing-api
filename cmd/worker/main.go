@@ -241,15 +241,22 @@ func run() error {
 		w.WriteHeader(code)
 		_, _ = w.Write([]byte(`{"status":"` + status + `","db":"` + dbStatus + `","redis":"` + redisStatus + `"}`))
 	})
+	// healthSrvErrCh receives non-ErrServerClosed errors from the health
+	// server goroutine. A send means ListenAndServe failed before the server
+	// was ever reachable (e.g. port already in use), so Railway health checks
+	// would never pass — treat it as fatal and exit non-zero.
+	healthSrvErrCh := make(chan error, 1)
 	healthSrv := &http.Server{Addr: ":" + cfg.AppPort, Handler: healthMux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info().Str("port", cfg.AppPort).Msg("health server listening")
 		if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("health server error")
+			healthSrvErrCh <- err
 		}
 	}()
 
-	// Block until SIGINT/SIGTERM or an unexpected asynq server exit.
+	// Block until SIGINT/SIGTERM, an unexpected asynq server exit, or a
+	// health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
@@ -272,6 +279,12 @@ func run() error {
 		}
 		log.Error().Msg("worker stopped without shutdown signal")
 		return fmt.Errorf("worker stopped without shutdown signal")
+	case healthErr := <-healthSrvErrCh:
+		// Health server failed to bind — Railway health checks will never pass.
+		// Shut down asynq and exit non-zero so the platform restarts the container.
+		srv.Shutdown()
+		log.Error().Err(healthErr).Msg("health server failed to start")
+		return healthErr
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
