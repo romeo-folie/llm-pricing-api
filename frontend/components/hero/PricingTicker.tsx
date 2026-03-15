@@ -34,7 +34,7 @@ const BADGE_CLASS: Record<string, string> = {
 };
 
 function fmt(n: number): string {
-  return n < 1 ? `$${n}` : `$${n.toFixed(2)}`;
+  return `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`;
 }
 
 export function PricingTicker() {

@@ -41,10 +41,10 @@
 .badgeOpenAI    { background: var(--greenLt);  color: var(--accentDk); }
 .badgeAnthropic { background: var(--greenLt);  color: var(--accentDk); }
 .badgeGoogle    { background: var(--greenLt);  color: var(--accentDk); }
-.badgeMistral   { background: var(--yellowLt); color: #92400e; }
-.badgeCohere    { background: var(--blueLt);   color: #1e3a8a; }
-.badgeDeepSeek  { background: var(--purpleLt); color: #4c1d95; }
-.badgeMeta      { background: var(--blueLt);   color: #1e3a8a; }
+.badgeMistral   { background: var(--yellowLt); color: var(--yellow); }
+.badgeCohere    { background: var(--blueLt);   color: var(--blue); }
+.badgeDeepSeek  { background: var(--purpleLt); color: var(--purple); }
+.badgeMeta      { background: var(--blueLt);   color: var(--blue); }
 
 .modelName {
   font-size: 13px;
