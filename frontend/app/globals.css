@@ -58,6 +58,7 @@
   --accentLt:    #E0F5F2;
   --accentDk:    #0A524A;
   --green:       #059669;
+  --greenBright: #34D399;
   --greenLt:     #D1FAE5;
   --red:         #DC2626;
   --redLt:       #FEE2E2;
@@ -96,6 +97,7 @@
 
     /* Semantic — bump luminosity, use alpha washes for -lt */
     --green:       #10B981;
+    --greenBright: #34D399;
     --greenLt:     rgba(16, 185, 129, 0.11);
     --red:         #F87171;
     --redLt:       rgba(248, 113, 113, 0.12);
@@ -192,9 +194,22 @@ body {
   animation: hero-dash 1.2s linear infinite;
 }
 
+/* ─── Planet-glow pulse (HeroScene constellation) ───────────────────────── */
+
+@keyframes planetPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 0.85; transform: scale(1.06); }
+}
+
+.planet-glow {
+  animation: planetPulse var(--planet-pulse-dur, 3.5s) ease-in-out infinite;
+  animation-delay: var(--planet-pulse-delay, 0s);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-breathe { animation: none; opacity: 0.5; }
   .hero-dash    { animation: none; }
+  .planet-glow  { animation: none; opacity: 0.6; transform: scale(1); }
 }
 
 /* ─── Pulse for LIVE badge ────────────────────────────────────────────────── */

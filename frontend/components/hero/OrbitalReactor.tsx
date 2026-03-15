@@ -2,6 +2,9 @@
 
 import styles from "./OrbitalReactor.module.css";
 
+/** Outer ellipse rx (ring 2) — exported so HeroScene can derive REACTOR_EDGE without duplication. */
+export const ORBITAL_REACTOR_OUTER_RX = 56;
+
 interface OrbitalReactorProps {
   cx?: number;
   cy?: number;
@@ -36,7 +39,7 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
       {/* Ring 2 — tilted -35°, medium */}
       <g className={styles.ring2} style={{ transformOrigin: `${cx}px ${cy}px` }}>
         <ellipse
-          cx={cx} cy={cy} rx={56} ry={14}
+          cx={cx} cy={cy} rx={ORBITAL_REACTOR_OUTER_RX} ry={14}
           fill="none"
           stroke="var(--accent)"
           strokeWidth={0.5}
@@ -58,26 +61,34 @@ export function OrbitalReactor({ cx = 340, cy = 170, scale = 1 }: OrbitalReactor
 
       {/* Data particles */}
       <g className={styles.dot1Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--green)" opacity="0.6" className={styles.dot} />
+        <circle cx={cx} cy={cy - 16} r={3.5} fill="var(--greenBright)" className={styles.dot} />
       </g>
       <g className={styles.dot2Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx + 56} cy={cy} r={3} fill="var(--green)" className={styles.dot} />
+        <circle cx={cx + ORBITAL_REACTOR_OUTER_RX} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
       </g>
       <g className={styles.dot3Wrap} style={{ transformOrigin: `${cx}px ${cy}px` }}>
-        <circle cx={cx - 52} cy={cy} r={3} fill="var(--accentLt)" className={styles.dot} />
+        <circle cx={cx - 52} cy={cy} r={3} fill="var(--greenBright)" className={styles.dot} />
       </g>
 
-      {/* Core */}
-      <circle cx={cx} cy={cy} r={12} fill="var(--accentDk)" className={styles.core} />
+      {/* Core — deeper green, luminosity comes from the glow rings not the core */}
+      <circle cx={cx} cy={cy} r={12} fill="var(--green)" className={styles.core} />
 
-      {/* Outer echo ring */}
+      {/* Inner glow halo — tight, bright (pulses 0.2→0.38) */}
       <circle
-        cx={cx} cy={cy} r={18}
+        cx={cx} cy={cy} r={22}
         fill="none"
-        stroke="var(--accent)"
-        strokeWidth={0.3}
-        opacity={0.18}
-        className={styles.coreEcho}
+        stroke="var(--greenBright)"
+        strokeWidth={1.5}
+        className={styles.coreEchoInner}
+      />
+
+      {/* Outer glow halo — wider, softer (pulses 0.1→0.20) */}
+      <circle
+        cx={cx} cy={cy} r={32}
+        fill="none"
+        stroke="var(--greenBright)"
+        strokeWidth={0.8}
+        className={styles.coreEchoOuter}
       />
     </g>
   );
