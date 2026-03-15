@@ -266,7 +266,11 @@ type KeyRecord struct {
 // RegisterKey inserts a new active key for an identity.
 // If the identity already has an active key, the caller should revoke it first
 // (RevokeKey) to satisfy the one-active-key-per-identity constraint.
+// Returns an error if providerKeyID is empty or blank.
 func (s *Store) RegisterKey(ctx context.Context, identityID, providerKeyID string) (KeyRecord, error) {
+	if strings.TrimSpace(providerKeyID) == "" {
+		return KeyRecord{}, fmt.Errorf("signup.RegisterKey: providerKeyID must not be empty")
+	}
 	var k KeyRecord
 	err := s.db.QueryRow(ctx, `
 		INSERT INTO api_keys_registry (identity_id, provider_key_id, status)
@@ -299,7 +303,11 @@ func (s *Store) FindActiveKey(ctx context.Context, identityID string) (KeyRecord
 
 // RevokeKey marks the given provider key as revoked.
 // Returns ErrNotFound if the key doesn't exist or is already revoked.
+// Returns an error if providerKeyID is empty or blank.
 func (s *Store) RevokeKey(ctx context.Context, providerKeyID string) error {
+	if strings.TrimSpace(providerKeyID) == "" {
+		return fmt.Errorf("signup.RevokeKey: providerKeyID must not be empty")
+	}
 	tag, err := s.db.Exec(ctx, `
 		UPDATE api_keys_registry
 		SET status = 'revoked', revoked_at = NOW()

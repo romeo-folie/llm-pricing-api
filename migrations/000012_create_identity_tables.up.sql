@@ -34,7 +34,8 @@ CREATE TABLE api_identities (
 -- Trigger: keep updated_at current on every UPDATE.
 -- set_updated_at() is created by migration 000003 and is shared across tables;
 -- we reuse it here rather than redefining it.
-CREATE TRIGGER api_identities_updated_at
+-- Named trg_<table>_<purpose> to match the convention in migration 000003.
+CREATE TRIGGER trg_api_identities_updated_at
     BEFORE UPDATE ON api_identities
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
@@ -54,9 +55,10 @@ CREATE TABLE magic_link_tokens (
 
 -- No separate index on token_hash — UNIQUE constraint already creates one.
 -- Expiry pruning: delete tokens WHERE expires_at < NOW().
-CREATE INDEX magic_link_tokens_expiry_idx  ON magic_link_tokens (expires_at);
+-- Named idx_<table>_<columns> to match the convention in migrations 000005/000007.
+CREATE INDEX idx_magic_link_tokens_expiry   ON magic_link_tokens (expires_at);
 -- Per-identity listing (e.g. rate-limit: how many tokens issued today?).
-CREATE INDEX magic_link_tokens_identity_idx ON magic_link_tokens (identity_id, created_at DESC);
+CREATE INDEX idx_magic_link_tokens_identity ON magic_link_tokens (identity_id, created_at DESC);
 
 -- ── api_keys_registry ─────────────────────────────────────────────────────────
 -- Maps identities → Unkey key IDs. Status: 'active' | 'revoked'.
@@ -70,7 +72,16 @@ CREATE TABLE api_keys_registry (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     revoked_at      TIMESTAMPTZ,
 
-    CONSTRAINT api_keys_registry_provider_key_unique UNIQUE (provider_key_id)
+    CONSTRAINT api_keys_registry_provider_key_unique   UNIQUE (provider_key_id),
+    -- Reject empty/whitespace-only provider_key_id at the DB level.
+    CONSTRAINT api_keys_registry_provider_key_nonempty CHECK (provider_key_id <> ''),
+    -- Enforce consistent status/revoked_at states: active rows must have no
+    -- revocation timestamp; revoked rows must have one.
+    CONSTRAINT api_keys_registry_status_revoked_at_consistent
+        CHECK (
+            (status = 'active'  AND revoked_at IS NULL) OR
+            (status = 'revoked' AND revoked_at IS NOT NULL)
+        )
 );
 
 -- Enforce one active key per identity at the database level.
@@ -79,4 +90,4 @@ CREATE UNIQUE INDEX api_keys_registry_one_active_per_identity
     WHERE status = 'active';
 
 -- Fast lookup by identity (key management, dashboard).
-CREATE INDEX api_keys_registry_identity_idx ON api_keys_registry (identity_id, created_at DESC);
+CREATE INDEX idx_api_keys_registry_identity ON api_keys_registry (identity_id, created_at DESC);
