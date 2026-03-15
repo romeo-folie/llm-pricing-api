@@ -340,8 +340,8 @@ func parsePricePerMillion(s string) (float64, error) {
 // in future, add parenthetical stripping similar to the Anthropic scraper's
 // canonicalAnthropicSlug helper.
 func cleanModelName(s string) string {
-	// Remove emoji (any character in Unicode category 'So' or 'Sm', or
-	// specifically the common emoji ranges).
+	// Remove emoji (any character in Unicode category 'So', or
+	// specifically the common emoji ranges U+1F300–U+1FAFF and U+2600–U+27BF).
 	var sb strings.Builder
 	for _, r := range s {
 		if !isEmoji(r) {
