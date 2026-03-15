@@ -84,10 +84,11 @@ func main() {
 	defer db.Close()
 
 	redisOpt := asynqOptFromURL(cfg.RedisURL)
+	const workerConcurrency = 10
 	srv := asynq.NewServer(
 		redisOpt,
 		asynq.Config{
-			Concurrency: 10,
+			Concurrency: workerConcurrency,
 			Logger:      &asynqLogger{log},
 		},
 	)
@@ -180,9 +181,9 @@ func main() {
 	log.Info().Msg("enqueued initial scrape tasks")
 
 	// Run the asynq server in a goroutine — srv.Start blocks until Shutdown
-	// is called. Running it in the foreground prevented the health server,
-	// initial enqueue, and signal handler from ever executing.
-	log.Info().Str("env", cfg.AppEnv).Int("concurrency", 10).Msg("worker started")
+	// is called. Running it in the foreground prevented the health server
+	// and signal handler from ever executing.
+	log.Info().Str("env", cfg.AppEnv).Int("concurrency", workerConcurrency).Msg("worker started")
 	go func() {
 		if err := srv.Start(mux); err != nil {
 			log.Fatal().Err(err).Msg("worker error")
