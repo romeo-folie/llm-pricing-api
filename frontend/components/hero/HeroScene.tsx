@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { OrbitalReactor } from "./OrbitalReactor";
 
 /* ─── Static data ──────────────────────────────────────────────────────────── */
@@ -86,6 +86,10 @@ interface HeroSceneProps {
 }
 
 export default function HeroScene({ className, style }: HeroSceneProps) {
+  const uid = useId();
+  const gradPrimary = `${uid}-glow-primary`;
+  const gradAggregator = `${uid}-glow-aggregator`;
+
   const [mounted, setMounted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
@@ -117,13 +121,13 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         {/* ── Glow definitions ──────────────────────────────────────── */}
         <defs>
           {/* Primary planet glow — subtle ambient, not self-luminous */}
-          <radialGradient id="glow-primary">
+          <radialGradient id={gradPrimary}>
             <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.45" />
             <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.12" />
             <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
           </radialGradient>
           {/* Aggregator planet glow — barely visible ambient */}
-          <radialGradient id="glow-aggregator">
+          <radialGradient id={gradAggregator}>
             <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.25" />
             <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.06" />
             <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
@@ -188,7 +192,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               {/* Glow halo — no container, just radial gradient */}
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
-                fill={isPrimary ? "url(#glow-primary)" : "url(#glow-aggregator)"}
+                fill={isPrimary ? `url(#${gradPrimary})` : `url(#${gradAggregator})`}
                 className={mounted && !reducedMotion ? "planet-glow" : undefined}
                 style={{
                   "--planet-pulse-dur": pulseDur,
