@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -56,16 +57,35 @@ func (a *asynqLogger) Debug(args ...any) { a.l.Debug().Msgf("%v", args) }
 func (a *asynqLogger) Info(args ...any)  { a.l.Info().Msgf("%v", args) }
 func (a *asynqLogger) Warn(args ...any)  { a.l.Warn().Msgf("%v", args) }
 func (a *asynqLogger) Error(args ...any) { a.l.Error().Msgf("%v", args) }
-func (a *asynqLogger) Fatal(args ...any) { a.l.Fatal().Msgf("%v", args) }
+// Fatal logs at FatalLevel (so downstream log processors and alerting rules
+// still see a fatal-severity event) without calling zerolog.Logger.Fatal,
+// which invokes os.Exit and would bypass all deferred cleanup in run().
+func (a *asynqLogger) Fatal(args ...any) { a.l.WithLevel(zerolog.FatalLevel).Msgf("%v", args) }
 
+// main is the entry point. All logic lives in run() so that deferred
+// cleanup executes before os.Exit is called on a non-zero exit.
 func main() {
+	if err := run(); err != nil {
+		// run() logs most errors at their origin, but print to stderr here
+		// so that any error that bubbles up silently (e.g. an early-return
+		// before the logger is initialised) is still visible in platform logs.
+		fmt.Fprintf(os.Stderr, "worker: fatal: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// run contains the full worker lifecycle. It returns a non-nil error
+// whenever the process should exit with a non-zero status, allowing main
+// to call os.Exit(1) after all deferred cleanup has run.
+func run() error {
 	_ = godotenv.Load()
 
 	cfg, err := config.Load()
 	if err != nil {
 		// Logger not yet available — write directly to stderr.
 		l := zerolog.New(os.Stderr)
-		l.Fatal().Err(err).Msg("config error")
+		l.Error().Err(err).Msg("config error")
+		return err
 	}
 
 	zerolog.TimeFieldFormat = time.RFC3339Nano
@@ -79,15 +99,17 @@ func main() {
 
 	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5, log)
 	if err != nil {
-		log.Fatal().Err(err).Msg("could not connect to database")
+		log.Error().Err(err).Msg("could not connect to database")
+		return err
 	}
 	defer db.Close()
 
 	redisOpt := asynqOptFromURL(cfg.RedisURL)
+	const workerConcurrency = 10
 	srv := asynq.NewServer(
 		redisOpt,
 		asynq.Config{
-			Concurrency: 10,
+			Concurrency: workerConcurrency,
 			Logger:      &asynqLogger{log},
 		},
 	)
@@ -130,37 +152,40 @@ func main() {
 	scheduler := asynq.NewScheduler(redisOpt, nil)
 
 	if _, err := scheduler.Register("@every 6h", asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register openrouter")
+		log.Error().Err(err).Msg("scheduler: register openrouter")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register litellm")
+		log.Error().Err(err).Msg("scheduler: register litellm")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register huggingface")
+		log.Error().Err(err).Msg("scheduler: register huggingface")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskOpenAIScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register openai")
+		log.Error().Err(err).Msg("scheduler: register openai")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskAnthropicScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register anthropic")
+		log.Error().Err(err).Msg("scheduler: register anthropic")
+		return err
 	}
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskGeminiScrape, nil)); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: register gemini")
+		log.Error().Err(err).Msg("scheduler: register gemini")
+		return err
 	}
 
 	if err := scheduler.Start(); err != nil {
-		log.Fatal().Err(err).Msg("scheduler: start")
+		log.Error().Err(err).Msg("scheduler: start")
+		return err
 	}
 	defer scheduler.Shutdown()
-
-	log.Info().Str("env", cfg.AppEnv).Int("concurrency", 10).Msg("worker started")
-	if err := srv.Start(mux); err != nil {
-		log.Fatal().Err(err).Msg("worker error")
-	}
 
 	// Enqueue one-shot scrapes so the database is populated immediately after
 	// a fresh deploy. The @every cron schedules only fire after the full
 	// interval elapses, which would leave the DB empty for hours on first boot.
+	// NOTE: this block must run before srv.Start(mux) because Start blocks.
 	client := asynq.NewClient(redisOpt)
 	defer client.Close()
 	if _, err := client.Enqueue(asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
@@ -182,6 +207,19 @@ func main() {
 		log.Warn().Err(err).Msg("initial gemini scrape enqueue failed")
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
+
+	// Run the asynq server in a goroutine — srv.Start blocks until Shutdown
+	// is called. Running it in the foreground prevented the health server
+	// and signal handler from ever executing.
+	//
+	// srvErrCh receives the return value of srv.Start so that failures route
+	// to the main goroutine for a controlled shutdown rather than calling
+	// log.Fatal (which calls os.Exit and skips all deferred cleanup).
+	log.Info().Str("env", cfg.AppEnv).Int("concurrency", workerConcurrency).Msg("worker started")
+	srvErrCh := make(chan error, 1)
+	go func() {
+		srvErrCh <- srv.Start(mux)
+	}()
 
 	// Start a minimal HTTP server for Railway health checks. The worker is a
 	// pure asynq consumer with no Fiber router, but Railway expects every
@@ -208,22 +246,93 @@ func main() {
 		w.WriteHeader(code)
 		_, _ = w.Write([]byte(`{"status":"` + status + `","db":"` + dbStatus + `","redis":"` + redisStatus + `"}`))
 	})
+	// healthSrvErrCh receives non-ErrServerClosed errors from the health
+	// server goroutine. A send means ListenAndServe failed unexpectedly
+	// (e.g. port already in use, or an accept/serve failure after the server
+	// was already listening), so Railway health checks are broken — treat it
+	// as fatal and exit non-zero.
+	healthSrvErrCh := make(chan error, 1)
 	healthSrv := &http.Server{Addr: ":" + cfg.AppPort, Handler: healthMux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info().Str("port", cfg.AppPort).Msg("health server listening")
 		if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("health server error")
+			healthSrvErrCh <- err
 		}
 	}()
 
-	// Block until SIGINT or SIGTERM, then shut down gracefully.
+	// Block until SIGINT/SIGTERM, an unexpected asynq server exit, or a
+	// health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
-	<-quit
-	log.Info().Msg("worker shutting down...")
+
+	select {
+	case <-quit:
+		log.Info().Msg("worker shutting down...")
+	case srvErr := <-srvErrCh:
+		// srv.Start returned before a shutdown signal — treat as a fatal startup/runtime
+		// error. Returning a non-nil error from run() causes main() to call os.Exit(1)
+		// so the platform/supervisor registers this as a crash. All deferred cleanup
+		// (db.Close, scheduler.Shutdown, redisClient.Close, etc.) still runs because
+		// we return via run() rather than calling os.Exit directly.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = healthSrv.Shutdown(shutdownCtx)
+		if srvErr != nil {
+			log.Error().Err(srvErr).Msg("worker exited unexpectedly")
+			return srvErr
+		}
+		log.Error().Msg("worker stopped without shutdown signal")
+		return fmt.Errorf("worker stopped without shutdown signal")
+	case healthErr := <-healthSrvErrCh:
+		// Health server failed unexpectedly — Railway health checks will never
+		// pass. Shut down asynq under the same 10 s bounded deadline used in the
+		// normal signal path (covers both srv.Shutdown() blocking on in-flight
+		// tasks and draining srvErrCh), then exit non-zero so the platform
+		// restarts the container.
+		log.Error().Err(healthErr).Msg("health server error — initiating shutdown")
+		shutdownDoneHealth := make(chan error, 1)
+		go func() {
+			srv.Shutdown()
+			shutdownDoneHealth <- <-srvErrCh
+		}()
+		select {
+		case shutdownErr := <-shutdownDoneHealth:
+			if shutdownErr != nil {
+				log.Error().Err(shutdownErr).Msg("worker error during health-triggered shutdown")
+			}
+		case <-time.After(10 * time.Second):
+			log.Warn().Msg("worker shutdown timed out during health-triggered exit")
+		}
+		return healthErr
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = healthSrv.Shutdown(shutdownCtx)
-	srv.Shutdown()
+
+	// Bound the entire asynq shutdown path — srv.Shutdown() blocks while
+	// in-flight tasks complete, and the Start goroutine needs to fully unwind
+	// afterwards. A single 10 s deadline covers both phases so that a stuck
+	// handler cannot push the total wait past Railway's SIGKILL window.
+	// (Using a separate timer only for the srvErrCh drain would leave
+	// srv.Shutdown() itself unbounded.)
+	shutdownDone := make(chan error, 1)
+	go func() {
+		srv.Shutdown()           // blocks until in-flight tasks finish
+		shutdownDone <- <-srvErrCh // then drain the Start goroutine
+	}()
+	select {
+	case shutdownErr := <-shutdownDone:
+		if shutdownErr != nil {
+			log.Error().Err(shutdownErr).Msg("worker error on exit")
+			return shutdownErr
+		}
+	case <-time.After(10 * time.Second):
+		log.Warn().Msg("worker shutdown timed out — forcing exit")
+		return fmt.Errorf("worker shutdown timed out")
+	}
+
+	return nil
 }
