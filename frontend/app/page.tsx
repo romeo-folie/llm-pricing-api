@@ -118,7 +118,7 @@ const TESTIMONIALS = [
 const DATA_SOURCES = [
   { name: "OpenAI",       logo: "/provider-logos/openai.svg",       logoDark: "/provider-logos/openai-color.svg" },
   { name: "Anthropic",    logo: "/provider-logos/anthropic.svg",    logoDark: "/provider-logos/anthropic-color.svg" },
-  { name: "Google",       logo: "/provider-logos/google.svg",       logoDark: "/provider-logos/google-color.svg" },
+  { name: "Google",       logo: "/provider-logos/google-color.svg" },
   { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg",   logoDark: "/provider-logos/openrouter-color.svg" },
   { name: "LiteLLM",      logo: "/provider-logos/litellm.png" },
   { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
