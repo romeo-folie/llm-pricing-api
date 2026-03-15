@@ -108,7 +108,7 @@ func (s *Scraper) Fetch(ctx context.Context) ([]scraper.ScrapedModel, error) {
 		return nil, fmt.Errorf("anthropic: no models returned after filtering — page structure may have changed")
 	}
 
-	slog.Info("anthropic: scraped models", "count", len(models), "tables", len(tables))
+	slog.Debug("anthropic: scraped models", "count", len(models), "tables", len(tables))
 	return models, nil
 }
 

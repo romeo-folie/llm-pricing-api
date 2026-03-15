@@ -177,13 +177,18 @@ func TestFetch_PriceConversion(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned unexpected error: %v", err)
+	}
 
+	found := false
 	for _, m := range models {
 		// Canonical slug for "Claude Opus 4.6" is "claude-4-6-opus"
 		if m.Slug != "anthropic/claude-4-6-opus" {
 			continue
 		}
+		found = true
 		// $5 / MTok → 5 / 1,000,000
 		const wantInput = 5.0 / 1_000_000
 		if m.InputCostPerToken != wantInput {
@@ -195,6 +200,9 @@ func TestFetch_PriceConversion(t *testing.T) {
 			t.Errorf("claude-4-6-opus OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
 		}
 	}
+	if !found {
+		t.Error("expected model anthropic/claude-4-6-opus not found in scraped results")
+	}
 }
 
 func TestFetch_DeprecatedSuffix(t *testing.T) {
@@ -205,7 +213,10 @@ func TestFetch_DeprecatedSuffix(t *testing.T) {
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client(), url: srv.URL}
-	models, _ := s.Fetch(context.Background())
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned unexpected error: %v", err)
+	}
 
 	// "Claude Haiku 3.5 (deprecated)" should appear as "claude-3-5-haiku"
 	// (canonical format: version-first, variant-last; parenthetical stripped).
