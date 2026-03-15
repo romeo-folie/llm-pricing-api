@@ -2,6 +2,7 @@
 
 import { ApiReferenceReact } from "@scalar/api-reference-react"
 import "@scalar/api-reference-react/style.css"
+import { useEffect, useState } from "react"
 
 // Override Scalar's default theme variables to match the site's warm palette
 // and teal accent. Scalar exposes CSS custom properties on `.scalar-app` and
@@ -63,12 +64,26 @@ interface ApiReferenceProps {
 }
 
 export default function ApiReference({ specUrl }: ApiReferenceProps) {
+  const [isDark, setIsDark] = useState(false)
+
+  useEffect(() => {
+    const mql = window.matchMedia("(prefers-color-scheme: dark)")
+    setIsDark(mql.matches)
+    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches)
+    mql.addEventListener("change", handler)
+    return () => mql.removeEventListener("change", handler)
+  }, [])
+
   return (
     <ApiReferenceReact
+      key={isDark ? "dark" : "light"}
       configuration={{
         url: specUrl,
         theme: "default",
         customCss,
+        darkMode: isDark,
+        forceDarkModeState: isDark ? "dark" : "light",
+        hideDarkModeToggle: true,
       }}
     />
   )
