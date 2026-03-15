@@ -247,9 +247,10 @@ func run() error {
 		_, _ = w.Write([]byte(`{"status":"` + status + `","db":"` + dbStatus + `","redis":"` + redisStatus + `"}`))
 	})
 	// healthSrvErrCh receives non-ErrServerClosed errors from the health
-	// server goroutine. A send means ListenAndServe failed before the server
-	// was ever reachable (e.g. port already in use), so Railway health checks
-	// would never pass — treat it as fatal and exit non-zero.
+	// server goroutine. A send means ListenAndServe failed unexpectedly
+	// (e.g. port already in use, or an accept/serve failure after the server
+	// was already listening), so Railway health checks are broken — treat it
+	// as fatal and exit non-zero.
 	healthSrvErrCh := make(chan error, 1)
 	healthSrv := &http.Server{Addr: ":" + cfg.AppPort, Handler: healthMux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -285,10 +286,25 @@ func run() error {
 		log.Error().Msg("worker stopped without shutdown signal")
 		return fmt.Errorf("worker stopped without shutdown signal")
 	case healthErr := <-healthSrvErrCh:
-		// Health server failed to bind — Railway health checks will never pass.
-		// Shut down asynq and exit non-zero so the platform restarts the container.
-		srv.Shutdown()
-		log.Error().Err(healthErr).Msg("health server failed to start")
+		// Health server failed unexpectedly — Railway health checks will never
+		// pass. Shut down asynq under the same 10 s bounded deadline used in the
+		// normal signal path (covers both srv.Shutdown() blocking on in-flight
+		// tasks and draining srvErrCh), then exit non-zero so the platform
+		// restarts the container.
+		log.Error().Err(healthErr).Msg("health server error — initiating shutdown")
+		shutdownDoneHealth := make(chan error, 1)
+		go func() {
+			srv.Shutdown()
+			shutdownDoneHealth <- <-srvErrCh
+		}()
+		select {
+		case shutdownErr := <-shutdownDoneHealth:
+			if shutdownErr != nil {
+				log.Error().Err(shutdownErr).Msg("worker error during health-triggered shutdown")
+			}
+		case <-time.After(10 * time.Second):
+			log.Warn().Msg("worker shutdown timed out during health-triggered exit")
+		}
 		return healthErr
 	}
 
