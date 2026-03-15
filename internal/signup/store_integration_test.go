@@ -41,6 +41,13 @@ func randEmail(t *testing.T) string {
 	return fmt.Sprintf("test-%d@example.com", time.Now().UnixNano())
 }
 
+// randRawToken returns a unique raw token string for each test run, avoiding
+// UNIQUE(token_hash) collisions when tests run against a persistent dev DB.
+func randRawToken(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("integ-token-%d", time.Now().UnixNano())
+}
+
 // ── CreateIdentity ─────────────────────────────────────────────────────────────
 
 func TestIntegration_CreateIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
@@ -107,7 +114,9 @@ func TestIntegration_ConsumeToken_OneTimeUse(t *testing.T) {
 	}
 	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
 
-	raw := "integ-test-token-onetimeuse"
+	// Use a unique token per run to avoid UNIQUE(token_hash) collisions against a
+	// persistent dev DB that may still hold rows from a prior test run.
+	raw := randRawToken(t)
 	_, err = s.CreateToken(ctx, id.ID, raw, time.Now().Add(15*time.Minute))
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
@@ -143,7 +152,9 @@ func TestIntegration_ConsumeToken_ExpiredToken(t *testing.T) {
 	}
 	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID) })
 
-	raw := "integ-test-token-expired"
+	// Use a unique token per run to avoid UNIQUE(token_hash) collisions against a
+	// persistent dev DB that may still hold rows from a prior test run.
+	raw := randRawToken(t)
 	// expires_at well in the past (-10s) to avoid false-pass due to DB/app clock skew.
 	_, err = s.CreateToken(ctx, id.ID, raw, time.Now().Add(-10*time.Second))
 	if err != nil {

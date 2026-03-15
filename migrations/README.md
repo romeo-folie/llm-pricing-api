@@ -4,13 +4,13 @@ SQL database migrations managed by golang-migrate.
 
 ## Purpose
 
-Defines the database schema for the LLM Pricing Platform. Migrations are applied sequentially and each has a corresponding rollback (down) file. The schema uses PostgreSQL with the TimescaleDB extension for time-series price history.
+Defines the database schema for the LLM Pricing Platform. Migrations are applied sequentially and each has a corresponding rollback (down) file. The schema uses PostgreSQL with TimescaleDB for time-series price history and `pgcrypto` for UUID generation.
 
 ## Structure
 
 ```
 migrations/
-  000001_create_extensions.up.sql      # Enables TimescaleDB extension
+  000001_create_extensions.up.sql      # Enables TimescaleDB and pgcrypto extensions
   000001_create_extensions.down.sql
   000002_create_sources.up.sql         # Sources table + seed data (7 providers)
   000002_create_sources.down.sql
@@ -22,16 +22,33 @@ migrations/
   000005_create_price_history.down.sql
   000006_create_review_queue.up.sql    # Discrepancy review queue
   000006_create_review_queue.down.sql
+  000007_create_webhooks.up.sql        # Webhooks table; guards pgcrypto for gen_random_uuid()
+  000007_create_webhooks.down.sql
+  000008_create_api_keys.up.sql        # API keys table
+  000008_create_api_keys.down.sql
+  000009_create_usage_logs.up.sql      # Usage/request logging
+  000009_create_usage_logs.down.sql
+  000010_create_rate_limits.up.sql     # Rate limiting table
+  000010_create_rate_limits.down.sql
+  000011_create_notifications.up.sql   # Notifications table
+  000011_create_notifications.down.sql
+  000012_create_identity_tables.up.sql # Identity/signup tables (api_identities,
+                                       # magic_link_tokens, api_keys_registry)
+  000012_create_identity_tables.down.sql
   README.md                            # This file
 ```
+
+> **Note:** The list above reflects the full current migration chain. If new migrations are added, update this README accordingly.
 
 ## Key Design Decisions
 
 - **TimescaleDB hypertable** on `price_history` partitioned by `recorded_at` in 7-day chunks for efficient time-range queries.
 - **Deduplication index** on `price_history (model_id, source_id, confirmed_at)` prevents duplicate records.
 - **Partial unique index** on `review_queue (model_id, field) WHERE status = 'pending'` ensures only one active review per model/field.
-- **`set_updated_at()` trigger** on `models` auto-updates `updated_at` on any row change.
+- **`set_updated_at()` trigger** on `models` (and `api_identities`) auto-updates `updated_at` on any row change. The trigger function is defined once in `000003` and reused by later migrations.
 - **Seed data** in `000002` pre-populates the 7 known data sources.
+- **`pgcrypto` extension** is enabled in `000001` for fresh installs, guarded in `000007` (first migration using `gen_random_uuid()`) and `000012` for existing DBs that applied earlier migrations before pgcrypto was added. All declarations are `IF NOT EXISTS` and fully idempotent.
+- **Identity/signup subsystem** (`000012`) introduces `api_identities`, `magic_link_tokens`, and `api_keys_registry` to support the free-key onboarding flow. Email normalisation, token expiry, and key-status consistency are enforced at the DB level via CHECK constraints.
 
 ## Dependencies
 
@@ -39,6 +56,7 @@ migrations/
 |---|---|
 | PostgreSQL 16 | Database engine |
 | TimescaleDB 2.15+ | Time-series extension for `price_history` |
+| pgcrypto | `gen_random_uuid()` defaults for UUID primary keys |
 | golang-migrate CLI | Migration runner |
 
 ## Usage
