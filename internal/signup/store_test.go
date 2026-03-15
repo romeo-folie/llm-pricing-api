@@ -3,6 +3,7 @@ package signup_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,12 +27,12 @@ func newMock() *mockStore {
 }
 
 func (m *mockStore) UpsertIdentity(_ context.Context, email, ipHash, uaHash string) (*signup.Identity, error) {
-	key := email
+	key := strings.ToLower(email) // normalize to lower-case, matching production store
 	if id, ok := m.identities[key]; ok {
 		return id, nil
 	}
 	id := &signup.Identity{
-		ID:        "id-" + email,
+		ID:        "id-" + key,
 		Email:     email,
 		IPHash:    ipHash,
 		UAHash:    uaHash,
@@ -43,7 +44,7 @@ func (m *mockStore) UpsertIdentity(_ context.Context, email, ipHash, uaHash stri
 }
 
 func (m *mockStore) GetIdentityByEmail(_ context.Context, email string) (*signup.Identity, error) {
-	id, ok := m.identities[email]
+	id, ok := m.identities[strings.ToLower(email)] // normalize, matching production
 	if !ok {
 		return nil, signup.ErrNotFound
 	}

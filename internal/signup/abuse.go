@@ -38,15 +38,18 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 		if err != nil {
 			// Redis failure → fail open (don't block signups due to cache outage).
 		} else {
+			// Set TTL on the first increment; if EXPIRE fails, delete the key to
+			// avoid permanently rate-limiting this IP due to a missing TTL (fail-open).
+			ttlFailed := false
 			if count == 1 {
 				if expErr := g.rdb.Expire(ctx, key, time.Hour).Err(); expErr != nil {
-					// EXPIRE failed — delete the counter so this IP is never
-					// permanently rate-limited due to a missing TTL (fail-open).
 					_ = g.rdb.Del(ctx, key)
-				} else if int(count) > g.cfg.MaxRequestsPerHour {
-					return ErrRateLimited
+					ttlFailed = true
 				}
-			} else if int(count) > g.cfg.MaxRequestsPerHour {
+			}
+			// Perform limit check for every increment (not just count > 1).
+			// Skip on TTL failure to stay fail-open.
+			if !ttlFailed && int(count) > g.cfg.MaxRequestsPerHour {
 				return ErrRateLimited
 			}
 		}

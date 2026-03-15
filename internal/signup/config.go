@@ -50,7 +50,7 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		SigningSecret:      secret,
 		TokenTTL:           parseDurationMinutes("MAGIC_LINK_TTL_MINUTES", 15),
 		MagicLinkBase:      getEnvOr("MAGIC_LINK_BASE_URL", "https://llmrates.live"),
-		MagicLinkPath:      getEnvOr("MAGIC_LINK_PATH", "/signup/verify"),
+		MagicLinkPath:      getEnvOr("MAGIC_LINK_PATH", "/auth/signup/verify"),
 		UnkeyRootKey:       os.Getenv("UNKEY_ROOT_KEY"),
 		UnkeyAPIID:         os.Getenv("UNKEY_API_ID"),
 		SessionTTL:         parseDurationHours("SIGNUP_SESSION_TTL_HOURS", 24),

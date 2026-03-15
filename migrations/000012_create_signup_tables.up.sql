@@ -2,7 +2,12 @@
 -- Signup identity, magic-link token, and API key registry tables.
 -- Part of the free-key-issuance epic (#69).
 
--- api_identities: one row per unique verified email address.
+-- Ensure pgcrypto is available for gen_random_uuid().
+-- Repeated here so existing databases that ran 000001 before pgcrypto was added
+-- also get the extension without requiring a re-migration.
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- api_identities: one row per unique email address (verified or pending).
 CREATE TABLE api_identities (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email               TEXT NOT NULL,

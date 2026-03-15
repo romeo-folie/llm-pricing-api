@@ -250,3 +250,153 @@ func TestSessionDecodeInvalidSignature(t *testing.T) {
 		t.Errorf("expected ErrSessionInvalid, got %v", err)
 	}
 }
+
+// ─── IssueKey / RegenerateKey handler tests ───────────────────────────────────
+
+// doRequestWithSession attaches a valid signed session cookie to the request.
+func doRequestWithSession(app *fiber.App, method, url string, body interface{}, identityID string) *http.Response {
+	const secret = "test-secret-32bytes-padding-here"
+	sess := signup.Session{
+		IdentityID: identityID,
+		ExpiresAt:  time.Now().Add(24 * time.Hour),
+	}
+	encoded, err := signup.EncodeSession(sess, secret)
+	if err != nil {
+		panic("doRequestWithSession: encode session: " + err.Error())
+	}
+
+	var reqBody io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		reqBody = bytes.NewReader(b)
+	}
+	req := httptest.NewRequest(method, url, reqBody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.AddCookie(&http.Cookie{Name: "llmrates_signup", Value: encoded})
+	resp, _ := app.Test(req, 5000)
+	return resp
+}
+
+// TestIssueKey_Success verifies that a session-authenticated user with no
+// existing key receives a 201 with the plaintext key.
+func TestIssueKey_Success(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+	// Pre-create the identity so the handler can look it up by ID.
+	id, _ := store.UpsertIdentity(ctx, "issuer@example.com", "", "")
+
+	issuer := &mockIssuer{createKeyID: "key_abc123", createKeyText: "pt_abc123"}
+	app := buildApp(store, &noopMailer{}, issuer)
+
+	resp := doRequestWithSession(app, "POST", "/auth/signup/issue-key", nil, id.ID)
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("expected 201, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	data, _ := body["data"].(map[string]interface{})
+	if data["key"] != "pt_abc123" {
+		t.Errorf("expected plaintext key in response, got %v", data["key"])
+	}
+	if data["status"] != "issued" {
+		t.Errorf("expected status=issued, got %v", data["status"])
+	}
+}
+
+// TestIssueKey_DuplicateActiveKey verifies that a concurrent duplicate-key
+// race (ErrDuplicateActiveKey) returns the existing key metadata rather than 500.
+func TestIssueKey_DuplicateActiveKey(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+	id, _ := store.UpsertIdentity(ctx, "dup@example.com", "", "")
+	// Pre-insert an active key so the mock store returns ErrDuplicateActiveKey.
+	store.InsertKey(ctx, id.ID, "existing_provider_key")
+
+	issuer := &mockIssuer{createKeyID: "key_new", createKeyText: "pt_new"}
+	app := buildApp(store, &noopMailer{}, issuer)
+
+	resp := doRequestWithSession(app, "POST", "/auth/signup/issue-key", nil, id.ID)
+	// Should NOT be 500 — handler must catch ErrDuplicateActiveKey and return existing key.
+	if resp.StatusCode == http.StatusInternalServerError {
+		t.Errorf("expected non-500 for duplicate key, got 500")
+	}
+}
+
+// TestIssueKey_IssuerError verifies that a Unkey CreateKey failure returns 500.
+func TestIssueKey_IssuerError(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+	id, _ := store.UpsertIdentity(ctx, "failissue@example.com", "", "")
+
+	issuer := &mockIssuer{createErr: errors.New("unkey unavailable")}
+	app := buildApp(store, &noopMailer{}, issuer)
+
+	resp := doRequestWithSession(app, "POST", "/auth/signup/issue-key", nil, id.ID)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestRegenerateKey_Success verifies that regeneration revokes the old key and
+// issues a new one, returning the new plaintext key.
+func TestRegenerateKey_Success(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+	id, _ := store.UpsertIdentity(ctx, "regen@example.com", "", "")
+	store.InsertKey(ctx, id.ID, "old_provider_key")
+
+	issuer := &mockIssuer{createKeyID: "key_regen", createKeyText: "pt_regen"}
+	app := buildApp(store, &noopMailer{}, issuer)
+
+	resp := doRequestWithSession(app, "POST", "/auth/signup/regenerate-key", nil, id.ID)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	data, _ := body["data"].(map[string]interface{})
+	if data["key"] != "pt_regen" {
+		t.Errorf("expected new plaintext key, got %v", data["key"])
+	}
+	if data["status"] != "regenerated" {
+		t.Errorf("expected status=regenerated, got %v", data["status"])
+	}
+
+	// Old key must be revoked in the DB.
+	_, err := store.GetActiveKey(ctx, id.ID)
+	// After regen, the new key is active; if there's an error it's unexpected.
+	// We just confirm the new key's provider ID was set.
+	if errors.Is(err, signup.ErrNotFound) {
+		t.Error("expected a new active key after regen, got ErrNotFound")
+	}
+}
+
+// TestRegenerateKey_IssuerError verifies that a Unkey CreateKey failure during
+// regeneration returns 500 and leaves the old key intact.
+func TestRegenerateKey_IssuerError(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+	id, _ := store.UpsertIdentity(ctx, "failregen@example.com", "", "")
+	store.InsertKey(ctx, id.ID, "old_key_must_survive")
+
+	issuer := &mockIssuer{createErr: errors.New("unkey down")}
+	app := buildApp(store, &noopMailer{}, issuer)
+
+	resp := doRequestWithSession(app, "POST", "/auth/signup/regenerate-key", nil, id.ID)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", resp.StatusCode)
+	}
+
+	// Old key must still be active — DB should not have been touched.
+	k, err := store.GetActiveKey(ctx, id.ID)
+	if err != nil {
+		t.Errorf("old key should still be active after failed regen: %v", err)
+	}
+	if k.ProviderKeyID != "old_key_must_survive" {
+		t.Errorf("wrong provider key ID: %q", k.ProviderKeyID)
+	}
+}

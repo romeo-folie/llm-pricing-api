@@ -306,11 +306,33 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 		return api.NewInternalError("could not persist new key")
 	}
 
-	// DB committed — now revoke the old key in Unkey (best-effort, post-commit).
-	// Even if this fails, the DB already marks the old key as revoked.
+	// DB committed — now revoke the old key in Unkey.
+	// Retried up to 3 times with brief back-off. The DB already marks the key
+	// as revoked, but Unkey auth validates against Unkey's own records, so a
+	// persistent failure here means the old key stays live until reconciled.
+	// If all retries fail, a structured ERROR is logged with provider_key_id so
+	// an operator can manually revoke via the Unkey dashboard or a reconciliation job.
 	if oldKey != nil {
-		if err := h.issuer.RevokeKey(c.Context(), oldKey.ProviderKeyID); err != nil {
-			h.log.Warn().Err(err).Str("provider_key_id", oldKey.ProviderKeyID).Msg("signup: revoke old Unkey key failed (post-commit)")
+		const maxRevocationAttempts = 3
+		var revokeErr error
+		for attempt := 1; attempt <= maxRevocationAttempts; attempt++ {
+			revokeErr = h.issuer.RevokeKey(c.Context(), oldKey.ProviderKeyID)
+			if revokeErr == nil {
+				break
+			}
+			if attempt < maxRevocationAttempts {
+				time.Sleep(time.Duration(attempt*200) * time.Millisecond)
+			}
+		}
+		if revokeErr != nil {
+			// Log at ERROR level — old key is still valid in Unkey despite DB revocation.
+			// Requires manual reconciliation via Unkey dashboard (revoke key ID below).
+			h.log.Error().
+				Err(revokeErr).
+				Str("provider_key_id", oldKey.ProviderKeyID).
+				Str("identity_id", sess.IdentityID).
+				Int("attempts", maxRevocationAttempts).
+				Msg("signup: revoke old Unkey key failed after retries — MANUAL RECONCILIATION REQUIRED")
 		}
 	}
 
