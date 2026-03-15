@@ -108,18 +108,16 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
       >
         {/* ── Glow definitions ──────────────────────────────────────── */}
         <defs>
-          {/* Primary planet glow — bright green */}
+          {/* Primary planet glow — subtle ambient, not self-luminous */}
           <radialGradient id="glow-primary">
-            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.9" />
-            <stop offset="30%" stopColor="var(--green)"  stopOpacity="0.4" />
-            <stop offset="70%" stopColor="var(--green)"  stopOpacity="0.08" />
+            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.45" />
+            <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.12" />
             <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
           </radialGradient>
-          {/* Aggregator planet glow — dimmer green */}
+          {/* Aggregator planet glow — barely visible ambient */}
           <radialGradient id="glow-aggregator">
-            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.6" />
-            <stop offset="30%" stopColor="var(--green)"  stopOpacity="0.2" />
-            <stop offset="70%" stopColor="var(--green)"  stopOpacity="0.04" />
+            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.25" />
+            <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.06" />
             <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
           </radialGradient>
         </defs>
@@ -169,7 +167,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         {SOURCES.map((s) => {
           const isPrimary = s.tier === "primary";
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
-          const glowR = isPrimary ? 32 : 18;
+          const glowR = isPrimary ? 24 : 14;
           const tierIdx = isPrimary
             ? primaryNodes.indexOf(s)
             : aggregatorNodes.indexOf(s);
@@ -306,8 +304,8 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         {/* Pulse animation for planet glow halos */}
         <style>{`
           @keyframes planetPulse {
-            0%, 100% { opacity: 0.7; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.15); }
+            0%, 100% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.06); }
           }
           @media (prefers-reduced-motion: reduce) {
             @keyframes planetPulse { 0%, 100% { opacity: 0.8; transform: none; } }
