@@ -46,7 +46,9 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// newTestRedis connects to REDIS_URL. Skips if not set or unreachable.
+// newTestRedis returns a Redis client for integration tests.
+// When REDIS_URL is unset, defaults to localhost:6379.
+// Skips the test if the resolved address is unreachable.
 func newTestRedis(t *testing.T) *redis.Client {
 	t.Helper()
 	rawURL := os.Getenv("REDIS_URL")
@@ -370,8 +372,11 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 		t.Fatalf("signup disabled: status = %d, want 503", resp.StatusCode)
 	}
 	b := e2eBodyJSON(resp)
-	if b["error"] != "signup is currently disabled" {
-		t.Errorf("error = %v, want 'signup is currently disabled'", b["error"])
+	if b["detail"] != "signup is currently disabled" {
+		t.Errorf("detail = %v, want 'signup is currently disabled'", b["detail"])
+	}
+	if status, _ := b["status"].(float64); status != 503 {
+		t.Errorf("status field = %v, want 503", status)
 	}
 
 	// Verify and Me endpoints should still work (they don't check the flag).
