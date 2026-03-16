@@ -136,6 +136,21 @@ func newE2EApp(t *testing.T, store auth.Store, mailer auth.Mailer, cfg auth.Conf
 	return app
 }
 
+// newE2EAppWithRLConfig is like newE2EApp but accepts an IPRateLimitConfig
+// so tests can inject a fixed clock to avoid window-boundary flakiness.
+func newE2EAppWithRLConfig(t *testing.T, store auth.Store, mailer auth.Mailer, cfg auth.Config, rc *redis.Client, rlCfg middleware.IPRateLimitConfig) *fiber.App {
+	t.Helper()
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	log := zerolog.Nop()
+	h := auth.New(store, mailer, cfg, log)
+	authGroup := app.Group("/auth")
+	if rc != nil {
+		authGroup.Use(middleware.IPRateLimitWithConfig(rc, log, rlCfg))
+	}
+	auth.Register(authGroup, h)
+	return app
+}
+
 func e2eRequest(t *testing.T, app *fiber.App, method, path, body string, cookies ...*http.Cookie) *http.Response {
 	t.Helper()
 	var bodyReader io.Reader
@@ -328,19 +343,17 @@ func TestE2E_ReusedToken_Rejected(t *testing.T) {
 // ── Test 4: IP rate limit blocks after threshold ────────────────────────────
 
 func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
-	// Guard against window-boundary flakiness: if we're within 2 seconds of a
-	// 15-minute window boundary, skip this test (it would be unreliable).
-	windowSec := int64((15 * time.Minute).Seconds())
-	secsUntilBoundary := windowSec - (time.Now().Unix() % windowSec)
-	if secsUntilBoundary < 2 {
-		t.Skip("skipping rate-limit test: too close to window boundary")
-	}
-
 	pool := newTestPool(t)
 	rc := newTestRedis(t)
 	store := signup.NewStore(pool)
 	mailer := &mockMailerE2E{}
-	app := newE2EApp(t, store, mailer, e2eCfg, rc)
+
+	// Use a fixed clock pinned to the middle of a 15-minute window so the
+	// test never straddles a window boundary (eliminates wall-clock flakiness).
+	windowSec := int64((15 * time.Minute).Seconds())
+	midWindow := time.Unix((time.Now().Unix()/windowSec)*windowSec+windowSec/2, 0)
+	fixedClock := func() time.Time { return midWindow }
+	app := newE2EAppWithRLConfig(t, store, mailer, e2eCfg, rc, middleware.IPRateLimitConfig{TimeNow: fixedClock})
 
 	// Flush rate limit keys scoped to the test IP.
 	// Fiber test mode reports c.IP() as "0.0.0.0", which is what the
@@ -350,12 +363,20 @@ func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
 	const fiberTestIP = "0.0.0.0"
 	testIPHash := fmt.Sprintf("%x", sha256.Sum256([]byte(fiberTestIP)))[:16]
 	rlPattern := fmt.Sprintf("iprl:%s:*", testIPHash)
-	if keys, err := scanRedisKeys(ctx, rc, rlPattern); err == nil && len(keys) > 0 {
-		rc.Del(ctx, keys...)
+	if keys, err := scanRedisKeys(ctx, rc, rlPattern); err != nil {
+		t.Fatalf("pre-test Redis SCAN failed: %v", err)
+	} else if len(keys) > 0 {
+		if err := rc.Del(ctx, keys...).Err(); err != nil {
+			t.Fatalf("pre-test Redis DEL failed: %v", err)
+		}
 	}
 	t.Cleanup(func() {
-		if keys, err := scanRedisKeys(ctx, rc, rlPattern); err == nil && len(keys) > 0 {
-			rc.Del(ctx, keys...)
+		if keys, err := scanRedisKeys(ctx, rc, rlPattern); err != nil {
+			t.Errorf("cleanup Redis SCAN failed: %v", err)
+		} else if len(keys) > 0 {
+			if err := rc.Del(ctx, keys...).Err(); err != nil {
+				t.Errorf("cleanup Redis DEL failed: %v", err)
+			}
 		}
 	})
 

@@ -220,9 +220,12 @@ func doRequest(t *testing.T, app *fiber.App, method, path, body string, cookies 
 	return resp
 }
 
-func bodyJSON(resp *http.Response) map[string]any {
+func bodyJSON(t *testing.T, resp *http.Response) map[string]any {
+	t.Helper()
 	var m map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&m)
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		t.Fatalf("bodyJSON: failed to decode response body: %v", err)
+	}
 	return m
 }
 
@@ -236,7 +239,7 @@ func TestRequestLink_ValidEmail_Returns200(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	b := bodyJSON(resp)
+	b := bodyJSON(t, resp)
 	if _, ok := b["message"]; !ok {
 		t.Error("expected generic 'message' key in response")
 	}
@@ -250,7 +253,7 @@ func TestRequestLink_InvalidEmail_Returns400(t *testing.T) {
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
-	b := bodyJSON(resp)
+	b := bodyJSON(t, resp)
 	if detail, ok := b["detail"]; !ok || detail == "" {
 		t.Error("expected non-empty 'detail' field in response body")
 	}
@@ -286,7 +289,7 @@ func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	b := bodyJSON(resp)
+	b := bodyJSON(t, resp)
 	if b["verified"] != true {
 		t.Error("expected verified=true")
 	}
@@ -335,7 +338,7 @@ func TestVerify_ExpiredToken_Returns410(t *testing.T) {
 	if resp.StatusCode != 410 {
 		t.Fatalf("status = %d, want 410", resp.StatusCode)
 	}
-	b := bodyJSON(resp)
+	b := bodyJSON(t, resp)
 	if b["detail"] != "token expired" {
 		t.Errorf("detail = %v, want 'token expired'", b["detail"])
 	}
@@ -358,7 +361,7 @@ func TestVerify_ReusedToken_Returns410(t *testing.T) {
 	if resp2.StatusCode != 410 {
 		t.Fatalf("second verify status = %d, want 410", resp2.StatusCode)
 	}
-	b := bodyJSON(resp2)
+	b := bodyJSON(t, resp2)
 	if b["detail"] != "token already used" {
 		t.Errorf("detail = %v, want 'token already used'", b["detail"])
 	}
@@ -388,7 +391,7 @@ func TestMe_WithValidSession_Returns200(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	b := bodyJSON(resp)
+	b := bodyJSON(t, resp)
 	if b["email"] != "eve@example.com" {
 		t.Errorf("email = %v, want eve@example.com", b["email"])
 	}
@@ -430,7 +433,7 @@ func TestRequestLink_SignupDisabled_Returns503(t *testing.T) {
 	if resp.StatusCode != 503 {
 		t.Fatalf("status = %d, want 503", resp.StatusCode)
 	}
-	b := bodyJSON(resp)
+	b := bodyJSON(t, resp)
 	// Response is now RFC7807 ProblemDetail — check "detail" field.
 	if b["detail"] != "signup is currently disabled" {
 		t.Errorf("detail = %v, want 'signup is currently disabled'", b["detail"])
