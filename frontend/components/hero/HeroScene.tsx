@@ -31,7 +31,7 @@ const SOURCES: SourceNode[] = [
   { name: "Google",    sub: "daily",    cx: 90,  cy: 268, tier: "primary",     tierIdx: 2 },
   // Aggregators — scattered wider; scrape cadences vary
   { name: "OpenRouter",   sub: "every 6h", cx: 210, cy: 32,  tier: "aggregator", tierIdx: 0 },
-  { name: "LiteLLM",      sub: "daily",    cx: 230, cy: 135, tier: "aggregator", tierIdx: 1 },
+  { name: "LiteLLM",      sub: "daily",    cx: 255, cy: 215, tier: "aggregator", tierIdx: 1 },
   { name: "Hugging Face", sub: "daily",    cx: 220, cy: 300, tier: "aggregator", tierIdx: 2 },
 ];
 
