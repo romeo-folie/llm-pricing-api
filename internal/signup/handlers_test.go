@@ -52,7 +52,7 @@ func buildApp(store signup.Store, mailer signup.Mailer, issuer signup.KeyIssuer)
 		SigningSecret:     "test-secret-32bytes-padding-here",
 		TokenTTL:          15 * time.Minute,
 		MagicLinkBase:     "http://localhost",
-		MagicLinkPath:     "/signup/verify",
+		MagicLinkPath:     "/auth/signup/verify",
 		UnkeyAPIID:        "api_test",
 		SessionTTL:        24 * time.Hour,
 		SessionCookieName: "llmrates_signup",

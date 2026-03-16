@@ -132,6 +132,16 @@ func NewTooManyRequests(detail string) *ProblemDetail {
 	}
 }
 
+// NewConflict returns a 409 Conflict ProblemDetail.
+func NewConflict(detail string) *ProblemDetail {
+	return &ProblemDetail{
+		Type:   problemTypeBase + "conflict",
+		Title:  "Conflict",
+		Status: fiber.StatusConflict,
+		Detail: detail,
+	}
+}
+
 // NewInternalError returns a 500 Internal Server Error ProblemDetail.
 // The detail message is intentionally generic to avoid leaking implementation details.
 func NewInternalError(detail string) *ProblemDetail {

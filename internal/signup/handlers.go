@@ -70,7 +70,10 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	if err := h.guard.CheckRequestLink(c.Context(), ip, email); err != nil {
 		// Log the specific reason internally but return a generic response to
 		// avoid leaking which control was triggered.
-		h.log.Warn().Str("ip", ip).Str("email", email).Err(err).Msg("signup: request-link blocked")
+		h.log.Warn().
+			Str("ip_hash", truncate(hashValue(ip, h.cfg.SigningSecret), 12)).
+			Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).
+			Err(err).Msg("signup: request-link blocked")
 		// Deliberate: still return 200 to prevent enumeration via HTTP status.
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"message": "If that email is valid, you'll receive a link shortly.",
@@ -303,6 +306,12 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 		if rErr := h.issuer.RevokeKey(c.Context(), providerKeyID); rErr != nil {
 			h.log.Error().Err(rErr).Msg("signup: rollback new key revoke failed")
 		}
+		// ErrDuplicateActiveKey: concurrent regeneration already inserted a new active
+		// key. The Unkey key we created has been revoked; tell the client to retry.
+		if errors.Is(err, ErrDuplicateActiveKey) {
+			h.log.Warn().Str("identity_id", sess.IdentityID).Msg("signup: duplicate active key race during regen")
+			return api.NewConflict("a concurrent key regeneration completed — please try again")
+		}
 		return api.NewInternalError("could not persist new key")
 	}
 
@@ -321,7 +330,10 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 				break
 			}
 			if attempt < maxRevocationAttempts {
-				time.Sleep(time.Duration(attempt*200) * time.Millisecond)
+				select {
+				case <-time.After(time.Duration(attempt*200) * time.Millisecond):
+				case <-c.Context().Done():
+				}
 			}
 		}
 		if revokeErr != nil {

@@ -138,7 +138,10 @@ func (s *PgxStore) GetIdentityByEmail(ctx context.Context, email string) (*Ident
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return id, err
+	if err != nil {
+		return nil, fmt.Errorf("signup.GetIdentityByEmail: %w", err)
+	}
+	return id, nil
 }
 
 // GetIdentityByID returns the identity for the given UUID string.
@@ -152,7 +155,10 @@ func (s *PgxStore) GetIdentityByID(ctx context.Context, id string) (*Identity, e
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return ident, err
+	if err != nil {
+		return nil, fmt.Errorf("signup.GetIdentityByID: %w", err)
+	}
+	return ident, nil
 }
 
 // MarkEmailVerified stamps email_verified_at = NOW() for an identity.
@@ -166,7 +172,7 @@ func (s *PgxStore) MarkEmailVerified(ctx context.Context, identityID string) err
 		identityID,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("signup.MarkEmailVerified: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -203,7 +209,7 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("signup.ConsumeToken: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -223,7 +229,7 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("signup.ConsumeToken: query: %w", err)
 	}
 
 	if t.UsedAt != nil {
@@ -235,11 +241,11 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 
 	_, err = tx.Exec(ctx, `UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1`, t.ID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("signup.ConsumeToken: mark used: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("signup.ConsumeToken: commit: %w", err)
 	}
 	t.UsedAt = &serverNow
 	return &t, nil
@@ -251,7 +257,7 @@ func (s *PgxStore) DeleteExpiredTokens(ctx context.Context) (int64, error) {
 		DELETE FROM magic_link_tokens
 		WHERE expires_at <= NOW() AND used_at IS NULL`)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("signup.DeleteExpiredTokens: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }
@@ -270,7 +276,10 @@ func (s *PgxStore) GetActiveKey(ctx context.Context, identityID string) (*KeyRec
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return k, err
+	if err != nil {
+		return nil, fmt.Errorf("signup.GetActiveKey: %w", err)
+	}
+	return k, nil
 }
 
 // InsertKey creates a new active key record. Returns ErrDuplicateActiveKey if
@@ -311,7 +320,7 @@ func (s *PgxStore) RevokeKey(ctx context.Context, identityID, providerKeyID stri
 		identityID, providerKeyID,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("signup.RevokeKey: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
