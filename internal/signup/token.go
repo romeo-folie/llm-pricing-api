@@ -80,12 +80,17 @@ func VerifySession(secret, cookieValue string) (SessionPayload, error) {
 	if dot < 0 {
 		return SessionPayload{}, fmt.Errorf("signup: session: malformed cookie")
 	}
-	data, sig := cookieValue[:dot], cookieValue[dot+1:]
+	data, sigHex := cookieValue[:dot], cookieValue[dot+1:]
+
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil || len(sig) != 32 {
+		return SessionPayload{}, fmt.Errorf("signup: session: invalid signature format")
+	}
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(data))
-	expected := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(sig), []byte(expected)) {
+	expected := mac.Sum(nil)
+	if !hmac.Equal(sig, expected) {
 		return SessionPayload{}, fmt.Errorf("signup: session: invalid signature")
 	}
 
@@ -115,7 +120,7 @@ func SetSessionCookie(c *fiber.Ctx, name, value string, ttlHours int, secure boo
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 func encodePayload(p SessionPayload) (string, error) {
-	b, err := jsonMarshal(p)
+	b, err := DefaultCodec.Marshal(p)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +132,7 @@ func decodePayload(encoded string, p *SessionPayload) error {
 	if err != nil {
 		return err
 	}
-	return jsonUnmarshal(b, p)
+	return DefaultCodec.Unmarshal(b, p)
 }
 
 func lastDot(s string) int {

@@ -10,12 +10,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"log"
 	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/signup"
 )
@@ -45,11 +45,12 @@ type Handler struct {
 	store  *signup.Store
 	mailer Mailer
 	cfg    Config
+	log    zerolog.Logger
 }
 
 // New constructs an auth Handler.
-func New(store *signup.Store, mailer Mailer, cfg Config) *Handler {
-	return &Handler{store: store, mailer: mailer, cfg: cfg}
+func New(store *signup.Store, mailer Mailer, cfg Config, log zerolog.Logger) *Handler {
+	return &Handler{store: store, mailer: mailer, cfg: cfg, log: log}
 }
 
 // Register mounts the auth routes onto a Fiber router.
@@ -87,17 +88,19 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 
 	ident, err := h.store.CreateIdentity(ctx, email, ipHash, uaHash)
 	if err != nil {
-		log.Printf("auth: create identity failed: %v", err)
+		h.log.Error().Err(err).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: create identity failed")
 		return genericOK(c)
 	}
 
 	rawToken, err := signup.GenerateRawToken()
 	if err != nil {
+		h.log.Error().Err(err).Msg("auth: generate token failed")
 		return genericOK(c)
 	}
 
 	expiresAt := time.Now().Add(time.Duration(h.cfg.MagicLinkTTLMinutes) * time.Minute)
 	if _, err := h.store.CreateToken(ctx, ident.ID, rawToken, expiresAt); err != nil {
+		h.log.Error().Err(err).Str("identity_id", ident.ID).Msg("auth: create token failed")
 		return genericOK(c)
 	}
 
@@ -109,11 +112,18 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if sendErr := h.mailer.SendMagicLink(bgCtx, email, verifyURL); sendErr != nil {
-			log.Printf("auth: magic-link email delivery failed: %v", sendErr)
+			h.log.Error().Err(sendErr).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: magic-link email delivery failed")
 		}
 	}()
 
 	return genericOK(c)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func genericOK(c *fiber.Ctx) error {

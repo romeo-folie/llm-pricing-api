@@ -71,12 +71,18 @@ func (m *Mailer) SendMagicLink(ctx context.Context, toEmail, verifyURL string) e
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(resp.Body)
+		raw := buf.String()
+
 		var errBody struct {
 			Name    string `json:"name"`
 			Message string `json:"message"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("mailer: resend API %d: %s — %s", resp.StatusCode, errBody.Name, errBody.Message)
+		if err := json.Unmarshal(buf.Bytes(), &errBody); err == nil && (errBody.Name != "" || errBody.Message != "") {
+			return fmt.Errorf("mailer: resend API %d: %s — %s", resp.StatusCode, errBody.Name, errBody.Message)
+		}
+		return fmt.Errorf("mailer: resend API %d: %s", resp.StatusCode, raw)
 	}
 	return nil
 }

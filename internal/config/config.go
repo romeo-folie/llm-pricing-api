@@ -75,8 +75,24 @@ func Load() (*Config, error) {
 	}
 
 	signingSecret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
-	if appEnv != "development" && len(signingSecret) < 32 {
-		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes in non-development environments")
+	if signingSecret == "" {
+		if appEnv == "development" {
+			signingSecret = "dev-secret-at-least-32-bytes-long-for-testing"
+		} else {
+			return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET is required in non-development environments")
+		}
+	}
+	if len(signingSecret) < 32 {
+		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(signingSecret))
+	}
+
+	magicLinkTTL, err := getEnvIntPositive("MAGIC_LINK_TTL_MINUTES", 15)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MAGIC_LINK_TTL_MINUTES: %w", err)
+	}
+	sessionTTL, err := getEnvIntPositive("SIGNUP_SESSION_TTL_HOURS", 24)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SIGNUP_SESSION_TTL_HOURS: %w", err)
 	}
 
 	return &Config{
@@ -97,11 +113,11 @@ func Load() (*Config, error) {
 		ResendAPIKey:            os.Getenv("RESEND_API_KEY"),
 		EmailFrom:               getEnv("EMAIL_FROM", "LLMRates <noreply@llmrates.live>"),
 		MagicLinkSigningSecret:  signingSecret,
-		MagicLinkTTLMinutes:     getEnvInt("MAGIC_LINK_TTL_MINUTES", 15),
+		MagicLinkTTLMinutes:     magicLinkTTL,
 		MagicLinkBaseURL:        getEnv("MAGIC_LINK_BASE_URL", "https://llmrates.live"),
 		MagicLinkPath:           getEnv("MAGIC_LINK_PATH", "/signup/verify"),
 		SignupSessionCookieName: getEnv("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
-		SignupSessionTTLHours:   getEnvInt("SIGNUP_SESSION_TTL_HOURS", 24),
+		SignupSessionTTLHours:   sessionTTL,
 		SignupSessionSecure:     getEnv("APP_ENV", "development") != "development",
 	}, nil
 }
@@ -113,14 +129,19 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getEnvInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		var i int
-		if _, err := fmt.Sscanf(v, "%d", &i); err == nil {
-			return i
-		}
+func getEnvIntPositive(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
 	}
-	return fallback
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("parse error: %w", err)
+	}
+	if i <= 0 {
+		return 0, fmt.Errorf("value must be positive, got %d", i)
+	}
+	return i, nil
 }
 
 func getEnvIntPositive(key string, fallback int) (int, error) {
