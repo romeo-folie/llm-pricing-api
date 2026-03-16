@@ -91,7 +91,7 @@ type requestLinkBody struct {
 // Always returns 200 with the same generic message to prevent account
 // enumeration — no indication whether the address is new or existing.
 func (h *Handler) RequestLink(c *fiber.Ctx) error {
-	log := logger.FromContext(c.UserContext(), h.log)
+	log := logger.FromContext(c.Context(), h.log)
 
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil {
@@ -164,7 +164,7 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	}
 
 	ctx := c.Context()
-	log := logger.FromContext(c.UserContext(), h.log)
+	log := logger.FromContext(ctx, h.log)
 
 	// Hash the raw token before looking it up — the DB stores the hash, not
 	// the raw value, to prevent offline brute-force from a DB leak.

@@ -15,7 +15,7 @@ package signup
 // The two flows are intentionally distinct. Do not consolidate without
 // auditing both callers.
 //
-// Token hashing (for DB storage) lives in hash.go.
+// Token hashing (for DB storage) lives in store.go.
 // Magic-link URL construction and raw token generation live in tokens.go.
 // Session HMAC signing and verification for the auth flow live in this file (token.go).
 
