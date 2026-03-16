@@ -40,9 +40,9 @@ func NewAbuseGuard(rdb *redis.Client, cfg *HandlerConfig, log zerolog.Logger) *A
 // CheckRequestLink evaluates all abuse controls for the request-link endpoint.
 // Returns a non-nil error (with a user-safe message) when a limit is exceeded.
 // Controls applied (in order):
-//  1. IP rate limit: max N requests per hour per IP.
-//  2. Email resend cooldown: min interval between consecutive emails.
-//  3. Optional disposable-domain block.
+//  1. Disposable-domain block (no Redis required).
+//  2. IP rate limit: max N requests per hour per IP.
+//  3. Email resend cooldown: min interval between consecutive emails.
 func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) error {
 	// 1. Disposable domain block (no Redis needed).
 	if g.cfg.BlockDisposable && isDisposableDomain(normalizeEmail(email)) {

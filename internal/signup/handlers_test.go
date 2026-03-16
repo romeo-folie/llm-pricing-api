@@ -60,7 +60,8 @@ func buildApp(store signup.Store, mailer signup.Mailer, issuer signup.KeyIssuer)
 	return app
 }
 
-func doRequest(app *fiber.App, method, url string, body interface{}) *http.Response {
+func doRequest(t *testing.T, app *fiber.App, method, url string, body interface{}) *http.Response {
+	t.Helper()
 	var reqBody io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -70,7 +71,10 @@ func doRequest(app *fiber.App, method, url string, body interface{}) *http.Respo
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, _ := app.Test(req, 5000)
+	resp, err := app.Test(req, 5000)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
 	return resp
 }
 
@@ -79,7 +83,7 @@ func doRequest(app *fiber.App, method, url string, body interface{}) *http.Respo
 func TestRequestLink_MissingEmail(t *testing.T) {
 	// Always returns 200 to prevent account enumeration — even for missing email.
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "POST", "/auth/signup/request-link", map[string]string{})
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", map[string]string{})
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200 (enumeration guard), got %d", resp.StatusCode)
 	}
@@ -88,7 +92,7 @@ func TestRequestLink_MissingEmail(t *testing.T) {
 func TestRequestLink_InvalidEmail(t *testing.T) {
 	// Always returns 200 to prevent account enumeration — even for invalid email.
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "POST", "/auth/signup/request-link", map[string]string{"email": "notanemail"})
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", map[string]string{"email": "notanemail"})
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200 (enumeration guard), got %d", resp.StatusCode)
 	}
@@ -96,7 +100,7 @@ func TestRequestLink_InvalidEmail(t *testing.T) {
 
 func TestRequestLink_Success(t *testing.T) {
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "POST", "/auth/signup/request-link", map[string]string{"email": "user@example.com"})
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", map[string]string{"email": "user@example.com"})
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
@@ -105,7 +109,7 @@ func TestRequestLink_Success(t *testing.T) {
 func TestRequestLink_MailerErrorStillReturns200(t *testing.T) {
 	// Mailer failure must not leak to the client.
 	app := buildApp(newMock(), &noopMailer{err: errors.New("smtp down")}, &mockIssuer{})
-	resp := doRequest(app, "POST", "/auth/signup/request-link", map[string]string{"email": "user@example.com"})
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", map[string]string{"email": "user@example.com"})
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200 even on mailer error, got %d", resp.StatusCode)
 	}
@@ -113,7 +117,7 @@ func TestRequestLink_MailerErrorStillReturns200(t *testing.T) {
 
 func TestVerify_MissingToken(t *testing.T) {
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "GET", "/auth/signup/verify", nil)
+	resp := doRequest(t, app, "GET", "/auth/signup/verify", nil)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", resp.StatusCode)
 	}
@@ -121,7 +125,7 @@ func TestVerify_MissingToken(t *testing.T) {
 
 func TestVerify_InvalidSignature(t *testing.T) {
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "GET", "/auth/signup/verify?token=badtoken", nil)
+	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=badtoken", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
 	}
@@ -129,7 +133,7 @@ func TestVerify_InvalidSignature(t *testing.T) {
 
 func TestMe_NoSession(t *testing.T) {
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "GET", "/auth/signup/me", nil)
+	resp := doRequest(t, app, "GET", "/auth/signup/me", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
 	}
@@ -137,7 +141,7 @@ func TestMe_NoSession(t *testing.T) {
 
 func TestIssueKey_NoSession(t *testing.T) {
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "POST", "/auth/signup/issue-key", nil)
+	resp := doRequest(t, app, "POST", "/auth/signup/issue-key", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
 	}
@@ -145,7 +149,7 @@ func TestIssueKey_NoSession(t *testing.T) {
 
 func TestRegenerateKey_NoSession(t *testing.T) {
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
-	resp := doRequest(app, "POST", "/auth/signup/regenerate-key", nil)
+	resp := doRequest(t, app, "POST", "/auth/signup/regenerate-key", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
 	}
@@ -282,7 +286,10 @@ func doRequestWithSession(t *testing.T, app *fiber.App, method, url string, body
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.AddCookie(&http.Cookie{Name: "llmrates_signup", Value: encoded})
-	resp, _ := app.Test(req, 5000)
+	resp, err2 := app.Test(req, 5000)
+	if err2 != nil {
+		t.Fatalf("app.Test: %v", err2)
+	}
 	return resp
 }
 
@@ -303,7 +310,9 @@ func TestIssueKey_Success(t *testing.T) {
 	}
 
 	var body map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&body)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	data, _ := body["data"].(map[string]interface{})
 	if data["key"] != "pt_abc123" {
 		t.Errorf("expected plaintext key in response, got %v", data["key"])
@@ -370,7 +379,9 @@ func TestRegenerateKey_Success(t *testing.T) {
 	}
 
 	var body map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&body)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	data, _ := body["data"].(map[string]interface{})
 	if data["key"] != "pt_regen" {
 		t.Errorf("expected new plaintext key, got %v", data["key"])

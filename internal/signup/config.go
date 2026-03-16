@@ -70,6 +70,16 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	if maxReqPerHour < 0 {
+		return nil, fmt.Errorf("SIGNUP_MAX_REQUESTS_PER_IP_PER_HOUR must be >= 0, got %d", maxReqPerHour)
+	}
+	if resendCooldown < 0 {
+		return nil, fmt.Errorf("SIGNUP_RESEND_COOLDOWN_SECONDS must be >= 0")
+	}
+	if regenCooldown < 0 {
+		return nil, fmt.Errorf("SIGNUP_REGENERATE_COOLDOWN_SECONDS must be >= 0")
+	}
+
 	sessionSecure, err := getEnvBool("SIGNUP_SESSION_SECURE", true)
 	if err != nil {
 		return nil, err
