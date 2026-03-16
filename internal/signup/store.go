@@ -209,8 +209,9 @@ func (s *PgxStore) InsertToken(ctx context.Context, identityID, tokenHash string
 // Returns ErrNotFound, ErrTokenConsumed, or ErrTokenExpired as appropriate.
 //
 // Uses FOR UPDATE row locking to prevent concurrent consumption. Expiry is
-// checked against the DB server clock (NOW()) to stay consistent with
-// DeleteExpiredTokens and avoid app/DB clock skew issues.
+// checked against clock_timestamp() (wall-clock time) rather than NOW()
+// (transaction-start time) so that a token cannot be consumed after real
+// expiry when the transaction blocks on the FOR UPDATE lock.
 func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLinkToken, error) {
 	if tokenHash == "" {
 		return nil, ErrNotFound
@@ -223,12 +224,13 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Lock row for update to prevent concurrent consumption.
-	// Fetch NOW() from the DB so expiry checks use the same clock as
-	// DeleteExpiredTokens and other server-side time comparisons.
+	// Fetch clock_timestamp() (real wall-clock time) instead of NOW()
+	// (transaction-start time) so that if the FOR UPDATE lock blocks
+	// until after expiry, the check correctly rejects the token.
 	var t MagicLinkToken
 	var serverNow time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT id, identity_id, token_hash, expires_at, used_at, created_at, NOW()
+		SELECT id, identity_id, token_hash, expires_at, used_at, created_at, clock_timestamp()
 		FROM magic_link_tokens
 		WHERE token_hash = $1
 		FOR UPDATE`,
@@ -250,8 +252,8 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 
 	var usedAt time.Time
 	err = tx.QueryRow(ctx, `
-		UPDATE magic_link_tokens SET used_at = NOW()
-		WHERE id = $1 AND used_at IS NULL AND expires_at > NOW()
+		UPDATE magic_link_tokens SET used_at = clock_timestamp()
+		WHERE id = $1 AND used_at IS NULL AND expires_at > clock_timestamp()
 		RETURNING used_at`, t.ID).Scan(&usedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Row was locked but state changed between SELECT and UPDATE
