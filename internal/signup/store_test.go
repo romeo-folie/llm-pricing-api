@@ -95,7 +95,7 @@ func (m *mockStore) ConsumeToken(_ context.Context, tokenHash string) (*signup.M
 	if t.UsedAt != nil {
 		return nil, signup.ErrTokenConsumed
 	}
-	if time.Now().After(t.ExpiresAt) {
+	if !time.Now().Before(t.ExpiresAt) {
 		return nil, signup.ErrTokenExpired
 	}
 	now := time.Now()
@@ -106,7 +106,7 @@ func (m *mockStore) ConsumeToken(_ context.Context, tokenHash string) (*signup.M
 func (m *mockStore) DeleteExpiredTokens(_ context.Context) (int64, error) {
 	var deleted int64
 	for k, t := range m.tokens {
-		if time.Now().After(t.ExpiresAt) && t.UsedAt == nil {
+		if !time.Now().Before(t.ExpiresAt) && t.UsedAt == nil {
 			delete(m.tokens, k)
 			deleted++
 		}

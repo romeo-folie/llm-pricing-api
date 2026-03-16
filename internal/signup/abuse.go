@@ -42,10 +42,17 @@ func NewAbuseGuard(rdb *redis.Client, cfg *HandlerConfig) *AbuseGuard {
 //  2. Email resend cooldown: min interval between consecutive emails.
 //  3. Optional disposable-domain block.
 func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) error {
+	// 1. Disposable domain block (no Redis needed).
+	if g.cfg.BlockDisposable && isDisposableDomain(normalizeEmail(email)) {
+		return ErrDisposableDomain
+	}
+
+	// Remaining controls require Redis; skip them when unavailable.
 	if g.rdb == nil {
 		return nil
 	}
-	// 1. IP hourly rate limit.
+
+	// 2. IP hourly rate limit.
 	if g.cfg.MaxRequestsPerHour > 0 {
 		key := fmt.Sprintf("signup:rl:ip:%s", hashValue(ip, g.cfg.SigningSecret))
 		// Atomic INCR + EXPIRE via Lua to avoid a race where EXPIRE fails
@@ -59,18 +66,13 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 		}
 	}
 
-	// 2. Per-email resend cooldown.
+	// 3. Per-email resend cooldown.
 	if g.cfg.ResendCooldown > 0 {
 		key := fmt.Sprintf("signup:cooldown:email:%s", hashValue(normalizeEmail(email), g.cfg.SigningSecret))
 		set, err := g.rdb.SetNX(ctx, key, "1", g.cfg.ResendCooldown).Result()
 		if err == nil && !set {
 			return ErrResendCooldown
 		}
-	}
-
-	// 3. Disposable domain block.
-	if g.cfg.BlockDisposable && isDisposableDomain(normalizeEmail(email)) {
-		return ErrDisposableDomain
 	}
 
 	return nil
