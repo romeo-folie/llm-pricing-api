@@ -23,17 +23,16 @@ const (
 // IPRateLimit returns a Fiber middleware that enforces per-IP rate limiting
 // using a Redis counter with a fixed window. Designed for public endpoints
 // (e.g. auth routes) that are not protected by Unkey API key auth.
-func IPRateLimit(redisClient *redis.Client, log ...zerolog.Logger) fiber.Handler {
-	var fallback zerolog.Logger
-	if len(log) > 0 {
-		fallback = log[0]
-	} else {
-		fallback = zerolog.Nop()
-	}
+//
+// The optional trustedProxies list is forwarded to RealIP to control whether
+// X-Forwarded-For is honoured. When empty (default) RealIP returns c.IP()
+// only, which is safe when Fiber's app-level ProxyHeader config handles
+// proxy trust.
+func IPRateLimit(redisClient *redis.Client, fallback zerolog.Logger, trustedProxies ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		now := time.Now().Unix()
 		windowSec := int64(ipRateLimitWindow.Seconds())
-		ip := RealIP(c)
+		ip := RealIP(c, trustedProxies...)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
 		windowIndex := now / windowSec
 		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)

@@ -44,11 +44,11 @@ func newMockStore() *mockStore {
 	}
 }
 
-func (m *mockStore) CreateIdentity(_ context.Context, email, _, _ string) (signup.Identity, error) {
+func (m *mockStore) UpsertIdentity(_ context.Context, email, _, _ string) (*signup.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if existing, ok := m.identities[email]; ok {
-		return *existing, nil
+		return existing, nil
 	}
 	now := time.Now()
 	id := &signup.Identity{
@@ -58,18 +58,27 @@ func (m *mockStore) CreateIdentity(_ context.Context, email, _, _ string) (signu
 		UpdatedAt: now,
 	}
 	m.identities[email] = id
-	return *id, nil
+	return id, nil
 }
 
-func (m *mockStore) FindIdentityByID(_ context.Context, id string) (signup.Identity, error) {
+func (m *mockStore) GetIdentityByEmail(_ context.Context, email string) (*signup.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ident, ok := m.identities[email]; ok {
+		return ident, nil
+	}
+	return nil, signup.ErrNotFound
+}
+
+func (m *mockStore) GetIdentityByID(_ context.Context, id string) (*signup.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, ident := range m.identities {
 		if ident.ID == id {
-			return *ident, nil
+			return ident, nil
 		}
 	}
-	return signup.Identity{}, signup.ErrNotFound
+	return nil, signup.ErrNotFound
 }
 
 func (m *mockStore) MarkEmailVerified(_ context.Context, identityID string) error {
@@ -85,47 +94,69 @@ func (m *mockStore) MarkEmailVerified(_ context.Context, identityID string) erro
 	return signup.ErrNotFound
 }
 
-func (m *mockStore) CreateToken(_ context.Context, identityID, rawToken string, expiresAt time.Time) (signup.Token, error) {
+// InsertToken stores the token hash (not the raw token) keyed by tokenHash.
+func (m *mockStore) InsertToken(_ context.Context, identityID, tokenHash string, expiresAt time.Time) (*signup.MagicLinkToken, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.tokens[rawToken] = mockToken{
-		id:         "tok-" + rawToken,
+	tok := mockToken{
+		id:         "tok-" + tokenHash,
 		identityID: identityID,
 		expiresAt:  expiresAt,
 		createdAt:  time.Now(),
 	}
-	return signup.Token{}, nil
+	m.tokens[tokenHash] = tok
+	return &signup.MagicLinkToken{
+		ID:         tok.id,
+		IdentityID: identityID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  tok.createdAt,
+	}, nil
 }
 
-func (m *mockStore) ConsumeToken(_ context.Context, rawToken string) (string, error) {
+// ConsumeToken looks up by tokenHash (the hashed form stored at InsertToken time).
+func (m *mockStore) ConsumeToken(_ context.Context, tokenHash string) (*signup.MagicLinkToken, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	tok, ok := m.tokens[rawToken]
+	tok, ok := m.tokens[tokenHash]
 	if !ok {
-		return "", signup.ErrNotFound
+		return nil, signup.ErrNotFound
 	}
 	if tok.usedAt != nil {
-		return "", signup.ErrTokenUsed
+		return nil, signup.ErrTokenConsumed
 	}
 	if tok.expiresAt.Before(time.Now()) {
-		return "", signup.ErrTokenExpired
+		return nil, signup.ErrTokenExpired
 	}
 	now := time.Now()
 	tok.usedAt = &now
-	m.tokens[rawToken] = tok
-	return tok.identityID, nil
+	m.tokens[tokenHash] = tok
+	return &signup.MagicLinkToken{
+		ID:         tok.id,
+		IdentityID: tok.identityID,
+		TokenHash:  tokenHash,
+		ExpiresAt:  tok.expiresAt,
+		UsedAt:     tok.usedAt,
+		CreatedAt:  tok.createdAt,
+	}, nil
 }
 
-func (m *mockStore) CountRecentTokens(_ context.Context, identityID string, since time.Time) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	count := 0
-	for _, tok := range m.tokens {
-		if tok.identityID == identityID && !tok.createdAt.Before(since) {
-			count++
-		}
-	}
-	return count, nil
+func (m *mockStore) GetActiveKey(_ context.Context, _ string) (*signup.KeyRecord, error) {
+	return nil, signup.ErrNotFound
+}
+
+func (m *mockStore) InsertKey(_ context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error) {
+	return &signup.KeyRecord{
+		ID:            "key-" + providerKeyID,
+		IdentityID:    identityID,
+		ProviderKeyID: providerKeyID,
+		Status:        "active",
+		CreatedAt:     time.Now(),
+	}, nil
+}
+
+func (m *mockStore) DeleteExpiredTokens(_ context.Context) (int64, error) {
+	return 0, nil
 }
 
 // ── Mock mailer ─────────────────────────────────────────────────────────────────
@@ -224,28 +255,20 @@ func TestRequestLink_InvalidEmail_Returns400(t *testing.T) {
 	}
 }
 
-func TestRequestLink_RateLimited_Returns200(t *testing.T) {
+// TestRequestLink_MultipleRequests_AllReturn200 verifies that repeated
+// request-link calls always return 200 (no account enumeration leak).
+// Per-identity token rate-limiting was moved to the IP rate-limit middleware
+// on the route group; the handler itself no longer caps token creation.
+func TestRequestLink_MultipleRequests_AllReturn200(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 
-	// Send 3 requests to hit the rate limit.
-	for i := 0; i < 3; i++ {
-		resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"ratelimit@example.com"}`)
+	for i := 0; i < 5; i++ {
+		resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"repeat@example.com"}`)
 		if resp.StatusCode != 200 {
 			t.Fatalf("request %d: status = %d, want 200", i+1, resp.StatusCode)
 		}
-	}
-
-	// 4th request should still return 200 (no enumeration leak) but not create a new token.
-	tokenCountBefore := len(store.tokens)
-	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"ratelimit@example.com"}`)
-	if resp.StatusCode != 200 {
-		t.Fatalf("rate-limited request: status = %d, want 200", resp.StatusCode)
-	}
-	tokenCountAfter := len(store.tokens)
-	if tokenCountAfter != tokenCountBefore {
-		t.Errorf("expected no new tokens after rate limit, got %d -> %d", tokenCountBefore, tokenCountAfter)
 	}
 }
 
@@ -254,9 +277,9 @@ func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 
-	// Seed identity + token directly.
+	// Seed identity + token directly. Store keyed by hash (handler hashes before lookup).
 	store.identities["bob@example.com"] = &signup.Identity{ID: "id-bob", Email: "bob@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	store.tokens["validtoken123"] = mockToken{id: "tok-1", identityID: "id-bob", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
+	store.tokens[signup.HashToken("validtoken123")] = mockToken{id: "tok-1", identityID: "id-bob", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
 
 	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=validtoken123", "")
 	if resp.StatusCode != 200 {
@@ -306,7 +329,7 @@ func TestVerify_ExpiredToken_Returns410(t *testing.T) {
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 	store.identities["carol@example.com"] = &signup.Identity{ID: "id-carol", Email: "carol@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	store.tokens["expiredtok"] = mockToken{id: "tok-exp", identityID: "id-carol", expiresAt: time.Now().Add(-1 * time.Minute), createdAt: time.Now()}
+	store.tokens[signup.HashToken("expiredtok")] = mockToken{id: "tok-exp", identityID: "id-carol", expiresAt: time.Now().Add(-1 * time.Minute), createdAt: time.Now()}
 	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=expiredtok", "")
 	if resp.StatusCode != 410 {
 		t.Fatalf("status = %d, want 410", resp.StatusCode)
@@ -322,7 +345,7 @@ func TestVerify_ReusedToken_Returns410(t *testing.T) {
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 	store.identities["dave@example.com"] = &signup.Identity{ID: "id-dave", Email: "dave@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	store.tokens["onetimetoken"] = mockToken{id: "tok-ot", identityID: "id-dave", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
+	store.tokens[signup.HashToken("onetimetoken")] = mockToken{id: "tok-ot", identityID: "id-dave", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
 
 	// First use.
 	resp1 := doRequest(t, app, "GET", "/auth/signup/verify?token=onetimetoken", "")

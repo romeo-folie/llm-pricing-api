@@ -155,18 +155,3 @@ func getEnvIntPositive(key string, fallback int) (int, error) {
 	}
 	return i, nil
 }
-
-func getEnvIntPositive(key string, fallback int) (int, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback, nil
-	}
-	i, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("parse error: %w", err)
-	}
-	if i <= 0 {
-		return 0, fmt.Errorf("value must be positive, got %d", i)
-	}
-	return i, nil
-}

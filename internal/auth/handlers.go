@@ -27,12 +27,15 @@ import (
 // Accepting an interface decouples the HTTP layer from the data-access
 // concrete type and makes unit testing straightforward.
 type Store interface {
-	CreateIdentity(ctx context.Context, email, ipHash, uaHash string) (signup.Identity, error)
-	CreateToken(ctx context.Context, identityID, rawToken string, expiresAt time.Time) (signup.Token, error)
-	ConsumeToken(ctx context.Context, rawToken string) (string, error)
+	UpsertIdentity(ctx context.Context, email, ipHash, uaHash string) (*signup.Identity, error)
+	GetIdentityByEmail(ctx context.Context, email string) (*signup.Identity, error)
+	GetIdentityByID(ctx context.Context, id string) (*signup.Identity, error)
+	InsertToken(ctx context.Context, identityID, tokenHash string, expiresAt time.Time) (*signup.MagicLinkToken, error)
+	ConsumeToken(ctx context.Context, tokenHash string) (*signup.MagicLinkToken, error)
 	MarkEmailVerified(ctx context.Context, identityID string) error
-	FindIdentityByID(ctx context.Context, id string) (signup.Identity, error)
-	CountRecentTokens(ctx context.Context, identityID string, since time.Time) (int, error)
+	GetActiveKey(ctx context.Context, identityID string) (*signup.KeyRecord, error)
+	InsertKey(ctx context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error)
+	DeleteExpiredTokens(ctx context.Context) (int64, error)
 }
 
 // Mailer is the subset of mailer.Mailer that auth handlers require.
@@ -104,23 +107,9 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	ipHash := hashField(middleware.RealIP(c))
 	uaHash := hashField(c.Get("User-Agent"))
 
-	ident, err := h.store.CreateIdentity(ctx, email, ipHash, uaHash)
+	ident, err := h.store.UpsertIdentity(ctx, email, ipHash, uaHash)
 	if err != nil {
-		log.Error().Err(err).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: create identity failed")
-		return genericOK(c)
-	}
-
-	// Rate-limit: suppress token creation if this identity already has too many
-	// recent tokens. Returns 200 regardless to prevent account enumeration.
-	const maxTokensPerWindow = 3
-	window := time.Duration(h.cfg.MagicLinkTTLMinutes) * time.Minute
-	recentCount, countErr := h.store.CountRecentTokens(ctx, ident.ID, time.Now().Add(-window))
-	if countErr != nil {
-		log.Error().Err(countErr).Msg("auth: count recent tokens failed")
-		return genericOK(c)
-	}
-	if recentCount >= maxTokensPerWindow {
-		log.Warn().Str("identity_id", ident.ID).Int("recent_tokens", recentCount).Msg("auth: rate limit exceeded, suppressing magic-link send")
+		log.Error().Err(err).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: upsert identity failed")
 		return genericOK(c)
 	}
 
@@ -130,9 +119,10 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 		return genericOK(c)
 	}
 
+	tokenHash := signup.HashToken(rawToken)
 	expiresAt := time.Now().Add(time.Duration(h.cfg.MagicLinkTTLMinutes) * time.Minute)
-	if _, err := h.store.CreateToken(ctx, ident.ID, rawToken, expiresAt); err != nil {
-		log.Error().Err(err).Str("identity_id", ident.ID).Msg("auth: create token failed")
+	if _, err := h.store.InsertToken(ctx, ident.ID, tokenHash, expiresAt); err != nil {
+		log.Error().Err(err).Str("identity_id", ident.ID).Msg("auth: insert token failed")
 		return genericOK(c)
 	}
 
@@ -175,14 +165,18 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 
 	ctx := c.Context()
 
+	// Hash the raw token before looking it up — the DB stores the hash, not
+	// the raw value, to prevent offline brute-force from a DB leak.
+	tokenHash := signup.HashToken(rawToken)
+
 	// ConsumeToken is atomic: it marks used_at in a single UPDATE that also
-	// enforces expires_at. Returns the identity_id on success.
-	identityID, err := h.store.ConsumeToken(ctx, rawToken)
+	// enforces expires_at. Returns the consumed token row (including identity_id).
+	tok, err := h.store.ConsumeToken(ctx, tokenHash)
 	if err != nil {
 		switch {
 		case errors.Is(err, signup.ErrNotFound):
 			return api.NewUnauthorized("invalid token")
-		case errors.Is(err, signup.ErrTokenUsed):
+		case errors.Is(err, signup.ErrTokenConsumed):
 			return api.NewGone("token already used")
 		case errors.Is(err, signup.ErrTokenExpired):
 			return api.NewGone("token expired")
@@ -192,11 +186,11 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	}
 
 	// Mark identity verified (idempotent for re-verify flows).
-	if err := h.store.MarkEmailVerified(ctx, identityID); err != nil && !errors.Is(err, signup.ErrNotFound) {
+	if err := h.store.MarkEmailVerified(ctx, tok.IdentityID); err != nil && !errors.Is(err, signup.ErrNotFound) {
 		return api.NewInternalError("internal error")
 	}
 
-	ident, err := h.store.FindIdentityByID(ctx, identityID)
+	ident, err := h.store.GetIdentityByID(ctx, tok.IdentityID)
 	if err != nil {
 		return api.NewInternalError("internal error")
 	}
@@ -232,7 +226,7 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 		return api.NewUnauthorized("not authenticated")
 	}
 
-	ident, err := h.store.FindIdentityByID(c.Context(), session.IdentityID)
+	ident, err := h.store.GetIdentityByID(c.Context(), session.IdentityID)
 	if err != nil {
 		if errors.Is(err, signup.ErrNotFound) {
 			return api.NewUnauthorized("identity not found")
