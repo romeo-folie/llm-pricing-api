@@ -45,6 +45,29 @@ func main() {
 		os.Exit(1)
 	}
 
+	// API-only validation: RESEND_API_KEY and MAGIC_LINK_SIGNING_SECRET are not
+	// needed by the worker binary, so they are validated here rather than in
+	// config.Load() (which is shared). This prevents the worker from failing to
+	// start when these vars are absent from its environment.
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = "development"
+	}
+	if appEnv != "development" {
+		if cfg.ResendAPIKey == "" {
+			fmt.Fprintf(os.Stderr, "config error: RESEND_API_KEY is required in non-development environments\n")
+			os.Exit(1)
+		}
+		if cfg.MagicLinkSigningSecret == "" {
+			fmt.Fprintf(os.Stderr, "config error: MAGIC_LINK_SIGNING_SECRET is required in non-development environments\n")
+			os.Exit(1)
+		}
+	}
+	if len(cfg.MagicLinkSigningSecret) > 0 && len(cfg.MagicLinkSigningSecret) < 32 {
+		fmt.Fprintf(os.Stderr, "config error: MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)\n", len(cfg.MagicLinkSigningSecret))
+		os.Exit(1)
+	}
+
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,

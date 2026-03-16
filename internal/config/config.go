@@ -76,27 +76,20 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
+	// RESEND_API_KEY and MAGIC_LINK_SIGNING_SECRET are only required by the API
+	// binary (cmd/api). The worker (cmd/worker) shares this config struct but
+	// never sends email or issues session tokens, so these are loaded here but
+	// validated in cmd/api/main.go after config.Load() returns.
 	resendAPIKey := os.Getenv("RESEND_API_KEY")
-	if appEnv != "development" && resendAPIKey == "" {
-		return nil, fmt.Errorf("RESEND_API_KEY is required in non-development environments")
-	}
 
 	signingSecret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
-	if signingSecret == "" {
-		if appEnv == "development" {
-			b := make([]byte, 32)
-			if _, err := rand.Read(b); err != nil {
-				return nil, fmt.Errorf("generate ephemeral signing secret: %w", err)
-			}
-			signingSecret = hex.EncodeToString(b)
-			fmt.Fprintf(os.Stderr, "WARNING: MAGIC_LINK_SIGNING_SECRET not set — using ephemeral random secret (sessions will not survive restarts)\n")
-		} else {
-			return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET is required in non-development environments")
+	if signingSecret == "" && appEnv == "development" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			return nil, fmt.Errorf("generate ephemeral signing secret: %w", err)
 		}
-	}
-	if len(signingSecret) < 32 {
-		// len() measures UTF-8 bytes, not Unicode code points.
-		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(signingSecret))
+		signingSecret = hex.EncodeToString(b)
+		fmt.Fprintf(os.Stderr, "WARNING: MAGIC_LINK_SIGNING_SECRET not set — using ephemeral random secret (sessions will not survive restarts)\n")
 	}
 
 	magicLinkTTL, err := getEnvIntPositive("MAGIC_LINK_TTL_MINUTES", 15)
