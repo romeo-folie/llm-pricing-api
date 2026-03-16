@@ -36,15 +36,6 @@ func (m *mockIssuer) CreateKey(_ context.Context, _, _ string) (string, string, 
 }
 func (m *mockIssuer) RevokeKey(_ context.Context, _ string) error { return m.revokeErr }
 
-// noopGuard allows all requests.
-type noopGuard struct{}
-
-func (g *noopGuard) CheckRequestLink(_ context.Context, _, _ string) error { return nil }
-func (g *noopGuard) CheckRegenerateKey(_ context.Context, _ string) error  { return nil }
-
-// guardInterface provides the same method set as AbuseGuard for mocking.
-// We wire a custom handler helper for tests that need abuse control mocking.
-
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
 func buildApp(store signup.Store, mailer signup.Mailer, issuer signup.KeyIssuer) *fiber.App {

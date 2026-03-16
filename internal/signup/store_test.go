@@ -137,9 +137,12 @@ func (m *mockStore) InsertKey(_ context.Context, identityID, providerKeyID strin
 	return k, nil
 }
 
-func (m *mockStore) RevokeKey(_ context.Context, identityID, _ string) error {
+func (m *mockStore) RevokeKey(_ context.Context, identityID, providerKeyID string) error {
 	k, ok := m.keys[identityID]
 	if !ok || k.Status != "active" {
+		return signup.ErrNotFound
+	}
+	if k.ProviderKeyID != providerKeyID {
 		return signup.ErrNotFound
 	}
 	now := time.Now()

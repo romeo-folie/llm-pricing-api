@@ -239,7 +239,7 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	if t.UsedAt != nil {
 		return nil, ErrTokenConsumed
 	}
-	if serverNow.After(t.ExpiresAt) {
+	if !serverNow.Before(t.ExpiresAt) {
 		return nil, ErrTokenExpired
 	}
 

@@ -69,6 +69,12 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		RegenerateCooldown: parseDurationSeconds("SIGNUP_REGENERATE_COOLDOWN_SECONDS", 0),
 	}
 
+	// TokenTTL must be positive — a zero or negative value would cause the email
+	// to say "expires in 0 minutes" while GenerateToken silently falls back to 15m.
+	if cfg.TokenTTL <= 0 {
+		return nil, fmt.Errorf("MAGIC_LINK_TTL_MINUTES must be > 0 (got %v)", cfg.TokenTTL)
+	}
+
 	// Validate required env vars so misconfigured deployments fail at startup
 	// rather than at first request (Resend/Unkey calls would silently fail).
 	if cfg.ResendAPIKey == "" {
