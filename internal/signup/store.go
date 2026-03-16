@@ -249,7 +249,22 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	}
 
 	var usedAt time.Time
-	err = tx.QueryRow(ctx, `UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1 RETURNING used_at`, t.ID).Scan(&usedAt)
+	err = tx.QueryRow(ctx, `
+		UPDATE magic_link_tokens SET used_at = NOW()
+		WHERE id = $1 AND used_at IS NULL AND expires_at > NOW()
+		RETURNING used_at`, t.ID).Scan(&usedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Row was locked but state changed between SELECT and UPDATE
+		// (e.g. token expired in the interim). Re-check to disambiguate.
+		var refreshUsedAt *time.Time
+		var refreshExpiry time.Time
+		_ = tx.QueryRow(ctx, `SELECT used_at, expires_at FROM magic_link_tokens WHERE id = $1`, t.ID).
+			Scan(&refreshUsedAt, &refreshExpiry)
+		if refreshUsedAt != nil {
+			return nil, ErrTokenConsumed
+		}
+		return nil, ErrTokenExpired
+	}
 	if err != nil {
 		return nil, fmt.Errorf("signup.ConsumeToken: mark used: %w", err)
 	}

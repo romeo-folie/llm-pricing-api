@@ -82,9 +82,9 @@ func DecodeSession(value, secret string) (*Session, error) {
 	return s, nil
 }
 
-// NewSessionToken returns a cryptographically random opaque token
+// newSessionToken returns a cryptographically random opaque token
 // (used when a stateless signed cookie is not suitable).
-func NewSessionToken() (string, error) {
+func newSessionToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
