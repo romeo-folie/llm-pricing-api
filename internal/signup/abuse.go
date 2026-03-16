@@ -65,7 +65,7 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 	}
 
 	// 3. Disposable domain block.
-	if g.cfg.BlockDisposable && isDisposableDomain(email) {
+	if g.cfg.BlockDisposable && isDisposableDomain(normalizeEmail(email)) {
 		return ErrDisposableDomain
 	}
 

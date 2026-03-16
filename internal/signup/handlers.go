@@ -265,8 +265,11 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 	// Persist to registry.
 	if _, err := h.store.InsertKey(c.Context(), sess.IdentityID, providerKeyID); err != nil {
 		// Revoke the Unkey key we just created — DB is the source of truth.
-		if rErr := h.issuer.RevokeKey(c.Context(), providerKeyID); rErr != nil {
-			h.log.Error().Err(rErr).Str("provider_key_id", providerKeyID).Msg("signup: rollback revoke failed")
+		// Use a detached context so client disconnect cannot cancel the rollback revocation.
+		revokeCtx, revokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer revokeCancel()
+		if rErr := h.issuer.RevokeKey(revokeCtx, providerKeyID); rErr != nil {
+			h.log.Error().Err(rErr).Str("provider_key_id", providerKeyID).Msg("signup: rollback revoke failed — MANUAL RECONCILIATION REQUIRED")
 		}
 		// ErrDuplicateActiveKey: a concurrent request already inserted a key
 		// (race on the unique partial index). The new Unkey key has been revoked;
@@ -340,8 +343,11 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 	}
 	if _, err := h.store.RevokeAndInsertKey(c.Context(), sess.IdentityID, oldProviderKeyID, providerKeyID); err != nil {
 		// DB failed — roll back the Unkey key we just created.
-		if rErr := h.issuer.RevokeKey(c.Context(), providerKeyID); rErr != nil {
-			h.log.Error().Err(rErr).Msg("signup: rollback new key revoke failed")
+		// Use a detached context so client disconnect cannot cancel the rollback revocation.
+		revokeCtx, revokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer revokeCancel()
+		if rErr := h.issuer.RevokeKey(revokeCtx, providerKeyID); rErr != nil {
+			h.log.Error().Err(rErr).Msg("signup: rollback new key revoke failed — MANUAL RECONCILIATION REQUIRED")
 		}
 		// ErrDuplicateActiveKey: concurrent regeneration already inserted a new active
 		// key. The Unkey key we created has been revoked; tell the client to retry.
