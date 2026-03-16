@@ -70,6 +70,14 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	sessionSecure, err := getEnvBool("SIGNUP_SESSION_SECURE", true)
+	if err != nil {
+		return nil, err
+	}
+	blockDisposable, err := getEnvBool("SIGNUP_DISPOSABLE_EMAIL_BLOCK", true)
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &HandlerConfig{
 		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
@@ -82,11 +90,11 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		UnkeyAPIID:         os.Getenv("UNKEY_API_ID"),
 		SessionTTL:         sessionTTL,
 		SessionCookieName:  getEnvOr("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
-		SessionSecure:      getEnvBool("SIGNUP_SESSION_SECURE", true),
+		SessionSecure:      sessionSecure,
 		SessionSameSite:    getEnvOr("SIGNUP_SESSION_SAMESITE", "Lax"),
 		ResendCooldown:     resendCooldown,
 		MaxRequestsPerHour: maxReqPerHour,
-		BlockDisposable:    getEnvBool("SIGNUP_DISPOSABLE_EMAIL_BLOCK", true),
+		BlockDisposable:    blockDisposable,
 		RegenerateCooldown: regenCooldown,
 	}
 
@@ -141,13 +149,15 @@ func getEnvInt(key string, def int) (int, error) {
 	return def, nil
 }
 
-func getEnvBool(key string, def bool) bool {
+func getEnvBool(key string, def bool) (bool, error) {
 	if v := os.Getenv(key); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			return b
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return false, fmt.Errorf("%s: invalid boolean value %q", key, v)
 		}
+		return b, nil
 	}
-	return def
+	return def, nil
 }
 
 func parseDurationMinutes(key string, defMinutes int) (time.Duration, error) {

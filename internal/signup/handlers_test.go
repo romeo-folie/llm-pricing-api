@@ -320,7 +320,10 @@ func TestIssueKey_DuplicateActiveKey(t *testing.T) {
 	ctx := context.Background()
 	id, _ := store.UpsertIdentity(ctx, "dup@example.com", "", "")
 	// Pre-insert an active key so the mock store returns ErrDuplicateActiveKey.
-	store.InsertKey(ctx, id.ID, "existing_provider_key")
+	_, err := store.InsertKey(ctx, id.ID, "existing_provider_key")
+	if err != nil {
+		t.Fatalf("test setup: InsertKey: %v", err)
+	}
 
 	issuer := &mockIssuer{createKeyID: "key_new", createKeyText: "pt_new"}
 	app := buildApp(store, &noopMailer{}, issuer)
@@ -353,7 +356,10 @@ func TestRegenerateKey_Success(t *testing.T) {
 	store := newMock()
 	ctx := context.Background()
 	id, _ := store.UpsertIdentity(ctx, "regen@example.com", "", "")
-	store.InsertKey(ctx, id.ID, "old_provider_key")
+	_, err := store.InsertKey(ctx, id.ID, "old_provider_key")
+	if err != nil {
+		t.Fatalf("test setup: InsertKey: %v", err)
+	}
 
 	issuer := &mockIssuer{createKeyID: "key_regen", createKeyText: "pt_regen"}
 	app := buildApp(store, &noopMailer{}, issuer)
@@ -374,7 +380,7 @@ func TestRegenerateKey_Success(t *testing.T) {
 	}
 
 	// Old key must be revoked in the DB.
-	_, err := store.GetActiveKey(ctx, id.ID)
+	_, err = store.GetActiveKey(ctx, id.ID)
 	// After regen, the new key is active; if there's an error it's unexpected.
 	// We just confirm the new key's provider ID was set.
 	if errors.Is(err, signup.ErrNotFound) {
@@ -388,7 +394,10 @@ func TestRegenerateKey_IssuerError(t *testing.T) {
 	store := newMock()
 	ctx := context.Background()
 	id, _ := store.UpsertIdentity(ctx, "failregen@example.com", "", "")
-	store.InsertKey(ctx, id.ID, "old_key_must_survive")
+	_, err := store.InsertKey(ctx, id.ID, "old_key_must_survive")
+	if err != nil {
+		t.Fatalf("test setup: InsertKey: %v", err)
+	}
 
 	issuer := &mockIssuer{createErr: errors.New("unkey down")}
 	app := buildApp(store, &noopMailer{}, issuer)
