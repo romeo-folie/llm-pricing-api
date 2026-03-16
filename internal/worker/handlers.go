@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/rs/zerolog"
@@ -18,6 +19,14 @@ import (
 	"llm-pricing-api/internal/scraper/openai"
 	"llm-pricing-api/internal/scraper/openrouter"
 )
+
+// huggingFaceScrapeTimeout is the maximum wall-clock time allowed for a single
+// HuggingFace scrape. The HuggingFace API returns up to 500 large model objects
+// and has been observed stalling mid-body for minutes at a time. An 80s deadline
+// sits comfortably under the 90s asynq task timeout (asynq.Timeout option) so
+// that a context.DeadlineExceeded error surfaces cleanly in logs rather than
+// the less informative task-cancelled message asynq emits on its own timeout.
+const huggingFaceScrapeTimeout = 80 * time.Second
 
 // Handlers holds the shared dependencies for all asynq task handler functions.
 // Each handler instantiates its own scraper on every invocation so there is no
@@ -104,7 +113,15 @@ func (h *Handlers) HandleLiteLLMScrape(ctx context.Context, _ *asynq.Task) error
 
 // HandleHuggingFaceScrape runs the HuggingFace Inference Providers scraper and feeds
 // the result through the diff and reconciliation pipeline.
+//
+// The HuggingFace API has been observed stalling mid-body (after headers arrive
+// but before the full JSON payload is delivered), which bypasses http.Client.Timeout
+// in some Go runtimes. An explicit context deadline ensures the handler always
+// returns within huggingFaceScrapeTimeout regardless of network behaviour.
+// The asynq task registered with asynq.Timeout(90s) provides a second safety net.
 func (h *Handlers) HandleHuggingFaceScrape(ctx context.Context, _ *asynq.Task) error {
+	ctx, cancel := context.WithTimeout(ctx, huggingFaceScrapeTimeout)
+	defer cancel()
 	return h.runPipeline(ctx, TaskHuggingFaceScrape, "huggingface_inference_providers", huggingface.New(nil))
 }
 
