@@ -34,7 +34,12 @@ func BuildVerifyURL(baseURL, path, rawToken string) string {
 		// Fallback: should not happen with validated config.
 		return baseURL + path + "?token=" + url.QueryEscape(rawToken)
 	}
-	u.Path, _ = url.JoinPath(u.Path, path)
+	if joined, err := url.JoinPath(u.Path, path); err == nil {
+		u.Path = joined
+	} else {
+		// Fallback: simple concatenation (same as non-parseable base URL path above).
+		u.Path = u.Path + path
+	}
 	q := u.Query()
 	q.Set("token", rawToken)
 	u.RawQuery = q.Encode()

@@ -47,6 +47,9 @@ func TestIPRateLimit_UnderLimit(t *testing.T) {
 	if resp.StatusCode != fiber.StatusOK {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled redis expectations: %v", err)
+	}
 }
 
 // TestIPRateLimit_AtLimit verifies that the 10th request still passes.
@@ -72,6 +75,9 @@ func TestIPRateLimit_AtLimit(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusOK {
 		t.Errorf("want 200 at limit=10, got %d", resp.StatusCode)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled redis expectations: %v", err)
 	}
 }
 
@@ -128,6 +134,9 @@ func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusOK {
 		t.Errorf("want 200 (fail-open), got %d", resp.StatusCode)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled redis expectations: %v", err)
 	}
 }
 

@@ -401,7 +401,10 @@ func TestMe_ExpiredSession_Returns401(t *testing.T) {
 		IssuedAt:   past.Add(-2 * time.Hour).Unix(),
 		ExpiresAt:  past.Unix(), // already expired
 	}
-	sessionVal, _ := signup.SignSession(testCfg.SigningSecret, payload)
+	sessionVal, err := signup.SignSession(testCfg.SigningSecret, payload)
+	if err != nil {
+		t.Fatalf("SignSession: %v", err)
+	}
 	cookie := &http.Cookie{Name: testCfg.SignupSessionCookieName, Value: sessionVal}
 	resp := doRequest(t, app, "GET", "/auth/signup/me", "", cookie)
 	if resp.StatusCode != 401 {
