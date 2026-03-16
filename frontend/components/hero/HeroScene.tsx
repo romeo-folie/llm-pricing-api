@@ -35,6 +35,16 @@ const SOURCES: SourceNode[] = [
   { name: "Hugging Face", sub: "daily",    cx: 220, cy: 300, tier: "aggregator", tierIdx: 2 },
 ];
 
+/** Per-provider brand colors applied to planet core, glow, and flow particle. */
+const PLANET_COLOR: Record<string, string> = {
+  "OpenAI":      "#17BECF",
+  "Anthropic":   "#D4A574",
+  "Google":      "#4285F4",
+  "OpenRouter":  "#B47AEA",
+  "LiteLLM":     "#00E5FF",
+  "Hugging Face":"#FFD21E",
+};
+
 const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
 
 /* ─── Planet radii ─────────────────────────────────────────────────────────── */
@@ -90,8 +100,6 @@ interface HeroSceneProps {
 
 export default function HeroScene({ className, style }: HeroSceneProps) {
   const uid = useId();
-  const gradPrimary = `${uid}-glow-primary`;
-  const gradAggregator = `${uid}-glow-aggregator`;
 
   const [mounted, setMounted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -118,27 +126,12 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         style={{ width: "100%", height: "auto", display: "block" }}
       >
         {/* ── Glow definitions ──────────────────────────────────────── */}
-        <defs>
-          {/* Primary planet glow — subtle ambient, not self-luminous */}
-          <radialGradient id={gradPrimary}>
-            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.45" />
-            <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.12" />
-            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
-          </radialGradient>
-          {/* Aggregator planet glow — barely visible ambient */}
-          <radialGradient id={gradAggregator}>
-            <stop offset="0%"  stopColor="var(--green)"  stopOpacity="0.25" />
-            <stop offset="40%" stopColor="var(--green)"  stopOpacity="0.06" />
-            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
         {/* ── Flow lines (planet → reactor) ─────────────────────────── */}
         {SOURCES.map((s) => {
           const isPrimary = s.tier === "primary";
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
           const d = curvedPath(s.cx, s.cy, r);
-          const baseColor = "var(--green)";
+          const planetColor = PLANET_COLOR[s.name] ?? "var(--green)";
           const dur = isPrimary
             ? `${2.4 + s.tierIdx * 0.3}s`
             : `${3.0 + s.tierIdx * 0.4}s`;
@@ -155,7 +148,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
               />
               <path
                 d={d}
-                stroke={baseColor}
+                stroke={planetColor}
                 strokeWidth={isPrimary ? 1.2 : 0.6}
                 strokeDasharray={isPrimary ? "4 8" : "3 6"}
                 strokeOpacity={isPrimary ? 0.5 : 0.25}
@@ -163,7 +156,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 className="hero-dash"
               />
               {mounted && !reducedMotion && (
-                <circle r={isPrimary ? 2.5 : 1.8} fill={baseColor} opacity={isPrimary ? 0.85 : 0.55}>
+                <circle r={isPrimary ? 2.5 : 1.8} fill={planetColor} opacity={isPrimary ? 0.85 : 0.55}>
                   <animateMotion dur={dur} repeatCount="indefinite" path={d} />
                 </circle>
               )}
@@ -176,16 +169,27 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           const isPrimary = s.tier === "primary";
           const r = isPrimary ? PRIMARY_R : AGGREGATOR_R;
           const glowR = isPrimary ? 24 : 14;
+          const planetColor = PLANET_COLOR[s.name] ?? "var(--green)";
           // Stagger pulse phase per node so they don't breathe in sync.
           const pulseDur = isPrimary ? "3.5s" : "4.5s";
           const pulseDelay = `${s.tierIdx * -1.2}s`;
+          // Per-provider glow gradient IDs (unique per render via uid prefix).
+          const gradId = `${uid}-glow-${s.name.replace(/\s+/g, "-").toLowerCase()}`;
 
           return (
             <g key={`planet-${s.name}`}>
-              {/* Glow halo — no container, just radial gradient */}
+              {/* Per-provider radial glow gradient */}
+              <defs>
+                <radialGradient id={gradId}>
+                  <stop offset="0%"   stopColor={planetColor} stopOpacity={isPrimary ? 0.45 : 0.25} />
+                  <stop offset="40%"  stopColor={planetColor} stopOpacity={isPrimary ? 0.12 : 0.06} />
+                  <stop offset="100%" stopColor={planetColor} stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              {/* Glow halo */}
               <circle
                 cx={s.cx} cy={s.cy} r={glowR}
-                fill={isPrimary ? `url(#${gradPrimary})` : `url(#${gradAggregator})`}
+                fill={`url(#${gradId})`}
                 className="planet-glow"
                 style={{
                   "--planet-pulse-dur": pulseDur,
@@ -193,10 +197,10 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                   transformOrigin: `${s.cx}px ${s.cy}px`,
                 } as CSSProperties}
               />
-              {/* Bright dot core — no ring, no fill container */}
+              {/* Bright dot core */}
               <circle
                 cx={s.cx} cy={s.cy} r={r}
-                fill="var(--green)"
+                fill={planetColor}
                 opacity={isPrimary ? 0.95 : 0.55}
               />
               {/* Name label */}
@@ -215,7 +219,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
                 x={s.cx} y={s.cy + r + (isPrimary ? 25 : 23)}
                 fontSize={isPrimary ? 7.5 : 6.5}
                 fontFamily="var(--font-geist-mono), monospace"
-                fill={isPrimary ? "var(--green)" : "var(--muted)"}
+                fill={planetColor}
                 textAnchor="middle"
                 opacity="0.8"
               >
