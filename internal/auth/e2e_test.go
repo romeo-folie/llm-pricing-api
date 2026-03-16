@@ -4,6 +4,7 @@ package auth_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -322,14 +323,16 @@ func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
 	mailer := &mockMailerE2E{}
 	app := newE2EApp(t, store, mailer, e2eCfg, rc)
 
-	// Flush rate limit keys to ensure clean state.
+	// Flush rate limit keys scoped to the test IP (127.0.0.1 from httptest).
 	// Use SCAN instead of KEYS — KEYS can be disabled or slow on managed Redis.
 	ctx := context.Background()
-	if keys, err := scanRedisKeys(ctx, rc, "iprl:*"); err == nil && len(keys) > 0 {
+	testIPHash := fmt.Sprintf("%x", sha256.Sum256([]byte("127.0.0.1")))[:16]
+	rlPattern := fmt.Sprintf("iprl:%s:*", testIPHash)
+	if keys, err := scanRedisKeys(ctx, rc, rlPattern); err == nil && len(keys) > 0 {
 		rc.Del(ctx, keys...)
 	}
 	t.Cleanup(func() {
-		if keys, err := scanRedisKeys(ctx, rc, "iprl:*"); err == nil && len(keys) > 0 {
+		if keys, err := scanRedisKeys(ctx, rc, rlPattern); err == nil && len(keys) > 0 {
 			rc.Del(ctx, keys...)
 		}
 	})
