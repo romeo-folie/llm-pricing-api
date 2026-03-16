@@ -30,6 +30,14 @@ export default function SignupFlow() {
 
   const fetchedRef = useRef(false);
 
+  // When `verified` becomes true after mount (e.g. navigation with ?verified=1),
+  // transition to the verifying step so the identity fetch runs.
+  useEffect(() => {
+    if (verified && step === "request") {
+      setStep("verifying");
+    }
+  }, [verified, step]);
+
   useEffect(() => {
     if (!verified || fetchedRef.current) return;
     fetchedRef.current = true;

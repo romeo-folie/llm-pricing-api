@@ -8,6 +8,30 @@ vi.stubGlobal("fetch", mockFetch);
 
 beforeEach(() => mockFetch.mockReset());
 
+/** Helper to build a mock Response with headers support. */
+function mockResponse(
+  opts: { ok: boolean; status?: number; body?: Record<string, unknown> }
+) {
+  const hdrs = new Map<string, string>();
+  return {
+    ok: opts.ok,
+    status: opts.status ?? (opts.ok ? 200 : 500),
+    headers: { get: (name: string) => hdrs.get(name.toLowerCase()) ?? null, _map: hdrs },
+    json: async () => opts.body ?? {},
+  };
+}
+
+/** Same as mockResponse but also sets the Retry-After header. */
+function mockResponseWithRetryAfter(
+  opts: { ok: boolean; status: number; body?: Record<string, unknown>; retryAfterSec?: number }
+) {
+  const resp = mockResponse(opts);
+  if (opts.retryAfterSec !== undefined) {
+    (resp.headers._map as Map<string, string>).set("retry-after", String(opts.retryAfterSec));
+  }
+  return resp;
+}
+
 // ── requestMagicLink ──────────────────────────────────────────────────────────
 
 describe("requestMagicLink", () => {
@@ -21,12 +45,14 @@ describe("requestMagicLink", () => {
     }));
   });
 
-  it("maps 429 with cooldown body to cooldown error", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 429,
-      json: async () => ({ error: "email cooldown active", retry_after_ms: 30_000 }),
-    });
+  it("maps 429 with cooldown body (RFC7807 detail) to cooldown error", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 429,
+        body: { detail: "email cooldown active", extensions: { retryAfterMs: 30_000 } },
+      })
+    );
     const result = await requestMagicLink("test@example.com");
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -35,12 +61,27 @@ describe("requestMagicLink", () => {
     }
   });
 
+  it("maps 429 with Retry-After header to rate_limited error", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponseWithRetryAfter({
+        ok: false,
+        status: 429,
+        body: { detail: "too many requests" },
+        retryAfterSec: 60,
+      })
+    );
+    const result = await requestMagicLink("test@example.com");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("rate_limited");
+      expect(result.error.retryAfterMs).toBe(60_000);
+    }
+  });
+
   it("maps 429 without cooldown keyword to rate_limited error", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 429,
-      json: async () => ({ error: "too many requests" }),
-    });
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ ok: false, status: 429, body: { detail: "too many requests" } })
+    );
     const result = await requestMagicLink("test@example.com");
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -48,12 +89,23 @@ describe("requestMagicLink", () => {
     }
   });
 
+  it("falls back to legacy body.error when detail is absent", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ ok: false, status: 429, body: { error: "cooldown active", retry_after_ms: 5_000 } })
+    );
+    const result = await requestMagicLink("test@example.com");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("cooldown");
+      expect(result.error.message).toBe("cooldown active");
+      expect(result.error.retryAfterMs).toBe(5_000);
+    }
+  });
+
   it("maps 422 with disposable keyword to disposable_domain error", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 422,
-      json: async () => ({ error: "disposable email domain not allowed" }),
-    });
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ ok: false, status: 422, body: { detail: "disposable email domain not allowed" } })
+    );
     const result = await requestMagicLink("test@mailinator.com");
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -62,11 +114,9 @@ describe("requestMagicLink", () => {
   });
 
   it("maps 400 to invalid_email error", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      json: async () => ({ error: "invalid email format" }),
-    });
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ ok: false, status: 400, body: { detail: "invalid email format" } })
+    );
     const result = await requestMagicLink("notanemail");
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -123,11 +173,9 @@ describe("issueKey", () => {
   });
 
   it("returns error on non-200", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 409,
-      json: async () => ({ error: "active key already exists" }),
-    });
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ ok: false, status: 409, body: { detail: "active key already exists" } })
+    );
     const result = await issueKey();
     expect(result.ok).toBe(false);
   });
@@ -147,12 +195,18 @@ describe("regenerateKey", () => {
   });
 
   it("returns error when regenerate is rate-limited", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 429,
-      json: async () => ({ error: "regenerate cooldown active", retry_after_ms: 60_000 }),
-    });
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 429,
+        body: { detail: "regenerate cooldown active", extensions: { retryAfterMs: 60_000 } },
+      })
+    );
     const result = await regenerateKey();
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("cooldown");
+      expect(result.error.retryAfterMs).toBe(60_000);
+    }
   });
 });

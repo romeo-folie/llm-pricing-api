@@ -47,7 +47,7 @@ export async function requestMagicLink(
     const body = await res.json().catch(() => ({}));
     return {
       ok: false,
-      error: parseError(res.status, body),
+      error: parseError(res, body),
     };
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
@@ -91,7 +91,7 @@ export async function issueKey(
       return { ok: true, key };
     }
     const body = await res.json().catch(() => ({}));
-    return { ok: false, error: parseError(res.status, body) };
+    return { ok: false, error: parseError(res, body) };
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
     return { ok: false, error: { code: "unknown", message: "Network error" } };
@@ -113,7 +113,7 @@ export async function regenerateKey(
       return { ok: true, key };
     }
     const body = await res.json().catch(() => ({}));
-    return { ok: false, error: parseError(res.status, body) };
+    return { ok: false, error: parseError(res, body) };
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
     return { ok: false, error: { code: "unknown", message: "Network error" } };
@@ -122,20 +122,42 @@ export async function regenerateKey(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function parseError(status: number, body: Record<string, unknown>): ApiError {
+/**
+ * Parse an error response using RFC 7807 ProblemDetail format.
+ * Reads `body.detail` as the primary message and `body.extensions` for extra
+ * fields like `retryAfterMs`. Falls back to `body.error` for legacy payloads.
+ * For 429 responses, also reads the standard `Retry-After` header (in seconds).
+ */
+function parseError(res: Response, body: Record<string, unknown>): ApiError {
+  const status = res.status;
+  const extensions = (body.extensions ?? {}) as Record<string, unknown>;
+
+  // Primary message: RFC7807 `detail`, fallback to legacy `error` field.
+  const detailMsg =
+    typeof body.detail === "string"
+      ? body.detail
+      : typeof body.error === "string"
+        ? body.error
+        : undefined;
+
   if (status === 429) {
-    // retry_after_ms is already in milliseconds — do not multiply again.
-    const retryAfterMs = Number(body.retry_after_ms ?? 0);
-    const retryAfterSec = Number(body.retry_after ?? 0);
-    const retryMs = retryAfterMs || retryAfterSec * 1000;
-    const msg = typeof body.error === "string" ? body.error : "Too many requests";
+    // Extensions may carry retryAfterMs directly.
+    const extRetryMs = Number(extensions.retryAfterMs ?? 0);
+    // Legacy body fields.
+    const bodyRetryMs = Number(body.retry_after_ms ?? 0);
+    const bodyRetrySec = Number(body.retry_after ?? 0);
+    // Standard Retry-After header (in seconds).
+    const headerRetrySec = Number(res.headers.get("Retry-After") ?? 0);
+    const retryMs = extRetryMs || bodyRetryMs || bodyRetrySec * 1000 || headerRetrySec * 1000;
+
+    const msg = detailMsg ?? "Too many requests";
     if (msg.toLowerCase().includes("cooldown")) {
       return { code: "cooldown", message: msg, retryAfterMs: retryMs };
     }
     return { code: "rate_limited", message: msg, retryAfterMs: retryMs };
   }
   if (status === 422 || status === 400) {
-    const msg = typeof body.error === "string" ? body.error : "Invalid request";
+    const msg = detailMsg ?? "Invalid request";
     if (msg.toLowerCase().includes("disposable")) {
       return { code: "disposable_domain", message: msg };
     }
@@ -143,6 +165,6 @@ function parseError(status: number, body: Record<string, unknown>): ApiError {
   }
   return {
     code: "unknown",
-    message: typeof body.error === "string" ? body.error : "Something went wrong",
+    message: detailMsg ?? "Something went wrong",
   };
 }

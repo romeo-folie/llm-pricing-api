@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useRef, useState, useTransition } from "react";
 import { requestMagicLink, type ApiError } from "@/lib/signup";
 
 interface Props {
@@ -12,9 +12,31 @@ export default function SentConfirmation({ email, onBack }: Props) {
   const [resent, setResent] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [cooldownMs, setCooldownMs] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const startCooldownTimer = (ms: number) => {
+    setCooldownMs(ms);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCooldownMs((prev) => {
+        if (prev <= 1000) {
+          clearInterval(timerRef.current!);
+          return 0;
+        }
+        return prev - 1000;
+      });
+    }, 1000);
+  };
 
   const handleResend = () => {
-    if (isPending) return;
+    if (isPending || cooldownMs > 0) return;
     setError(null);
     setResent(false);
 
@@ -24,6 +46,9 @@ export default function SentConfirmation({ email, onBack }: Props) {
         setResent(true);
       } else {
         setError(result.error);
+        if (result.error.retryAfterMs) {
+          startCooldownTimer(result.error.retryAfterMs);
+        }
       }
     });
   };
@@ -57,7 +82,7 @@ export default function SentConfirmation({ email, onBack }: Props) {
         We sent a magic link to{" "}
         <strong className="signup-sent-email">{email}</strong>.
         <br />
-        It expires in 15 minutes. No code to copy — just click the link.
+        It expires shortly. No code to copy — just click the link.
       </p>
 
       {resent && (
@@ -74,11 +99,11 @@ export default function SentConfirmation({ email, onBack }: Props) {
       <div className="signup-sent-actions">
         <button
           onClick={handleResend}
-          disabled={isPending}
+          disabled={isPending || cooldownMs > 0}
           className="signup-link-btn"
           aria-busy={isPending}
         >
-          {isPending ? "Sending…" : "Resend link"}
+          {isPending ? "Sending…" : cooldownMs > 0 ? `Resend in ${Math.ceil(cooldownMs / 1000)}s` : "Resend link"}
         </button>
         <span className="signup-sent-sep" aria-hidden="true">·</span>
         <button onClick={onBack} className="signup-link-btn">

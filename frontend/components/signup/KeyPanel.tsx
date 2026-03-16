@@ -31,9 +31,12 @@ export default function KeyPanel({ identity, initialKey }: Props) {
   const [isPendingRegen, startRegen] = useTransition();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-issue key on mount if identity has no key yet
+  // Auto-issue key on mount if identity has no key yet.
+  // Guarded by hasFired ref to ensure idempotency across strict-mode double-mounts.
+  const hasFired = useRef(false);
   useEffect(() => {
-    if (identity.has_active_key || initialKey) return;
+    if (identity.has_active_key || initialKey || hasFired.current) return;
+    hasFired.current = true;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -57,8 +60,7 @@ export default function KeyPanel({ identity, initialKey }: Props) {
       cancelled = true;
       controller.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [identity.has_active_key, initialKey]);
 
   // Clear copy feedback timer on unmount to avoid state updates on unmounted component.
   useEffect(() => {
