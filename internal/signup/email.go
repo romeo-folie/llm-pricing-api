@@ -29,7 +29,7 @@ func NewResendMailer(apiKey, from string) Mailer {
 // SendMagicLink sends a magic-link email to `to`. The ttlMinutes parameter is
 // accepted for interface compatibility but the email copy uses a generic
 // "expires shortly" phrase instead of an explicit duration.
-func (m *resendMailer) SendMagicLink(ctx context.Context, to, magicLinkURL string, ttlMinutes int) error {
+func (m *resendMailer) SendMagicLink(ctx context.Context, to, magicLinkURL string, _ int) error {
 	params := &resend.SendEmailRequest{
 		From:    m.from,
 		To:      []string{to},
