@@ -42,7 +42,7 @@ const PLANET_COLOR: Record<string, string> = {
   "Google":      "#4285F4",
   "OpenRouter":  "#B47AEA",
   "LiteLLM":     "#00E5FF",
-  "Hugging Face":"#FFD21E",
+  "Hugging Face": "#FFD21E",
 };
 
 const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
