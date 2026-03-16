@@ -54,6 +54,15 @@
   --muted:       #78716C;
   --dim:         #A8A29E;
   --ink:         #1E293B;
+
+  /* Hero endpoint cards — light mode */
+  --hero-endpoint-bg:      #FFFFFF;
+  --hero-endpoint-border:  #DDD7D0;
+  --hero-endpoint-text:    #1E293B;
+  --hero-method-get-bg:    #B5D4F4;
+  --hero-method-get-text:  #0C447C;
+  --hero-method-post-bg:   #B9EDD8;
+  --hero-method-post-text: #0C5E3A;
   --accent:      #107E72;
   --accentLt:    #E0F5F2;
   --accentDk:    #0A524A;
@@ -108,16 +117,16 @@
     --purple:      #A78BFA;
     --purpleLt:    rgba(167, 139, 250, 0.12);
 
-    /* Hero endpoint cards — white bg in dark mode for contrast */
+    /* Hero endpoint cards — keep light bg in dark mode so text stays legible */
     --hero-endpoint-bg:      #E8E4E0;
-    --hero-endpoint-border:  #D0CBC5;
-    --hero-endpoint-text:    #1C1917;
+    --hero-endpoint-border:  #C8C0B6;
+    --hero-endpoint-text:    #111827;
 
-    /* Hero method pills — dark mode: deeper fills for contrast on light card bg */
-    --hero-method-get-bg:    #7BAED4;
-    --hero-method-get-text:  #042C53;
-    --hero-method-post-bg:   #6DC4A0;
-    --hero-method-post-text: #04342C;
+    /* Hero method pills — dark mode: saturated but readable on light card bg */
+    --hero-method-get-bg:    #3B82F6;
+    --hero-method-get-text:  #EFF6FF;
+    --hero-method-post-bg:   #10B981;
+    --hero-method-post-text: #ECFDF5;
 
     /* Hero diagram labels — match provider name text (--ink) for consistency */
     --hero-label:            #F0EDE9;
