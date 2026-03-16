@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 /**
  * Manages a cooldown countdown with an adaptive tick rate.
@@ -22,7 +22,7 @@ export function useCooldown() {
     return () => clearTimer()
   }, [])
 
-  const startCooldown = (ms: number) => {
+  const startCooldown = useCallback((ms: number) => {
     const safeMs = Number.isFinite(ms) ? Math.max(0, ms) : 0
     if (safeMs === 0) return
 
@@ -44,7 +44,7 @@ export function useCooldown() {
 
     const firstTick = safeMs > 60_000 ? 30_000 : 1_000
     timerRef.current = setTimeout(tick, firstTick)
-  }
+  }, [])
 
   return { cooldownMs, startCooldown }
 }

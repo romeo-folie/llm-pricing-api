@@ -26,6 +26,7 @@ export default function SignupFlow() {
 
   const [step, setStep] = useState<SignupStep>(verified ? "verifying" : "request")
   const [sentEmail, setSentEmail] = useState("")
+  const [sentAt, setSentAt] = useState<number | null>(null)
   const [identity, setIdentity] = useState<IdentityResponse | null>(null)
   const [verifyError, setVerifyError] = useState<string | null>(null)
 
@@ -103,11 +104,17 @@ export default function SignupFlow() {
   }
 
   if (step === "sent") {
+    const COOLDOWN_DURATION = 60_000
+    const elapsed = sentAt ? Date.now() - sentAt : COOLDOWN_DURATION
+    const initialCooldownMs = Math.max(0, COOLDOWN_DURATION - elapsed)
+
     return (
       <SentConfirmation
         email={sentEmail}
+        initialCooldownMs={initialCooldownMs}
         onBack={() => {
           setSentEmail("")
+          setSentAt(null)
           setStep("request")
         }}
       />
@@ -119,6 +126,7 @@ export default function SignupFlow() {
     <RequestLinkForm
       onSent={(email) => {
         setSentEmail(email)
+        setSentAt(Date.now())
         setStep("sent")
       }}
     />

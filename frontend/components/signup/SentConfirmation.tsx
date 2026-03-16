@@ -6,15 +6,24 @@ import { useCooldown } from "@/hooks/useCooldown"
 
 interface Props {
   email: string
+  initialCooldownMs?: number
   onBack: () => void
 }
 
-export default function SentConfirmation({ email, onBack }: Props) {
+export default function SentConfirmation({ email, initialCooldownMs, onBack }: Props) {
   const [resent, setResent] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [isResending, setIsResending] = useState(false)
   const { cooldownMs, startCooldown } = useCooldown()
   const abortRef = useRef<AbortController | null>(null)
+  const initializedRef = useRef(false)
+
+  useEffect(() => {
+    if (!initializedRef.current && initialCooldownMs && initialCooldownMs > 0) {
+      initializedRef.current = true
+      startCooldown(initialCooldownMs)
+    }
+  }, [initialCooldownMs, startCooldown])
 
   useEffect(() => {
     return () => {
