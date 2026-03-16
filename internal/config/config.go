@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 )
@@ -90,7 +89,7 @@ func Load() (*Config, error) {
 				return nil, fmt.Errorf("generate ephemeral signing secret: %w", err)
 			}
 			signingSecret = hex.EncodeToString(b)
-			log.Println("WARNING: MAGIC_LINK_SIGNING_SECRET not set — using ephemeral random secret (sessions will not survive restarts)")
+			fmt.Fprintf(os.Stderr, "WARNING: MAGIC_LINK_SIGNING_SECRET not set — using ephemeral random secret (sessions will not survive restarts)\n")
 		} else {
 			return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET is required in non-development environments")
 		}

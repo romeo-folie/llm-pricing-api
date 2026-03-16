@@ -96,7 +96,7 @@ func VerifySession(secret, cookieValue string) (SessionPayload, error) {
 	if err := decodePayload(data, &p); err != nil {
 		return SessionPayload{}, fmt.Errorf("signup: session: decode: %w", err)
 	}
-	if time.Now().Unix() > p.ExpiresAt {
+	if time.Now().Unix() >= p.ExpiresAt {
 		return SessionPayload{}, fmt.Errorf("signup: session: expired")
 	}
 	return p, nil

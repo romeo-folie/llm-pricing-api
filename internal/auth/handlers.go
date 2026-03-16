@@ -70,7 +70,7 @@ func New(store Store, mailer Mailer, cfg Config, log zerolog.Logger) *Handler {
 func Register(router fiber.Router, h *Handler) {
 	router.Post("/signup/request-link", h.RequestLink)
 	router.Get("/signup/verify", h.Verify)
-	router.Get("/signup/me", h.Me)
+	router.Get("/signup/me", h.RequireSession, h.Me)
 }
 
 // ── POST /auth/signup/request-link ───────────────────────────────────────────
@@ -135,7 +135,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	// Send email synchronously with a short timeout. Rate limiting (fix #1)
 	// bounds how many requests reach this point, so blocking is safe.
 	// Delivery failure must not leak whether the email exists.
-	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(c.UserContext()), 10*time.Second)
 	defer cancel()
 	if sendErr := h.mailer.SendMagicLink(sendCtx, email, verifyURL); sendErr != nil {
 		h.log.Warn().Err(sendErr).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: magic-link email delivery failed")
@@ -219,9 +219,10 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 // ── GET /auth/signup/me ───────────────────────────────────────────────────────
 
 // Me returns the verified identity for the session cookie holder.
+// RequireSession must run before this handler to populate locals.
 func (h *Handler) Me(c *fiber.Ctx) error {
-	session, err := h.sessionFromCookie(c)
-	if err != nil {
+	session, ok := SessionFromLocals(c)
+	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
