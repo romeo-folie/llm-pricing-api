@@ -152,6 +152,16 @@ func NewGone(detail string) *ProblemDetail {
 	}
 }
 
+// NewServiceUnavailable returns a 503 Service Unavailable ProblemDetail.
+func NewServiceUnavailable(detail string) *ProblemDetail {
+	return &ProblemDetail{
+		Type:   problemTypeBase + "service-unavailable",
+		Title:  "Service Unavailable",
+		Status: fiber.StatusServiceUnavailable,
+		Detail: detail,
+	}
+}
+
 // NewInternalError returns a 500 Internal Server Error ProblemDetail.
 // The detail message is intentionally generic to avoid leaking implementation details.
 func NewInternalError(detail string) *ProblemDetail {

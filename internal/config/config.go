@@ -56,6 +56,10 @@ type Config struct {
 	// SignupSessionSecure controls the Secure flag on the session cookie.
 	// Defaults to true; set to false only in local dev (HTTP).
 	SignupSessionSecure bool
+	// SignupEnabled controls whether the POST /auth/signup/request-link
+	// endpoint accepts new signup requests. When false, it returns 503.
+	// Defaults to true for backward compatibility.
+	SignupEnabled bool
 }
 
 // Load reads configuration from environment variables.
@@ -100,6 +104,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid SIGNUP_SESSION_TTL_HOURS: %w", err)
 	}
+	signupEnabled, err := getEnvBool("SIGNUP_ENABLED", true)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SIGNUP_ENABLED: %w", err)
+	}
 
 	return &Config{
 		DatabaseURL:      dbURL,
@@ -125,6 +133,7 @@ func Load() (*Config, error) {
 		SignupSessionCookieName: getEnv("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
 		SignupSessionTTLHours:   sessionTTL,
 		SignupSessionSecure:     appEnv != "development",
+		SignupEnabled:           signupEnabled,
 	}, nil
 }
 
@@ -133,6 +142,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s: invalid boolean value %q (use true/false/1/0)", key, v)
+	}
+	return b, nil
 }
 
 func getEnvIntPositive(key string, fallback int) (int, error) {

@@ -213,7 +213,11 @@ func main() {
 		SignupSessionCookieName: cfg.SignupSessionCookieName,
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
+		SignupEnabled:           cfg.SignupEnabled,
 	}, log)
+	// Rate-limit all auth routes first (DDoS protection even when signup is
+	// disabled). Handler-level checks in auth.Handler manage the 503 response
+	// when SIGNUP_ENABLED=false.
 	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
 	auth.Register(authGroup, authHandler)
 
