@@ -154,7 +154,7 @@ func main() {
 		SignupSessionCookieName: cfg.SignupSessionCookieName,
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
-	})
+	}, log)
 	auth.Register(app, authHandler)
 
 	// Register public discovery routes outside the auth group.
