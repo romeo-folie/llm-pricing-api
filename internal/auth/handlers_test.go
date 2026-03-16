@@ -26,7 +26,7 @@ import (
 type mockStore struct {
 	mu         sync.Mutex
 	identities map[string]*signup.Identity // keyed by email
-	tokens     map[string]mockToken        // keyed by rawToken
+	tokens     map[string]mockToken        // keyed by tokenHash (SHA-256 of rawToken)
 }
 
 type mockToken struct {

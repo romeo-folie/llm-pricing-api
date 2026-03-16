@@ -1,8 +1,17 @@
 package signup
 
-// This file contains session signing helpers for the magic-link auth flow.
-// Token hashing (for storage) is handled by HashToken in store.go.
-// Session signing uses HMAC-SHA256 so the cookie is self-verifying.
+// token.go contains magic-link URL construction (BuildVerifyURL, GenerateRawToken)
+// and session cookie signing/verification (SignSession, VerifySession, SessionPayload).
+//
+// Related files in this package:
+//   - tokens.go: HMAC-signed token generation and parsing (GenerateToken, ParseToken).
+//     Used when the magic link embeds a signed token (rawToken + "." + HMAC-hex).
+//   - session.go: an earlier session encode/decode implementation (EncodeSession,
+//     DecodeSession) using a simpler IdentityID:ExpiresAt payload format.
+//
+// token.go is the canonical implementation used by the auth handlers (PR #103).
+// tokens.go and session.go are retained for now and may be consolidated in a
+// future refactoring pass.
 
 import (
 	"crypto/hmac"

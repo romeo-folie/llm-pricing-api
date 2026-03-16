@@ -187,11 +187,13 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 
 	// Mark identity verified (idempotent for re-verify flows).
 	if err := h.store.MarkEmailVerified(ctx, tok.IdentityID); err != nil && !errors.Is(err, signup.ErrNotFound) {
+		h.log.Error().Err(err).Str("identity_id", tok.IdentityID).Msg("auth: mark email verified failed")
 		return api.NewInternalError("internal error")
 	}
 
 	ident, err := h.store.GetIdentityByID(ctx, tok.IdentityID)
 	if err != nil {
+		h.log.Error().Err(err).Str("identity_id", tok.IdentityID).Msg("auth: get identity failed")
 		return api.NewInternalError("internal error")
 	}
 

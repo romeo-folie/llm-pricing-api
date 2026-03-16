@@ -75,7 +75,7 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 		}
 
 		if count > ipRateLimitMax {
-			retryAfter := int(time.Until(windowEnd).Seconds())
+			retryAfter := int(windowEnd.Sub(timeNow()).Seconds())
 			if retryAfter < 0 {
 				retryAfter = 0
 			}

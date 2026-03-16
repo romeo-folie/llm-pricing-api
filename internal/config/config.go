@@ -95,7 +95,7 @@ func Load() (*Config, error) {
 		}
 	}
 	if len(signingSecret) < 32 {
-		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(signingSecret))
+		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 characters (got %d)", len(signingSecret))
 	}
 
 	magicLinkTTL, err := getEnvIntPositive("MAGIC_LINK_TTL_MINUTES", 15)
