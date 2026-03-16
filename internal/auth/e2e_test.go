@@ -200,7 +200,9 @@ func TestE2E_RequestLink_Verify_Me(t *testing.T) {
 
 	// Cleanup identity after test.
 	t.Cleanup(func() {
-		pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email)
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email); err != nil {
+			t.Logf("cleanup identity failed: %v", err)
+		}
 	})
 
 	// Step 1: POST /auth/signup/request-link → 200.
@@ -281,7 +283,9 @@ func TestE2E_ExpiredToken_Rejected(t *testing.T) {
 	ctx := context.Background()
 
 	t.Cleanup(func() {
-		pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email)
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email); err != nil {
+			t.Logf("cleanup identity failed: %v", err)
+		}
 	})
 
 	ident, err := store.UpsertIdentity(ctx, email, "", "")
@@ -315,7 +319,9 @@ func TestE2E_ReusedToken_Rejected(t *testing.T) {
 	ctx := context.Background()
 
 	t.Cleanup(func() {
-		pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email)
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email); err != nil {
+			t.Logf("cleanup identity failed: %v", err)
+		}
 	})
 
 	ident, err := store.UpsertIdentity(ctx, email, "", "")
@@ -389,7 +395,9 @@ func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
 
 	email := randEmail(t)
 	t.Cleanup(func() {
-		pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email)
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE email = $1`, email); err != nil {
+			t.Logf("cleanup identity failed: %v", err)
+		}
 	})
 	body := fmt.Sprintf(`{"email":"%s"}`, email)
 

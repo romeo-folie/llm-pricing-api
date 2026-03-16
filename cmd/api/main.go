@@ -195,17 +195,9 @@ func main() {
 		SignupEnabled:           cfg.SignupEnabled,
 	}, log)
 	// Rate-limit all auth routes first (DDoS protection even when signup is
-	// disabled), then short-circuit disabled signup endpoints with 503.
-	authMiddlewares := []fiber.Handler{middleware.IPRateLimit(redisClient, log)}
-	if !cfg.SignupEnabled {
-		authMiddlewares = append(authMiddlewares, func(c *fiber.Ctx) error {
-			if c.Path() == "/auth/signup/request-link" && c.Method() == fiber.MethodPost {
-				return api.NewServiceUnavailable("signup is currently disabled")
-			}
-			return c.Next()
-		})
-	}
-	authGroup := app.Group("/auth", authMiddlewares...)
+	// disabled). Handler-level checks in auth.Handler manage the 503 response
+	// when SIGNUP_ENABLED=false.
+	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
 	auth.Register(authGroup, authHandler)
 
 	// Register public discovery routes outside the auth group.
