@@ -3,11 +3,11 @@ package middleware
 import (
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
 )
@@ -26,7 +26,7 @@ func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		now := time.Now().Unix()
 		windowSec := int64(ipRateLimitWindow.Seconds())
-		ip := realIP(c)
+		ip := RealIP(c)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
 		windowIndex := now / windowSec
 		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)
@@ -40,7 +40,7 @@ func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 		if count == 1 {
 			if expErr := redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err(); expErr != nil {
 				// Key has no TTL — will leak. Log but don't block the request.
-				log.Printf("ipratelimit: Expire failed for key %s: %v", windowKey, expErr)
+				zerolog.Ctx(c.Context()).Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: Expire failed — key may have no TTL")
 			}
 		}
 

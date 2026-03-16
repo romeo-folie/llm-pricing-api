@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/signup"
 )
 
@@ -97,7 +98,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 
 	ctx := c.Context()
 
-	ipHash := hashField(realIP(c))
+	ipHash := hashField(middleware.RealIP(c))
 	uaHash := hashField(c.Get("User-Agent"))
 
 	ident, err := h.store.CreateIdentity(ctx, email, ipHash, uaHash)
@@ -310,21 +311,6 @@ func isValidEmail(email string) bool {
 	// After normalizeEmail strips any display name, verify the result matches
 	// the input — if not, the original had a display-name component.
 	return strings.TrimSpace(addr.Address) == strings.TrimSpace(email)
-}
-
-// realIP returns the client IP from X-Forwarded-For (first hop) or c.IP() fallback.
-// It trusts X-Forwarded-For unconditionally; this is safe only when the app
-// runs behind a trusted reverse proxy (e.g. Railway, Fly, nginx). Do not
-// expose this app directly to the internet without a proxy or configure
-// Fiber's ProxyHeader/TrustedProxies to restrict which peers can set this header.
-func realIP(c *fiber.Ctx) string {
-	if ip := c.Get("X-Forwarded-For"); ip != "" {
-		if idx := strings.Index(ip, ","); idx >= 0 {
-			return strings.TrimSpace(ip[:idx])
-		}
-		return strings.TrimSpace(ip)
-	}
-	return c.IP()
 }
 
 // hashField returns a stable hex hash of s for use as an abuse signal.
