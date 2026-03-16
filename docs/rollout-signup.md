@@ -44,7 +44,7 @@ railway up
 
 **Smoke tests:**
 - [ ] `GET /health` returns 200
-- [ ] `POST /auth/signup/request-link` returns **503** with RFC 7807 body: `{"type":"https://llmrates.live/problems/service-unavailable","title":"Service Unavailable","status":503,"detail":"signup is currently disabled"}`
+- [ ] `POST /auth/signup/request-link` returns **503** with RFC 7807 body: `{"type":"https://llmrates.live/problems/service-unavailable","title":"Service Unavailable","status":503,"detail":"signup is currently disabled","instance":"/auth/signup/request-link"}`
 - [ ] Existing `/v1/` endpoints continue to function normally
 - [ ] No new errors in application logs
 

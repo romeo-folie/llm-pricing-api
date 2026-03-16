@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -108,13 +109,15 @@ var e2eCfg = auth.Config{
 	SignupEnabled:           true,
 }
 
-// mockMailerE2E captures sent emails (no-op delivery).
+// mockMailerE2E captures sent emails and verify URLs (no-op delivery).
 type mockMailerE2E struct {
 	calls []string
+	urls  []string // verify URLs passed to SendMagicLink
 }
 
-func (m *mockMailerE2E) SendMagicLink(_ context.Context, email, _ string) error {
+func (m *mockMailerE2E) SendMagicLink(_ context.Context, email, verifyURL string) error {
 	m.calls = append(m.calls, email)
+	m.urls = append(m.urls, verifyURL)
 	return nil
 }
 
@@ -154,9 +157,12 @@ func e2eRequest(t *testing.T, app *fiber.App, method, path, body string, cookies
 	return resp
 }
 
-func e2eBodyJSON(resp *http.Response) map[string]any {
+func e2eBodyJSON(t *testing.T, resp *http.Response) map[string]any {
+	t.Helper()
 	var m map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&m)
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		t.Fatalf("e2eBodyJSON: failed to decode response body: %v", err)
+	}
 	return m
 }
 
@@ -182,31 +188,36 @@ func TestE2E_RequestLink_Verify_Me(t *testing.T) {
 		t.Fatalf("request-link: status = %d, want 200", resp.StatusCode)
 	}
 
-	// Step 2: Extract the token hash from DB and reconstruct raw token.
-	// The handler called GenerateRawToken() then HashToken() — we can't
-	// reverse the hash. Instead, insert a known token directly for the
-	// identity that was upserted above, simulating the verify step.
+	// Step 2: Extract the raw token from the URL captured by the mock mailer.
+	// This exercises the full RequestLink flow (identity upsert, token generation,
+	// URL construction) instead of inserting a known token directly.
+	if len(mailer.urls) == 0 {
+		t.Fatal("request-link did not trigger SendMagicLink")
+	}
+	capturedURL := mailer.urls[len(mailer.urls)-1]
+	parsedURL, err := url.Parse(capturedURL)
+	if err != nil {
+		t.Fatalf("parse captured verify URL: %v", err)
+	}
+	rawToken := parsedURL.Query().Get("token")
+	if rawToken == "" {
+		t.Fatalf("captured URL has no token query param: %s", capturedURL)
+	}
+
 	ident, err := store.GetIdentityByEmail(ctx, email)
 	if err != nil {
 		t.Fatalf("GetIdentityByEmail: %v", err)
-	}
-
-	rawToken := fmt.Sprintf("e2e-verify-%d", time.Now().UnixNano())
-	tokenHash := signup.HashToken(rawToken)
-	_, err = store.InsertToken(ctx, ident.ID, tokenHash, time.Now().Add(15*time.Minute))
-	if err != nil {
-		t.Fatalf("InsertToken: %v", err)
 	}
 
 	// Step 3: GET /auth/signup/verify?token=... → 200 + session cookie.
 	verifyResp := e2eRequest(t, app, "GET",
 		"/auth/signup/verify?token="+rawToken, "")
 	if verifyResp.StatusCode != 200 {
-		b := e2eBodyJSON(verifyResp)
+		b := e2eBodyJSON(t, verifyResp)
 		t.Fatalf("verify: status = %d, want 200; body = %v", verifyResp.StatusCode, b)
 	}
 
-	verifyBody := e2eBodyJSON(verifyResp)
+	verifyBody := e2eBodyJSON(t, verifyResp)
 	if verifyBody["verified"] != true {
 		t.Error("expected verified=true")
 	}
@@ -228,7 +239,7 @@ func TestE2E_RequestLink_Verify_Me(t *testing.T) {
 	if meResp.StatusCode != 200 {
 		t.Fatalf("me: status = %d, want 200", meResp.StatusCode)
 	}
-	meBody := e2eBodyJSON(meResp)
+	meBody := e2eBodyJSON(t, meResp)
 	if meBody["email"] != email {
 		t.Errorf("me email = %v, want %s", meBody["email"], email)
 	}
@@ -266,7 +277,7 @@ func TestE2E_ExpiredToken_Rejected(t *testing.T) {
 
 	resp := e2eRequest(t, app, "GET", "/auth/signup/verify?token="+rawToken, "")
 	if resp.StatusCode != 410 {
-		b := e2eBodyJSON(resp)
+		b := e2eBodyJSON(t, resp)
 		t.Fatalf("expired token: status = %d, want 410; body = %v", resp.StatusCode, b)
 	}
 }
@@ -308,7 +319,7 @@ func TestE2E_ReusedToken_Rejected(t *testing.T) {
 	if resp2.StatusCode != 410 {
 		t.Fatalf("reused token: status = %d, want 410", resp2.StatusCode)
 	}
-	b := e2eBodyJSON(resp2)
+	b := e2eBodyJSON(t, resp2)
 	if b["detail"] != "token already used" {
 		t.Errorf("detail = %v, want 'token already used'", b["detail"])
 	}
@@ -331,10 +342,13 @@ func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
 	mailer := &mockMailerE2E{}
 	app := newE2EApp(t, store, mailer, e2eCfg, rc)
 
-	// Flush rate limit keys scoped to the test IP (127.0.0.1 from httptest).
+	// Flush rate limit keys scoped to the test IP.
+	// Fiber test mode reports c.IP() as "0.0.0.0", which is what the
+	// rate-limit middleware hashes. Use the same IP here so cleanup matches.
 	// Use SCAN instead of KEYS — KEYS can be disabled or slow on managed Redis.
 	ctx := context.Background()
-	testIPHash := fmt.Sprintf("%x", sha256.Sum256([]byte("127.0.0.1")))[:16]
+	const fiberTestIP = "0.0.0.0"
+	testIPHash := fmt.Sprintf("%x", sha256.Sum256([]byte(fiberTestIP)))[:16]
 	rlPattern := fmt.Sprintf("iprl:%s:*", testIPHash)
 	if keys, err := scanRedisKeys(ctx, rc, rlPattern); err == nil && len(keys) > 0 {
 		rc.Del(ctx, keys...)
@@ -382,7 +396,7 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 	if resp.StatusCode != 503 {
 		t.Fatalf("signup disabled: status = %d, want 503", resp.StatusCode)
 	}
-	b := e2eBodyJSON(resp)
+	b := e2eBodyJSON(t, resp)
 	if b["detail"] != "signup is currently disabled" {
 		t.Errorf("detail = %v, want 'signup is currently disabled'", b["detail"])
 	}
@@ -392,6 +406,17 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 
 	// Verify and Me endpoints should still work (they don't check the flag).
 	// This ensures the flag only gates new signup requests.
+	verifyResp := e2eRequest(t, app, "GET", "/auth/signup/verify?token=dummy", "")
+	// Verify returns 401 (invalid token), NOT 503 — proving the flag doesn't block it.
+	if verifyResp.StatusCode == 503 {
+		t.Error("verify returned 503; the signup-disabled flag should not gate verify")
+	}
+
+	meResp := e2eRequest(t, app, "GET", "/auth/signup/me", "")
+	// Me returns 401 (no session cookie), NOT 503.
+	if meResp.StatusCode == 503 {
+		t.Error("me returned 503; the signup-disabled flag should not gate me")
+	}
 }
 
 // ── Test 6: Key regeneration ────────────────────────────────────────────────
