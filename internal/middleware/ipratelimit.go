@@ -20,6 +20,13 @@ const (
 	ipRateLimitMax = 10
 )
 
+// IPRateLimitConfig holds optional configuration for IPRateLimit.
+type IPRateLimitConfig struct {
+	// TimeNow overrides the clock used for window calculation.
+	// Defaults to time.Now when nil. Useful for deterministic tests.
+	TimeNow func() time.Time
+}
+
 // IPRateLimit returns a Fiber middleware that enforces per-IP rate limiting
 // using a Redis counter with a fixed window. Designed for public endpoints
 // (e.g. auth routes) that are not protected by Unkey API key auth.
@@ -29,13 +36,25 @@ const (
 // only, which is safe when Fiber's app-level ProxyHeader config handles
 // proxy trust.
 func IPRateLimit(redisClient *redis.Client, fallback zerolog.Logger, trustedProxies ...string) fiber.Handler {
+	return IPRateLimitWithConfig(redisClient, fallback, IPRateLimitConfig{}, trustedProxies...)
+}
+
+// IPRateLimitWithConfig is like IPRateLimit but accepts an IPRateLimitConfig
+// for overriding the clock (useful in tests).
+func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, cfg IPRateLimitConfig, trustedProxies ...string) fiber.Handler {
+	timeNow := cfg.TimeNow
+	if timeNow == nil {
+		timeNow = time.Now
+	}
+
 	return func(c *fiber.Ctx) error {
-		now := time.Now().Unix()
+		now := timeNow().Unix()
 		windowSec := int64(ipRateLimitWindow.Seconds())
 		ip := RealIP(c, trustedProxies...)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
 		windowIndex := now / windowSec
 		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)
+		windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
 
 		count, err := redisClient.Incr(c.Context(), windowKey).Result()
 		if err != nil {
@@ -44,18 +63,18 @@ func IPRateLimit(redisClient *redis.Client, fallback zerolog.Logger, trustedProx
 		}
 
 		if count == 1 {
-			if expErr := redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err(); expErr != nil {
+			// Use ExpireAt to align the key lifetime with the fixed window boundary,
+			// rather than Expire which could keep keys around for almost an extra window.
+			if expErr := redisClient.ExpireAt(c.Context(), windowKey, windowEnd).Err(); expErr != nil {
 				// Key has no TTL — will leak. Log but don't block the request.
 				l := logger.FromContext(c.Context(), fallback)
-				l.Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: Expire failed — key may have no TTL")
-				// Belt-and-suspenders: set absolute expiry at window end.
-				windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
-				_ = redisClient.ExpireAt(c.Context(), windowKey, windowEnd).Err()
+				l.Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: ExpireAt failed — key may have no TTL")
+				// Belt-and-suspenders: fall back to relative TTL.
+				_ = redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err()
 			}
 		}
 
 		if count > ipRateLimitMax {
-			windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
 			retryAfter := int(time.Until(windowEnd).Seconds())
 			if retryAfter < 0 {
 				retryAfter = 0

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -100,7 +101,18 @@ func main() {
 	var trustedProxies []string
 	if v := os.Getenv("TRUSTED_PROXY_CIDRS"); v != "" {
 		for _, cidr := range strings.Split(v, ",") {
-			trustedProxies = append(trustedProxies, strings.TrimSpace(cidr))
+			entry := strings.TrimSpace(cidr)
+			if entry == "" {
+				continue
+			}
+			// Accept either CIDR notation or plain IP.
+			if _, _, err := net.ParseCIDR(entry); err == nil {
+				trustedProxies = append(trustedProxies, entry)
+			} else if net.ParseIP(entry) != nil {
+				trustedProxies = append(trustedProxies, entry)
+			} else {
+				log.Warn().Str("entry", entry).Msg("TRUSTED_PROXY_CIDRS: skipping invalid entry")
+			}
 		}
 	}
 

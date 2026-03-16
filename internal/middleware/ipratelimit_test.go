@@ -15,28 +15,45 @@ import (
 	"llm-pricing-api/internal/middleware"
 )
 
-// ipWindowKey returns the expected Redis key for the given IP and current time.
-func ipWindowKey(ip string, now time.Time) string {
+// ipWindowKey returns the expected Redis key for the given IP and time.
+func ipWindowKey(ip string, t time.Time) string {
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
 	windowSec := int64((15 * time.Minute).Seconds())
-	windowIndex := now.Unix() / windowSec
+	windowIndex := t.Unix() / windowSec
 	return fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)
+}
+
+// fixedTime is a timestamp safely in the middle of a 15-minute window,
+// avoiding flakiness from boundary rollovers.
+var fixedTime = time.Date(2025, 6, 15, 12, 7, 30, 0, time.UTC)
+
+func fixedClock() time.Time { return fixedTime }
+
+// fixedWindowEnd returns the end of the 15-minute window containing fixedTime.
+func fixedWindowEnd() time.Time {
+	windowSec := int64((15 * time.Minute).Seconds())
+	windowIndex := fixedTime.Unix() / windowSec
+	return time.Unix((windowIndex+1)*windowSec, 0)
+}
+
+// rateLimitCfg returns an IPRateLimitConfig with the fixed clock.
+func rateLimitCfg() middleware.IPRateLimitConfig {
+	return middleware.IPRateLimitConfig{TimeNow: fixedClock}
 }
 
 // TestIPRateLimit_UnderLimit verifies that requests under the limit pass.
 func TestIPRateLimit_UnderLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
-	now := time.Now()
-	key := ipWindowKey("0.0.0.0", now)
+	key := ipWindowKey("0.0.0.0", fixedTime)
 
 	mock.ExpectIncr(key).SetVal(1)
-	mock.ExpectExpire(key, 15*time.Minute).SetVal(true)
+	mock.ExpectExpireAt(key, fixedWindowEnd()).SetVal(true)
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimitWithConfig(db, zerolog.Nop(), rateLimitCfg()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -57,8 +74,7 @@ func TestIPRateLimit_UnderLimit(t *testing.T) {
 // TestIPRateLimit_AtLimit verifies that the 10th request still passes.
 func TestIPRateLimit_AtLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
-	now := time.Now()
-	key := ipWindowKey("0.0.0.0", now)
+	key := ipWindowKey("0.0.0.0", fixedTime)
 
 	mock.ExpectIncr(key).SetVal(10)
 
@@ -66,7 +82,7 @@ func TestIPRateLimit_AtLimit(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimitWithConfig(db, zerolog.Nop(), rateLimitCfg()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -87,8 +103,7 @@ func TestIPRateLimit_AtLimit(t *testing.T) {
 // TestIPRateLimit_OverLimit verifies that the 11th request is blocked with 429.
 func TestIPRateLimit_OverLimit(t *testing.T) {
 	db, mock := redismock.NewClientMock()
-	now := time.Now()
-	key := ipWindowKey("0.0.0.0", now)
+	key := ipWindowKey("0.0.0.0", fixedTime)
 
 	mock.ExpectIncr(key).SetVal(11)
 
@@ -96,7 +111,7 @@ func TestIPRateLimit_OverLimit(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimitWithConfig(db, zerolog.Nop(), rateLimitCfg()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -121,8 +136,7 @@ func TestIPRateLimit_OverLimit(t *testing.T) {
 // TestIPRateLimit_RedisError_AllowsThrough verifies fail-open on Redis errors.
 func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 	db, mock := redismock.NewClientMock()
-	now := time.Now()
-	key := ipWindowKey("0.0.0.0", now)
+	key := ipWindowKey("0.0.0.0", fixedTime)
 
 	mock.ExpectIncr(key).SetErr(fmt.Errorf("redis: connection refused"))
 
@@ -130,7 +144,7 @@ func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimitWithConfig(db, zerolog.Nop(), rateLimitCfg()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -151,9 +165,8 @@ func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 // TestIPRateLimit_429_HasProblemJSON verifies RFC 7807 content type on 429.
 func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 	db, mock := redismock.NewClientMock()
-	now := time.Now()
 	// Fiber test mode reports c.IP() as "0.0.0.0".
-	key := ipWindowKey("0.0.0.0", now)
+	key := ipWindowKey("0.0.0.0", fixedTime)
 
 	mock.MatchExpectationsInOrder(false)
 	mock.ExpectIncr(key).SetVal(11)
@@ -162,7 +175,7 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimitWithConfig(db, zerolog.Nop(), rateLimitCfg()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -190,8 +203,7 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 func TestIPRateLimit_XForwardedFor(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	clientIP := "203.0.113.42"
-	now := time.Now()
-	key := ipWindowKey(clientIP, now)
+	key := ipWindowKey(clientIP, fixedTime)
 
 	mock.ExpectIncr(key).SetVal(11)
 
@@ -200,7 +212,7 @@ func TestIPRateLimit_XForwardedFor(t *testing.T) {
 		ErrorHandler:          api.ErrorHandler,
 	})
 	// Pass "0.0.0.0" as trusted proxy (Fiber test mode peer IP) so RealIP reads XFF.
-	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop(), "0.0.0.0"), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimitWithConfig(db, zerolog.Nop(), rateLimitCfg(), "0.0.0.0"), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
