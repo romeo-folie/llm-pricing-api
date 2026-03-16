@@ -144,7 +144,7 @@ func (m *mockStore) RevokeKey(_ context.Context, identityID, _ string) error {
 	return nil
 }
 
-func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
+func (m *mockStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
 	// Revoke old (best-effort, mirrors real implementation).
 	if oldProviderKeyID != "" {
 		if k, ok := m.keys[identityID]; ok && k.Status == "active" {
@@ -153,8 +153,8 @@ func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProvide
 			k.RevokedAt = &now
 		}
 	}
-	// Insert new.
-	return m.InsertKey(context.Background(), identityID, newProviderKeyID)
+	// Insert new — pass the caller's ctx so cancellation/deadlines propagate.
+	return m.InsertKey(ctx, identityID, newProviderKeyID)
 }
 
 // ─── Mock store tests ─────────────────────────────────────────────────────────

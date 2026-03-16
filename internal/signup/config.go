@@ -43,6 +43,12 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 	if secret == "" {
 		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET is required")
 	}
+	// Enforce a 32-byte minimum — a shorter HMAC key materially weakens token
+	// and session integrity. Fail fast so misconfigured deployments are caught
+	// at startup rather than at first request.
+	if len(secret) < 32 {
+		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(secret))
+	}
 
 	cfg := &HandlerConfig{
 		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),

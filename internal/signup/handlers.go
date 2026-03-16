@@ -55,15 +55,25 @@ type requestLinkBody struct {
 }
 
 // RequestLink accepts an email, applies abuse controls, and sends a magic-link.
-// Always returns 200 (no account enumeration).
+// Always returns 200 regardless of email validity or existence to prevent
+// account enumeration. Invalid or missing emails are rejected silently
+// (logged server-side only).
 func (h *Handlers) RequestLink(c *fiber.Ctx) error {
+	genericOK := func() error {
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"message": "If that email is valid, you'll receive a link shortly.",
+		})
+	}
+
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil || strings.TrimSpace(body.Email) == "" {
-		return api.NewBadRequest("email is required")
+		h.log.Warn().Msg("signup: request-link missing or unparseable email")
+		return genericOK()
 	}
 	email := strings.ToLower(strings.TrimSpace(body.Email))
 	if !isValidEmail(email) {
-		return api.NewBadRequest("invalid email address")
+		h.log.Warn().Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).Msg("signup: request-link invalid email")
+		return genericOK()
 	}
 
 	ip := c.IP()
@@ -75,9 +85,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 			Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).
 			Err(err).Msg("signup: request-link blocked")
 		// Deliberate: still return 200 to prevent enumeration via HTTP status.
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{
-			"message": "If that email is valid, you'll receive a link shortly.",
-		})
+		return genericOK()
 	}
 
 	identity, err := h.store.UpsertIdentity(c.Context(), email, hashValue(ip, h.cfg.SigningSecret), hashValue(c.Get("User-Agent"), h.cfg.SigningSecret))
@@ -110,9 +118,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	}
 
 	h.log.Info().Str("identity_id", identity.ID).Msg("signup: magic-link issued")
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "If that email is valid, you'll receive a link shortly.",
-	})
+	return genericOK()
 }
 
 // ─── GET /auth/signup/verify ──────────────────────────────────────────────────
@@ -142,8 +148,17 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 	}
 
 	if err := h.store.MarkEmailVerified(c.Context(), token.IdentityID); err != nil {
-		// Non-fatal — identity may already be verified.
-		h.log.Warn().Err(err).Str("identity_id", token.IdentityID).Msg("signup: mark verified returned error")
+		// ErrNotFound means the identity row is missing — do not mint a session
+		// for a non-existent identity (would create orphaned sessions and hide
+		// DB integrity issues).
+		if errors.Is(err, ErrNotFound) {
+			h.log.Error().Err(err).Str("identity_id", token.IdentityID).Msg("signup: identity not found during verify — rejecting")
+			return api.NewUnauthorized("verification failed")
+		}
+		// Any other unexpected DB error is also fatal — don't mint a session
+		// when we can't confirm the identity is verified.
+		h.log.Error().Err(err).Str("identity_id", token.IdentityID).Msg("signup: mark verified failed")
+		return api.NewInternalError("could not verify identity")
 	}
 
 	session := Session{
@@ -186,7 +201,11 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 		return api.NewUnauthorized("identity not found")
 	}
 
-	activeKey, _ := h.store.GetActiveKey(c.Context(), identity.ID)
+	activeKey, err := h.store.GetActiveKey(c.Context(), identity.ID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		h.log.Error().Err(err).Str("identity_id", identity.ID).Msg("signup: get active key failed in /me")
+		return api.NewInternalError("could not retrieve key status")
+	}
 
 	resp := fiber.Map{
 		"identity_id": identity.ID,

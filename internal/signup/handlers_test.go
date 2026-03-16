@@ -85,18 +85,20 @@ func doRequest(app *fiber.App, method, url string, body interface{}) *http.Respo
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 func TestRequestLink_MissingEmail(t *testing.T) {
+	// Always returns 200 to prevent account enumeration — even for missing email.
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
 	resp := doRequest(app, "POST", "/auth/signup/request-link", map[string]string{})
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 (enumeration guard), got %d", resp.StatusCode)
 	}
 }
 
 func TestRequestLink_InvalidEmail(t *testing.T) {
+	// Always returns 200 to prevent account enumeration — even for invalid email.
 	app := buildApp(newMock(), &noopMailer{}, &mockIssuer{})
 	resp := doRequest(app, "POST", "/auth/signup/request-link", map[string]string{"email": "notanemail"})
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 (enumeration guard), got %d", resp.StatusCode)
 	}
 }
 

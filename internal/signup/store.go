@@ -301,7 +301,7 @@ func (s *PgxStore) InsertKey(ctx context.Context, identityID, providerKeyID stri
 		if isPgUniqueViolation(err) {
 			return nil, ErrDuplicateActiveKey
 		}
-		return nil, err
+		return nil, fmt.Errorf("signup.InsertKey: %w", err)
 	}
 	return k, nil
 }

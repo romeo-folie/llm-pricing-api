@@ -29,6 +29,10 @@ type TokenConfig struct {
 //   - expiresAt: absolute expiry timestamp
 //   - magicLinkURL: the full verification URL to email the user
 func GenerateToken(cfg TokenConfig) (rawToken, tokenHash, magicLinkURL string, expiresAt time.Time, err error) {
+	if cfg.SigningSecret == "" {
+		err = fmt.Errorf("signup.GenerateToken: SigningSecret must not be empty")
+		return
+	}
 	// 32 random bytes → 43-char base64url string (no padding).
 	raw := make([]byte, 32)
 	if _, err = rand.Read(raw); err != nil {
@@ -62,6 +66,9 @@ func GenerateToken(cfg TokenConfig) (rawToken, tokenHash, magicLinkURL string, e
 // then returns the raw token and its SHA-256 hash for DB lookup.
 // Returns an error when the signature does not match.
 func ParseToken(signed, signingSecret string) (rawToken, tokenHash string, err error) {
+	if signingSecret == "" {
+		return "", "", fmt.Errorf("signup.ParseToken: signingSecret must not be empty")
+	}
 	// Split on the last '.' to separate payload from signature.
 	idx := len(signed) - 64 - 1 // hex(sha256) = 64 chars, preceded by '.'
 	if idx <= 0 || signed[idx] != '.' {
