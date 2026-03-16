@@ -123,9 +123,17 @@ func main() {
 		ErrorHandler: api.ErrorHandler,
 		// Only enable proxy trust when explicit CIDRs are configured.
 		// Without real CIDRs, trusting all proxies allows XFF spoofing.
+		// ProxyHeader is only set when trusted-proxy checking is active;
+		// setting it unconditionally lets clients spoof X-Forwarded-For
+		// even when EnableTrustedProxyCheck is false.
 		EnableTrustedProxyCheck: len(trustedProxies) > 0,
 		TrustedProxies:          trustedProxies,
-		ProxyHeader:             fiber.HeaderXForwardedFor,
+		ProxyHeader:             func() string {
+			if len(trustedProxies) > 0 {
+				return fiber.HeaderXForwardedFor
+			}
+			return ""
+		}(),
 	})
 
 	// Middleware order: security headers first, then OTel tracing, Prometheus

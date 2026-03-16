@@ -91,7 +91,7 @@ type requestLinkBody struct {
 // Always returns 200 with the same generic message to prevent account
 // enumeration — no indication whether the address is new or existing.
 func (h *Handler) RequestLink(c *fiber.Ctx) error {
-	log := logger.FromContext(c.UserContext(), h.log)
+	log := logger.FromContext(c.Context(), h.log)
 
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil {
@@ -164,6 +164,7 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	}
 
 	ctx := c.Context()
+	log := logger.FromContext(ctx, h.log)
 
 	// Hash the raw token before looking it up — the DB stores the hash, not
 	// the raw value, to prevent offline brute-force from a DB leak.
@@ -181,17 +182,20 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 		case errors.Is(err, signup.ErrTokenExpired):
 			return api.NewGone("token expired")
 		default:
+			log.Error().Err(err).Msg("auth: consume token failed")
 			return api.NewInternalError("internal error")
 		}
 	}
 
 	// Mark identity verified (idempotent for re-verify flows).
 	if err := h.store.MarkEmailVerified(ctx, tok.IdentityID); err != nil && !errors.Is(err, signup.ErrNotFound) {
+		log.Error().Err(err).Str("identity_id", tok.IdentityID).Msg("auth: mark email verified failed")
 		return api.NewInternalError("internal error")
 	}
 
 	ident, err := h.store.GetIdentityByID(ctx, tok.IdentityID)
 	if err != nil {
+		log.Error().Err(err).Str("identity_id", tok.IdentityID).Msg("auth: get identity failed")
 		return api.NewInternalError("internal error")
 	}
 
@@ -205,6 +209,7 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	}
 	sessionValue, err := signup.SignSession(h.cfg.SigningSecret, payload)
 	if err != nil {
+		log.Error().Err(err).Msg("auth: sign session failed")
 		return api.NewInternalError("internal error")
 	}
 	setSessionCookie(c, h.cfg.SignupSessionCookieName, sessionValue, h.cfg.SignupSessionTTLHours, h.cfg.SignupSessionSecure)
