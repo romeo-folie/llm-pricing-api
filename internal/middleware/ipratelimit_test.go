@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-redis/redismock/v9"
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/middleware"
@@ -35,7 +36,7 @@ func TestIPRateLimit_UnderLimit(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -65,7 +66,7 @@ func TestIPRateLimit_AtLimit(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -95,7 +96,7 @@ func TestIPRateLimit_OverLimit(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -129,7 +130,7 @@ func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -161,7 +162,7 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db), func(c *fiber.Ctx) error {
+	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop()), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -184,7 +185,8 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 	}
 }
 
-// TestIPRateLimit_XForwardedFor uses the X-Forwarded-For header for IP hashing.
+// TestIPRateLimit_XForwardedFor verifies that when trustedProxies are provided,
+// the XFF header is honoured for IP hashing (leftmost entry = client IP).
 func TestIPRateLimit_XForwardedFor(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	clientIP := "203.0.113.42"
@@ -197,7 +199,8 @@ func TestIPRateLimit_XForwardedFor(t *testing.T) {
 		DisableStartupMessage: true,
 		ErrorHandler:          api.ErrorHandler,
 	})
-	app.Get("/test", middleware.IPRateLimit(db), func(c *fiber.Ctx) error {
+	// Pass "0.0.0.0" as trusted proxy (Fiber test mode peer IP) so RealIP reads XFF.
+	app.Get("/test", middleware.IPRateLimit(db, zerolog.Nop(), "0.0.0.0"), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 

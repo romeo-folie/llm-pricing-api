@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -92,15 +93,26 @@ func main() {
 	reviewStore := review.NewPgxStore(db)
 	reviewHandler := review.NewHandler(reviewStore)
 
+	// Read trusted proxies from env var TRUSTED_PROXY_CIDRS (comma-separated).
+	// Default "0.0.0.0/0" trusts all proxies (safe only when TrustedProxyCheck is
+	// disabled or you control the network; restrict to actual LB CIDRs in production).
+	trustedProxies := []string{"0.0.0.0/0"}
+	if v := os.Getenv("TRUSTED_PROXY_CIDRS"); v != "" {
+		trustedProxies = strings.Split(v, ",")
+		for i := range trustedProxies {
+			trustedProxies[i] = strings.TrimSpace(trustedProxies[i])
+		}
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName: "llm-pricing-api",
 		// ErrorHandler serialises all errors as RFC 7807 Problem Details
 		// with Content-Type: application/problem+json.
 		ErrorHandler: api.ErrorHandler,
-		// Trust all proxies — safe when running behind Railway/Fly load balancer.
-		// Ensures c.IP() returns the real client IP from X-Forwarded-For.
+		// Trust proxies listed in TRUSTED_PROXY_CIDRS (defaults to 0.0.0.0/0).
+		// Restrict to actual LB CIDRs in production to prevent XFF spoofing.
 		EnableTrustedProxyCheck: true,
-		TrustedProxies:          []string{"0.0.0.0/0"},
+		TrustedProxies:          trustedProxies,
 		ProxyHeader:             fiber.HeaderXForwardedFor,
 	})
 
