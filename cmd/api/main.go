@@ -49,11 +49,9 @@ func main() {
 	// needed by the worker binary, so they are validated here rather than in
 	// config.Load() (which is shared). This prevents the worker from failing to
 	// start when these vars are absent from its environment.
-	appEnv := os.Getenv("APP_ENV")
-	if appEnv == "" {
-		appEnv = "development"
-	}
-	if appEnv != "development" {
+	// cfg.AppEnv already has the "development" default applied by config.Load();
+	// no need to re-read os.Getenv here.
+	if cfg.AppEnv != "development" {
 		if cfg.ResendAPIKey == "" {
 			fmt.Fprintf(os.Stderr, "config error: RESEND_API_KEY is required in non-development environments\n")
 			os.Exit(1)
