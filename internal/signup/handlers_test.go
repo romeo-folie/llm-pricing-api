@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -166,8 +167,14 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 
 	// Extract the signed token from the URL and parse it.
-	idx := len("http://localhost/signup/verify?token=")
-	signed := magicLink[idx:]
+	parsedURL, err := url.Parse(magicLink)
+	if err != nil {
+		t.Fatalf("parse magic link URL: %v", err)
+	}
+	signed := parsedURL.Query().Get("token")
+	if signed == "" {
+		t.Fatal("token query param missing from magic link")
+	}
 	_, parsedHash, err := signup.ParseToken(signed, cfg.SigningSecret)
 	if err != nil {
 		t.Fatalf("parse token: %v", err)
@@ -185,15 +192,21 @@ func TestTokenParseRejectsBadSignature(t *testing.T) {
 		Path:          "/signup/verify",
 	}
 	_, _, magicLink, _, _ := signup.GenerateToken(cfg)
-	idx := len("http://localhost/signup/verify?token=")
-	signed := magicLink[idx:]
+	parsedURL, err := url.Parse(magicLink)
+	if err != nil {
+		t.Fatalf("parse magic link URL: %v", err)
+	}
+	signed := parsedURL.Query().Get("token")
+	if signed == "" {
+		t.Fatal("token query param missing from magic link")
+	}
 
 	// Tamper with the signature
 	runes := []rune(signed)
 	runes[len(runes)-1] ^= 'x'
 	tampered := string(runes)
 
-	_, _, err := signup.ParseToken(tampered, cfg.SigningSecret)
+	_, _, err = signup.ParseToken(tampered, cfg.SigningSecret)
 	if err == nil {
 		t.Error("expected error for tampered token")
 	}

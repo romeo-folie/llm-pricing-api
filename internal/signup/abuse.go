@@ -73,7 +73,10 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 	if g.cfg.ResendCooldown > 0 {
 		key := fmt.Sprintf("signup:cooldown:email:%s", hashValue(normalizeEmail(email), g.cfg.SigningSecret))
 		set, err := g.rdb.SetNX(ctx, key, "1", g.cfg.ResendCooldown).Result()
-		if err == nil && !set {
+		if err != nil {
+			// Redis failure → fail open (don't block signups due to cache outage).
+			g.log.Error().Err(err).Msg("signup: resend-cooldown Redis error — failing open")
+		} else if !set {
 			return ErrResendCooldown
 		}
 	}

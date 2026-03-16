@@ -131,6 +131,10 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 	if signed == "" {
 		return api.NewBadRequest("token is required")
 	}
+	const maxTokenLen = 2048
+	if len(signed) > maxTokenLen {
+		return api.NewBadRequest("invalid token")
+	}
 
 	_, tokenHash, err := ParseToken(signed, h.cfg.SigningSecret)
 	if err != nil {
