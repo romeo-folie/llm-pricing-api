@@ -72,7 +72,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 		h.log.Warn().Msg("signup: request-link missing or unparseable email")
 		return genericOK()
 	}
-	email := strings.ToLower(strings.TrimSpace(body.Email))
+	email := normalizeEmail(body.Email)
 	if !isValidEmail(email) {
 		h.log.Warn().Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).Msg("signup: request-link invalid email")
 		return genericOK()
@@ -96,13 +96,12 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 		return api.NewInternalError("could not process request")
 	}
 
-	rawToken, tokenHash, magicLinkURL, expiresAt, err := GenerateToken(TokenConfig{
+	_, tokenHash, magicLinkURL, expiresAt, err := GenerateToken(TokenConfig{
 		SigningSecret: h.cfg.SigningSecret,
 		TTL:           h.cfg.TokenTTL,
 		BaseURL:       h.cfg.MagicLinkBase,
 		Path:          h.cfg.MagicLinkPath,
 	})
-	_ = rawToken // only stored as hash
 	if err != nil {
 		h.log.Error().Err(err).Msg("signup: token generation failed")
 		return api.NewInternalError("could not generate link")
@@ -200,7 +199,11 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 
 	identity, err := h.store.GetIdentityByID(c.Context(), sess.IdentityID)
 	if err != nil {
-		return api.NewUnauthorized("identity not found")
+		if errors.Is(err, ErrNotFound) {
+			return api.NewUnauthorized("identity not found")
+		}
+		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: get identity failed in /me")
+		return api.NewInternalError("could not retrieve identity")
 	}
 
 	activeKey, err := h.store.GetActiveKey(c.Context(), identity.ID)
@@ -218,7 +221,7 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 	if activeKey != nil {
 		resp["key_created_at"] = activeKey.CreatedAt
 	}
-	return c.JSON(fiber.Map{"data": resp})
+	return api.OK(c, resp, api.TrustMeta{})
 }
 
 // ─── POST /auth/signup/issue-key ──────────────────────────────────────────────
@@ -242,13 +245,11 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 	existingKey, err := h.store.GetActiveKey(c.Context(), sess.IdentityID)
 	if err == nil {
 		// Key exists — return metadata only (no plaintext re-reveal).
-		return c.JSON(fiber.Map{
-			"data": fiber.Map{
-				"status":      "existing",
-				"created_at":  existingKey.CreatedAt,
-				"message":     "You already have an active API key. Use regenerate-key to replace it.",
-			},
-		})
+		return api.OK(c, fiber.Map{
+			"status":     "existing",
+			"created_at": existingKey.CreatedAt,
+			"message":    "You already have an active API key. Use regenerate-key to replace it.",
+		}, api.TrustMeta{})
 	}
 	if !errors.Is(err, ErrNotFound) {
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: get active key failed")
@@ -280,26 +281,22 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 			if gErr != nil {
 				return api.NewInternalError("could not retrieve existing key")
 			}
-			return c.JSON(fiber.Map{
-				"data": fiber.Map{
-					"status":     "existing",
-					"created_at": existing.CreatedAt,
-					"message":    "You already have an active API key. Use regenerate-key to replace it.",
-				},
-			})
+			return api.OK(c, fiber.Map{
+				"status":     "existing",
+				"created_at": existing.CreatedAt,
+				"message":    "You already have an active API key. Use regenerate-key to replace it.",
+			}, api.TrustMeta{})
 		}
 		h.log.Error().Err(err).Str("identity_id", sess.IdentityID).Msg("signup: insert key registry failed")
 		return api.NewInternalError("could not persist key")
 	}
 
 	h.log.Info().Str("identity_id", sess.IdentityID).Msg("signup: API key issued")
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"data": fiber.Map{
-			"status":  "issued",
-			"key":     plaintext, // shown once only
-			"message": "Save this key — it will not be shown again.",
-		},
-	})
+	return api.Created(c, fiber.Map{
+		"status":  "issued",
+		"key":     plaintext, // shown once only
+		"message": "Save this key — it will not be shown again.",
+	}, api.TrustMeta{})
 }
 
 // ─── POST /auth/signup/regenerate-key ─────────────────────────────────────────
@@ -396,13 +393,11 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 	}
 
 	h.log.Info().Str("identity_id", sess.IdentityID).Msg("signup: API key regenerated")
-	return c.JSON(fiber.Map{
-		"data": fiber.Map{
-			"status":  "regenerated",
-			"key":     plaintext,
-			"message": "Save this key — it will not be shown again.",
-		},
-	})
+	return api.OK(c, fiber.Map{
+		"status":  "regenerated",
+		"key":     plaintext,
+		"message": "Save this key — it will not be shown again.",
+	}, api.TrustMeta{})
 }
 
 // ─── Session middleware ───────────────────────────────────────────────────────

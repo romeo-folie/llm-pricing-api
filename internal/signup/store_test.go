@@ -154,7 +154,7 @@ func (m *mockStore) RevokeKey(_ context.Context, identityID, providerKeyID strin
 func (m *mockStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
 	// Revoke old (best-effort, mirrors real implementation).
 	if oldProviderKeyID != "" {
-		if k, ok := m.keys[identityID]; ok && k.Status == "active" {
+		if k, ok := m.keys[identityID]; ok && k.Status == "active" && k.ProviderKeyID == oldProviderKeyID {
 			now := time.Now()
 			k.Status = "revoked"
 			k.RevokedAt = &now

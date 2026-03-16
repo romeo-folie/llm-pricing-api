@@ -16,6 +16,6 @@ func hashValue(s, secret string) string {
 		return ""
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(s))
+	_, _ = mac.Write([]byte(s))
 	return hex.EncodeToString(mac.Sum(nil))
 }
