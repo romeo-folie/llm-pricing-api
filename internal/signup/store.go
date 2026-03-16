@@ -123,7 +123,11 @@ func (s *PgxStore) UpsertIdentity(ctx context.Context, email, ipHash, uaHash str
 		RETURNING id, email, email_verified_at, signup_ip_hash, signup_ua_hash, created_at, updated_at`,
 		email, nullStr(ipHash), nullStr(uaHash),
 	)
-	return scanIdentity(row)
+	ident, err := scanIdentity(row)
+	if err != nil {
+		return nil, fmt.Errorf("signup.UpsertIdentity: %w", err)
+	}
+	return ident, nil
 }
 
 // GetIdentityByEmail returns the identity for the given (normalized) email.
@@ -239,7 +243,8 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 		return nil, ErrTokenExpired
 	}
 
-	_, err = tx.Exec(ctx, `UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1`, t.ID)
+	var usedAt time.Time
+	err = tx.QueryRow(ctx, `UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1 RETURNING used_at`, t.ID).Scan(&usedAt)
 	if err != nil {
 		return nil, fmt.Errorf("signup.ConsumeToken: mark used: %w", err)
 	}
@@ -247,7 +252,7 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("signup.ConsumeToken: commit: %w", err)
 	}
-	t.UsedAt = &serverNow
+	t.UsedAt = &usedAt
 	return &t, nil
 }
 

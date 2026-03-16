@@ -20,6 +20,9 @@ type Session struct {
 
 // EncodeSession returns a signed cookie value for the given session.
 func EncodeSession(s Session, secret string) (string, error) {
+	if secret == "" {
+		return "", fmt.Errorf("signup.EncodeSession: secret must not be empty")
+	}
 	payload := fmt.Sprintf("%s:%d", s.IdentityID, s.ExpiresAt.Unix())
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(payload))
 
@@ -34,6 +37,9 @@ func EncodeSession(s Session, secret string) (string, error) {
 // Returns ErrSessionInvalid if the signature is bad, or ErrSessionExpired if
 // the session has passed its TTL.
 func DecodeSession(value, secret string) (*Session, error) {
+	if secret == "" {
+		return nil, fmt.Errorf("signup.DecodeSession: secret must not be empty")
+	}
 	idx := strings.LastIndex(value, ".")
 	if idx < 0 {
 		return nil, ErrSessionInvalid

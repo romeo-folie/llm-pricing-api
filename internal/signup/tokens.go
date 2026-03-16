@@ -49,8 +49,7 @@ func GenerateToken(cfg TokenConfig) (rawToken, tokenHash, magicLinkURL string, e
 	signed := rawToken + "." + sig
 
 	// SHA-256 of the raw token (without the signature) is what we store.
-	h := sha256.Sum256([]byte(rawToken))
-	tokenHash = hex.EncodeToString(h[:])
+	tokenHash = HashToken(rawToken)
 
 	ttl := cfg.TTL
 	if ttl <= 0 {
@@ -85,6 +84,5 @@ func ParseToken(signed, signingSecret string) (rawToken, tokenHash string, err e
 		return "", "", fmt.Errorf("signup: invalid token signature")
 	}
 
-	h := sha256.Sum256([]byte(raw))
-	return raw, hex.EncodeToString(h[:]), nil
+	return raw, HashToken(raw), nil
 }

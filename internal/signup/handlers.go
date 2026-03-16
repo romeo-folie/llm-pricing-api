@@ -72,7 +72,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	}
 	email := strings.ToLower(strings.TrimSpace(body.Email))
 	if !isValidEmail(email) {
-		h.log.Warn().Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).Msg("signup: request-link invalid email")
+		h.log.Warn().Str("email_hash", truncate(HashToken(email), 12)).Msg("signup: request-link invalid email")
 		return genericOK()
 	}
 
@@ -81,16 +81,16 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 		// Log the specific reason internally but return a generic response to
 		// avoid leaking which control was triggered.
 		h.log.Warn().
-			Str("ip_hash", truncate(hashValue(ip, h.cfg.SigningSecret), 12)).
-			Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).
+			Str("ip_hash", truncate(HashToken(ip), 12)).
+			Str("email_hash", truncate(HashToken(email), 12)).
 			Err(err).Msg("signup: request-link blocked")
 		// Deliberate: still return 200 to prevent enumeration via HTTP status.
 		return genericOK()
 	}
 
-	identity, err := h.store.UpsertIdentity(c.Context(), email, hashValue(ip, h.cfg.SigningSecret), hashValue(c.Get("User-Agent"), h.cfg.SigningSecret))
+	identity, err := h.store.UpsertIdentity(c.Context(), email, HashToken(ip), HashToken(c.Get("User-Agent")))
 	if err != nil {
-		h.log.Error().Err(err).Str("email", email).Msg("signup: upsert identity failed")
+		h.log.Error().Err(err).Str("email_hash", truncate(HashToken(email), 12)).Msg("signup: upsert identity failed")
 		return api.NewInternalError("could not process request")
 	}
 
@@ -113,7 +113,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 
 	ttlMinutes := int(h.cfg.TokenTTL.Minutes())
 	if err := h.mailer.SendMagicLink(c.Context(), email, magicLinkURL, ttlMinutes); err != nil {
-		h.log.Error().Err(err).Str("email", email).Msg("signup: email delivery failed")
+		h.log.Error().Err(err).Str("email_hash", truncate(HashToken(email), 12)).Msg("signup: email delivery failed")
 		// Don't expose delivery failure — return success anyway.
 	}
 
@@ -134,7 +134,7 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 	_, tokenHash, err := ParseToken(signed, h.cfg.SigningSecret)
 	if err != nil {
 		// Log a hash-derived prefix — never log raw or truncated credential material.
-		h.log.Warn().Str("token_hmac_prefix", truncate(hashValue(signed, h.cfg.SigningSecret), 12)).Err(err).Msg("signup: token parse failed")
+		h.log.Warn().Str("token_hmac_hash_prefix", truncate(HashToken(signed), 12)).Err(err).Msg("signup: token parse failed")
 		return api.NewUnauthorized("invalid or expired link")
 	}
 
@@ -226,6 +226,14 @@ func (h *Handlers) IssueKey(c *fiber.Ctx) error {
 	sess, ok := sessionFromCtx(c)
 	if !ok {
 		return api.NewUnauthorized("authentication required")
+	}
+
+	// Verify identity exists before performing any provider actions.
+	if _, err := h.store.GetIdentityByID(c.Context(), sess.IdentityID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return api.NewUnauthorized("identity not found")
+		}
+		return api.NewInternalError("could not verify identity")
 	}
 
 	// Return existing key metadata if one already exists.
