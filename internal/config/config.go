@@ -113,7 +113,7 @@ func Load() (*Config, error) {
 	}
 	signupEnabled, err := getEnvBool("SIGNUP_ENABLED", true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid SIGNUP_ENABLED: %w", err)
 	}
 
 	return &Config{
