@@ -306,6 +306,14 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 		return api.NewUnauthorized("authentication required")
 	}
 
+	// Verify identity exists before performing any provider actions.
+	if _, err := h.store.GetIdentityByID(c.Context(), sess.IdentityID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return api.NewUnauthorized("identity not found")
+		}
+		return api.NewInternalError("could not verify identity")
+	}
+
 	if err := h.guard.CheckRegenerateKey(c.Context(), sess.IdentityID); err != nil {
 		return api.NewTooManyRequests(err.Error())
 	}

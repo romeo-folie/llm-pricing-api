@@ -27,24 +27,28 @@ func newMock() *mockStore {
 }
 
 func (m *mockStore) UpsertIdentity(_ context.Context, email, ipHash, uaHash string) (*signup.Identity, error) {
-	key := strings.ToLower(email) // normalize to lower-case, matching production store
-	if id, ok := m.identities[key]; ok {
+	email = strings.ToLower(strings.TrimSpace(email)) // normalize, matching production store
+	if email == "" {
+		return nil, errors.New("signup.UpsertIdentity: email must not be empty")
+	}
+	if id, ok := m.identities[email]; ok {
 		return id, nil
 	}
 	id := &signup.Identity{
-		ID:        "id-" + key,
+		ID:        "id-" + email,
 		Email:     email,
 		IPHash:    ipHash,
 		UAHash:    uaHash,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	m.identities[key] = id
+	m.identities[email] = id
 	return id, nil
 }
 
 func (m *mockStore) GetIdentityByEmail(_ context.Context, email string) (*signup.Identity, error) {
-	id, ok := m.identities[strings.ToLower(email)] // normalize, matching production
+	email = strings.ToLower(strings.TrimSpace(email)) // normalize, matching production
+	id, ok := m.identities[email]
 	if !ok {
 		return nil, signup.ErrNotFound
 	}
