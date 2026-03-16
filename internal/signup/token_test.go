@@ -21,8 +21,14 @@ func TestGenerateRawToken_NotEmpty(t *testing.T) {
 }
 
 func TestGenerateRawToken_Unique(t *testing.T) {
-	tok1, _ := signup.GenerateRawToken()
-	tok2, _ := signup.GenerateRawToken()
+	tok1, err := signup.GenerateRawToken()
+	if err != nil {
+		t.Fatalf("GenerateRawToken: %v", err)
+	}
+	tok2, err := signup.GenerateRawToken()
+	if err != nil {
+		t.Fatalf("GenerateRawToken: %v", err)
+	}
 	if tok1 == tok2 {
 		t.Error("two generated tokens must not be equal")
 	}

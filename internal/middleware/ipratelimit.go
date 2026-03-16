@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -37,7 +38,10 @@ func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 		}
 
 		if count == 1 {
-			_ = redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err()
+			if expErr := redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err(); expErr != nil {
+				// Key has no TTL — will leak. Log but don't block the request.
+				log.Printf("ipratelimit: Expire failed for key %s: %v", windowKey, expErr)
+			}
 		}
 
 		if count > ipRateLimitMax {
