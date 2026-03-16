@@ -22,10 +22,16 @@ import (
 
 // huggingFaceScrapeTimeout is the maximum wall-clock time allowed for a single
 // HuggingFace scrape. The HuggingFace API returns up to 500 large model objects
-// and has been observed stalling mid-body for minutes at a time. An 80s deadline
-// sits comfortably under the 90s asynq task timeout (asynq.Timeout option) so
-// that a context.DeadlineExceeded error surfaces cleanly in logs rather than
-// the less informative task-cancelled message asynq emits on its own timeout.
+// and has been observed stalling mid-body for minutes at a time.
+//
+// Timeout layering (innermost → outermost):
+//   - 80s: this handler deadline (context.WithTimeout in HandleHuggingFaceScrape)
+//   - 90s: http.Client.Timeout in huggingface.New() — fires after handler deadline
+//   - 90s: asynq.Timeout option on the task registration
+//
+// The http.Client.Timeout is intentionally set to 90s (above this deadline) so that
+// the handler context cancellation fires first and the error surfaces as
+// context.DeadlineExceeded in logs, rather than the less specific http.Client timeout.
 const huggingFaceScrapeTimeout = 80 * time.Second
 
 // Handlers holds the shared dependencies for all asynq task handler functions.

@@ -46,7 +46,13 @@ type Scraper struct {
 func New(client *http.Client) *Scraper {
 	if client == nil {
 		client = &http.Client{
-			Timeout:   60 * time.Second,
+			// 90s: matches the asynq task-level timeout so the http.Client never
+			// fires before the handler-level 80s deadline (huggingFaceScrapeTimeout
+			// in internal/worker/handlers.go). Timeout ordering from innermost to
+			// outermost: 80s handler deadline → 90s http.Client → 90s asynq task.
+			// Without this, the old 60s client timeout would fire before the 80s
+			// handler deadline, making the handler deadline a no-op in practice.
+			Timeout:   90 * time.Second,
 			Transport: scraper.NewSSRFSafeTransport(),
 			// CheckRedirect provides a fast, early-exit block for redirect URLs
 			// that point to private IPs — defense-in-depth alongside DialContext.
