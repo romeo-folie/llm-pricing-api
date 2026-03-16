@@ -56,9 +56,10 @@ type requestLinkBody struct {
 }
 
 // RequestLink accepts an email, applies abuse controls, and sends a magic-link.
-// Always returns 200 regardless of email validity or existence to prevent
-// account enumeration. Invalid or missing emails are rejected silently
-// (logged server-side only).
+// Returns 200 for user-facing paths (missing/invalid email, abuse blocks) to
+// prevent account enumeration. Internal errors (DB, token generation) return
+// 500 via ProblemDetails — these are not user-controllable and do not leak
+// whether an email exists.
 func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	genericOK := func() error {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{

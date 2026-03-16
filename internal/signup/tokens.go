@@ -71,7 +71,7 @@ func ParseToken(signed, signingSecret string) (rawToken, tokenHash string, err e
 	// Split on the last '.' to separate payload from signature.
 	idx := len(signed) - 64 - 1 // hex(sha256) = 64 chars, preceded by '.'
 	if idx <= 0 || signed[idx] != '.' {
-		return "", "", fmt.Errorf("signup: malformed token")
+		return "", "", fmt.Errorf("signup.ParseToken: malformed token")
 	}
 	raw := signed[:idx]
 	sig := signed[idx+1:]
@@ -81,7 +81,7 @@ func ParseToken(signed, signingSecret string) (rawToken, tokenHash string, err e
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(sig), []byte(expected)) {
-		return "", "", fmt.Errorf("signup: invalid token signature")
+		return "", "", fmt.Errorf("signup.ParseToken: invalid token signature")
 	}
 
 	return raw, HashToken(raw), nil

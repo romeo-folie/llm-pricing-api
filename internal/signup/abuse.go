@@ -104,10 +104,6 @@ var ErrRegenerateCooldown = fmt.Errorf("key regeneration is on cooldown — try 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
 // isDisposableDomain checks against a minimal hardcoded denylist of commonly
 // abused disposable email services. Expand as needed.
 var disposableDomains = map[string]bool{
