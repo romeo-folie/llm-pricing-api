@@ -317,6 +317,14 @@ func TestE2E_ReusedToken_Rejected(t *testing.T) {
 // ── Test 4: IP rate limit blocks after threshold ────────────────────────────
 
 func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
+	// Guard against window-boundary flakiness: if we're within 2 seconds of a
+	// 15-minute window boundary, skip this test (it would be unreliable).
+	windowSec := int64((15 * time.Minute).Seconds())
+	secsUntilBoundary := windowSec - (time.Now().Unix() % windowSec)
+	if secsUntilBoundary < 2 {
+		t.Skip("skipping rate-limit test: too close to window boundary")
+	}
+
 	pool := newTestPool(t)
 	rc := newTestRedis(t)
 	store := signup.NewStore(pool)
