@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,11 +22,13 @@ import (
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
+	"llm-pricing-api/internal/auth"
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/logger"
+	"llm-pricing-api/internal/mailer"
 	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/review"
@@ -90,11 +94,38 @@ func main() {
 	reviewStore := review.NewPgxStore(db)
 	reviewHandler := review.NewHandler(reviewStore)
 
+	// Read trusted proxies from env var TRUSTED_PROXY_CIDRS (comma-separated).
+	// When unset, EnableTrustedProxyCheck is disabled and c.IP() returns the
+	// peer address directly. Set TRUSTED_PROXY_CIDRS to enable proxy-aware IP
+	// extraction (e.g. "10.0.0.0/8,172.16.0.0/12" for RFC 1918 LB ranges).
+	var trustedProxies []string
+	if v := os.Getenv("TRUSTED_PROXY_CIDRS"); v != "" {
+		for _, cidr := range strings.Split(v, ",") {
+			entry := strings.TrimSpace(cidr)
+			if entry == "" {
+				continue
+			}
+			// Accept either CIDR notation or plain IP.
+			if _, _, err := net.ParseCIDR(entry); err == nil {
+				trustedProxies = append(trustedProxies, entry)
+			} else if net.ParseIP(entry) != nil {
+				trustedProxies = append(trustedProxies, entry)
+			} else {
+				log.Warn().Str("entry", entry).Msg("TRUSTED_PROXY_CIDRS: skipping invalid entry")
+			}
+		}
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName: "llm-pricing-api",
 		// ErrorHandler serialises all errors as RFC 7807 Problem Details
 		// with Content-Type: application/problem+json.
 		ErrorHandler: api.ErrorHandler,
+		// Only enable proxy trust when explicit CIDRs are configured.
+		// Without real CIDRs, trusting all proxies allows XFF spoofing.
+		EnableTrustedProxyCheck: len(trustedProxies) > 0,
+		TrustedProxies:          trustedProxies,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
 	})
 
 	// Middleware order: security headers first, then OTel tracing, Prometheus
@@ -141,24 +172,24 @@ func main() {
 		middleware.RateLimit(redisClient),
 	)
 
+	// Register magic-link signup auth routes (public — no Unkey required).
+	// An IP-based rate limiter is applied to the auth group to prevent abuse.
+	signupStore := signup.NewStore(db)
+	ml := mailer.New(cfg.ResendAPIKey, cfg.EmailFrom)
+	authHandler := auth.New(signupStore, ml, auth.Config{
+		SigningSecret:           cfg.MagicLinkSigningSecret,
+		MagicLinkTTLMinutes:     cfg.MagicLinkTTLMinutes,
+		MagicLinkBaseURL:        cfg.MagicLinkBaseURL,
+		MagicLinkPath:           cfg.MagicLinkPath,
+		SignupSessionCookieName: cfg.SignupSessionCookieName,
+		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
+		SignupSessionSecure:     cfg.SignupSessionSecure,
+	}, log)
+	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
+	auth.Register(authGroup, authHandler)
+
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)
-
-	// Register free-key signup routes when SIGNUP_ENABLED=true.
-	if cfg.SignupEnabled {
-		signupCfg, err := signup.LoadHandlerConfig()
-		if err != nil {
-			log.Fatal().Err(err).Msg("signup config error")
-		}
-		signupStore := signup.NewStore(db)
-		signupMailer := signup.NewResendMailer(signupCfg.ResendAPIKey, signupCfg.EmailFrom)
-		signupIssuer := signup.NewUnkeyIssuer(signupCfg.UnkeyRootKey, signupCfg.UnkeyAPIID)
-		signupGuard := signup.NewAbuseGuard(redisClient, signupCfg, log)
-		signupHandlers := signup.NewHandlers(signupStore, signupMailer, signupIssuer, signupGuard, signupCfg, log)
-		authGroup := app.Group("/auth/signup")
-		signupHandlers.Register(authGroup)
-		log.Info().Msg("signup endpoints enabled at /auth/signup")
-	}
 
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)

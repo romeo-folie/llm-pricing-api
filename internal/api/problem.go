@@ -142,6 +142,16 @@ func NewConflict(detail string) *ProblemDetail {
 	}
 }
 
+// NewGone returns a 410 Gone ProblemDetail.
+func NewGone(detail string) *ProblemDetail {
+	return &ProblemDetail{
+		Type:   problemTypeBase + "gone",
+		Title:  "Gone",
+		Status: fiber.StatusGone,
+		Detail: detail,
+	}
+}
+
 // NewInternalError returns a 500 Internal Server Error ProblemDetail.
 // The detail message is intentionally generic to avoid leaking implementation details.
 func NewInternalError(detail string) *ProblemDetail {

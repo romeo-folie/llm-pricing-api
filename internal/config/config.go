@@ -1,27 +1,12 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
 )
-
-// parseBoolEnv returns the boolean value of the named env var using
-// strconv.ParseBool (accepts "1", "t", "TRUE", "true", etc.).
-// Returns the default when the variable is empty. Returns an error when the
-// variable is non-empty but not a valid boolean — this prevents typos like
-// "treu" from silently disabling features.
-func parseBoolEnv(key string, def bool) (bool, error) {
-	val := os.Getenv(key)
-	if val == "" {
-		return def, nil
-	}
-	b, err := strconv.ParseBool(val)
-	if err != nil {
-		return false, fmt.Errorf("config: %s=%q is not a valid boolean: %w", key, val, err)
-	}
-	return b, nil
-}
 
 type Config struct {
 	DatabaseURL      string
@@ -44,10 +29,33 @@ type Config struct {
 	// MetricsPort is the port for the internal Prometheus /metrics HTTP server.
 	// Defaults to "9091". Set to empty to disable.
 	MetricsPort string
-	// SignupEnabled controls whether the free-key signup endpoints are mounted.
-	// Accepts any value recognised by strconv.ParseBool (e.g. "true", "TRUE", "1").
-	// Defaults to false (off by default until DNS/Resend configured).
-	SignupEnabled bool
+
+	// ── Magic-link signup (Epic #69) ─────────────────────────────────────────
+
+	// ResendAPIKey is the Resend API key used to send magic-link emails.
+	ResendAPIKey string
+	// EmailFrom is the sender address for outbound magic-link emails.
+	// Example: "LLMRates <noreply@llmrates.live>"
+	EmailFrom string
+	// MagicLinkSigningSecret is a random secret used to HMAC-sign session
+	// cookies. Token hashing uses plain SHA-256 (see signup.HashToken).
+	MagicLinkSigningSecret string
+	// MagicLinkTTLMinutes is the lifetime of a magic-link token. Defaults to 15.
+	MagicLinkTTLMinutes int
+	// MagicLinkBaseURL is the public base URL of the site (no trailing slash).
+	// Example: "https://llmrates.live"
+	MagicLinkBaseURL string
+	// MagicLinkPath is the path the verify endpoint lives at.
+	// Example: "/signup/verify"
+	MagicLinkPath string
+	// SignupSessionCookieName is the name of the session cookie set after
+	// successful verification. Defaults to "llmrates_signup".
+	SignupSessionCookieName string
+	// SignupSessionTTLHours is the lifetime of the session cookie. Defaults to 24.
+	SignupSessionTTLHours int
+	// SignupSessionSecure controls the Secure flag on the session cookie.
+	// Defaults to true; set to false only in local dev (HTTP).
+	SignupSessionSecure bool
 }
 
 // Load reads configuration from environment variables.
@@ -68,9 +76,35 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
-	signupEnabled, err := parseBoolEnv("SIGNUP_ENABLED", false)
+	resendAPIKey := os.Getenv("RESEND_API_KEY")
+	if appEnv != "development" && resendAPIKey == "" {
+		return nil, fmt.Errorf("RESEND_API_KEY is required in non-development environments")
+	}
+
+	signingSecret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
+	if signingSecret == "" {
+		if appEnv == "development" {
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				return nil, fmt.Errorf("generate ephemeral signing secret: %w", err)
+			}
+			signingSecret = hex.EncodeToString(b)
+			fmt.Fprintf(os.Stderr, "WARNING: MAGIC_LINK_SIGNING_SECRET not set — using ephemeral random secret (sessions will not survive restarts)\n")
+		} else {
+			return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET is required in non-development environments")
+		}
+	}
+	if len(signingSecret) < 32 {
+		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(signingSecret))
+	}
+
+	magicLinkTTL, err := getEnvIntPositive("MAGIC_LINK_TTL_MINUTES", 15)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid MAGIC_LINK_TTL_MINUTES: %w", err)
+	}
+	sessionTTL, err := getEnvIntPositive("SIGNUP_SESSION_TTL_HOURS", 24)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SIGNUP_SESSION_TTL_HOURS: %w", err)
 	}
 
 	return &Config{
@@ -87,7 +121,16 @@ func Load() (*Config, error) {
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
 		MetricsPort:      getEnv("METRICS_PORT", "9091"),
-		SignupEnabled:    signupEnabled,
+
+		ResendAPIKey:            resendAPIKey,
+		EmailFrom:               getEnv("EMAIL_FROM", "LLMRates <noreply@llmrates.live>"),
+		MagicLinkSigningSecret:  signingSecret,
+		MagicLinkTTLMinutes:     magicLinkTTL,
+		MagicLinkBaseURL:        getEnv("MAGIC_LINK_BASE_URL", "https://llmrates.live"),
+		MagicLinkPath:           getEnv("MAGIC_LINK_PATH", "/signup/verify"),
+		SignupSessionCookieName: getEnv("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
+		SignupSessionTTLHours:   sessionTTL,
+		SignupSessionSecure:     appEnv != "development",
 	}, nil
 }
 
@@ -96,4 +139,19 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvIntPositive(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("parse error: %w", err)
+	}
+	if i <= 0 {
+		return 0, fmt.Errorf("value must be positive, got %d", i)
+	}
+	return i, nil
 }
