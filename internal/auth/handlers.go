@@ -112,14 +112,14 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 
 	// Rate-limit: suppress token creation if this identity already has too many
 	// recent tokens. Returns 200 regardless to prevent account enumeration.
-	const maxTokensPer15Min = 3
+	const maxTokensPerWindow = 3
 	window := time.Duration(h.cfg.MagicLinkTTLMinutes) * time.Minute
 	recentCount, countErr := h.store.CountRecentTokens(ctx, ident.ID, time.Now().Add(-window))
 	if countErr != nil {
 		log.Error().Err(countErr).Msg("auth: count recent tokens failed")
 		return genericOK(c)
 	}
-	if recentCount >= maxTokensPer15Min {
+	if recentCount >= maxTokensPerWindow {
 		log.Warn().Str("identity_id", ident.ID).Int("recent_tokens", recentCount).Msg("auth: rate limit exceeded, suppressing magic-link send")
 		return genericOK(c)
 	}

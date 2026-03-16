@@ -94,13 +94,13 @@ func main() {
 	reviewHandler := review.NewHandler(reviewStore)
 
 	// Read trusted proxies from env var TRUSTED_PROXY_CIDRS (comma-separated).
-	// Default "0.0.0.0/0" trusts all proxies (safe only when TrustedProxyCheck is
-	// disabled or you control the network; restrict to actual LB CIDRs in production).
-	trustedProxies := []string{"0.0.0.0/0"}
+	// When unset, EnableTrustedProxyCheck is disabled and c.IP() returns the
+	// peer address directly. Set TRUSTED_PROXY_CIDRS to enable proxy-aware IP
+	// extraction (e.g. "10.0.0.0/8,172.16.0.0/12" for RFC 1918 LB ranges).
+	var trustedProxies []string
 	if v := os.Getenv("TRUSTED_PROXY_CIDRS"); v != "" {
-		trustedProxies = strings.Split(v, ",")
-		for i := range trustedProxies {
-			trustedProxies[i] = strings.TrimSpace(trustedProxies[i])
+		for _, cidr := range strings.Split(v, ",") {
+			trustedProxies = append(trustedProxies, strings.TrimSpace(cidr))
 		}
 	}
 
@@ -109,9 +109,9 @@ func main() {
 		// ErrorHandler serialises all errors as RFC 7807 Problem Details
 		// with Content-Type: application/problem+json.
 		ErrorHandler: api.ErrorHandler,
-		// Trust proxies listed in TRUSTED_PROXY_CIDRS (defaults to 0.0.0.0/0).
-		// Restrict to actual LB CIDRs in production to prevent XFF spoofing.
-		EnableTrustedProxyCheck: true,
+		// Only enable proxy trust when explicit CIDRs are configured.
+		// Without real CIDRs, trusting all proxies allows XFF spoofing.
+		EnableTrustedProxyCheck: len(trustedProxies) > 0,
 		TrustedProxies:          trustedProxies,
 		ProxyHeader:             fiber.HeaderXForwardedFor,
 	})
