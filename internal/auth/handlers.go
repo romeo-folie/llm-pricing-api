@@ -56,6 +56,9 @@ type Config struct {
 	// MAGIC_LINK_SIGNING_SECRET for any future token HMAC layer. Currently
 	// token hashing uses plain SHA-256 (see signup.HashToken in store.go).
 	SigningSecret string
+	// SignupEnabled controls whether RequestLink accepts new signup requests.
+	// When false, the endpoint returns 503 Service Unavailable.
+	SignupEnabled bool
 }
 
 // Handler handles magic-link auth endpoints.
@@ -91,6 +94,12 @@ type requestLinkBody struct {
 // Always returns 200 with the same generic message to prevent account
 // enumeration — no indication whether the address is new or existing.
 func (h *Handler) RequestLink(c *fiber.Ctx) error {
+	if !h.cfg.SignupEnabled {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "signup is currently disabled",
+		})
+	}
+
 	log := logger.FromContext(c.Context(), h.log)
 
 	var body requestLinkBody

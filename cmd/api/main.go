@@ -192,6 +192,7 @@ func main() {
 		SignupSessionCookieName: cfg.SignupSessionCookieName,
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
+		SignupEnabled:           cfg.SignupEnabled,
 	}, log)
 	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
 	auth.Register(authGroup, authHandler)

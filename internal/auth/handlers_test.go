@@ -187,6 +187,7 @@ var testCfg = auth.Config{
 	SignupSessionCookieName: "test_session",
 	SignupSessionTTLHours:   24,
 	SignupSessionSecure:     false,
+	SignupEnabled:           true,
 }
 
 func newTestApp(store auth.Store, mailer auth.Mailer) *fiber.App {
@@ -411,6 +412,27 @@ func TestMe_TamperedCookie_Returns401(t *testing.T) {
 	resp := doRequest(t, app, "GET", "/auth/signup/me", "", cookie)
 	if resp.StatusCode != 401 {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestRequestLink_SignupDisabled_Returns503(t *testing.T) {
+	store := newMockStore()
+	mailer := &mockMailer{}
+	disabledCfg := testCfg
+	disabledCfg.SignupEnabled = false
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	log := zerolog.Nop()
+	h := auth.New(store, mailer, disabledCfg, log)
+	authGroup := app.Group("/auth")
+	auth.Register(authGroup, h)
+
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"alice@example.com"}`)
+	if resp.StatusCode != 503 {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+	b := bodyJSON(resp)
+	if b["error"] != "signup is currently disabled" {
+		t.Errorf("error = %v, want 'signup is currently disabled'", b["error"])
 	}
 }
 
