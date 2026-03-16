@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -307,7 +308,7 @@ func (s *PgxStore) InsertKey(ctx context.Context, identityID, providerKeyID stri
 	)
 	k, err := scanKey(row)
 	if err != nil {
-		if isPgUniqueViolation(err) {
+		if isPgDuplicateActiveKey(err) {
 			return nil, ErrDuplicateActiveKey
 		}
 		return nil, fmt.Errorf("signup.InsertKey: %w", err)
@@ -375,7 +376,7 @@ func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 	)
 	k, err := scanKey(row)
 	if err != nil {
-		if isPgUniqueViolation(err) {
+		if isPgDuplicateActiveKey(err) {
 			return nil, ErrDuplicateActiveKey
 		}
 		return nil, fmt.Errorf("signup.RevokeAndInsertKey: insert new key: %w", err)
@@ -440,15 +441,18 @@ func nullStr(s string) any {
 	return s
 }
 
-// isPgUniqueViolation detects PostgreSQL unique constraint violations (SQLSTATE 23505).
-func isPgUniqueViolation(err error) bool {
+// isPgDuplicateActiveKey detects the specific unique constraint violation for
+// "one active key per identity" (partial unique index). Other 23505 violations
+// (e.g. provider_key_id uniqueness) are intentionally NOT matched here so they
+// surface as real errors rather than being masked as ErrDuplicateActiveKey.
+func isPgDuplicateActiveKey(err error) bool {
 	if err == nil {
 		return false
 	}
-	type sqlStater interface{ SQLState() string }
-	var target sqlStater
-	if errors.As(err, &target) {
-		return target.SQLState() == "23505"
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" &&
+			pgErr.ConstraintName == "idx_api_keys_registry_one_active_per_identity"
 	}
 	return false
 }

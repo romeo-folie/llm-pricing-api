@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -24,10 +25,11 @@ type TokenConfig struct {
 
 // GenerateToken creates a cryptographically random raw token (32 bytes,
 // base64url encoded), signs it with HMAC-SHA256, and returns:
-//   - rawToken: sent to the user in the magic-link URL (query param `token`)
-//   - tokenHash: SHA-256 of rawToken, stored in the DB
+//   - rawToken: the raw random token, used only for hashing/storage (never sent to user directly)
+//   - tokenHash: SHA-256 of rawToken, stored in the DB for lookup
 //   - expiresAt: absolute expiry timestamp
-//   - magicLinkURL: the full verification URL to email the user
+//   - magicLinkURL: the full verification URL to email the user;
+//     the query param `token` contains the signed token (rawToken + "." + HMAC-hex)
 func GenerateToken(cfg TokenConfig) (rawToken, tokenHash, magicLinkURL string, expiresAt time.Time, err error) {
 	if cfg.SigningSecret == "" {
 		err = fmt.Errorf("signup.GenerateToken: SigningSecret must not be empty")
@@ -68,13 +70,16 @@ func ParseToken(signed, signingSecret string) (rawToken, tokenHash string, err e
 	if signingSecret == "" {
 		return "", "", fmt.Errorf("signup.ParseToken: signingSecret must not be empty")
 	}
-	// Split on the last '.' to separate payload from signature.
-	idx := len(signed) - 64 - 1 // hex(sha256) = 64 chars, preceded by '.'
-	if idx <= 0 || signed[idx] != '.' {
+	// Split on the last '.' to separate payload from HMAC-SHA256 hex signature.
+	idx := strings.LastIndex(signed, ".")
+	if idx <= 0 {
 		return "", "", fmt.Errorf("signup.ParseToken: malformed token")
 	}
 	raw := signed[:idx]
 	sig := signed[idx+1:]
+	if len(sig) != 64 { // HMAC-SHA256 hex = 64 chars
+		return "", "", fmt.Errorf("signup.ParseToken: malformed token signature length")
+	}
 
 	mac := hmac.New(sha256.New, []byte(signingSecret))
 	_, _ = mac.Write([]byte(raw))

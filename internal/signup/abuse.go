@@ -9,6 +9,20 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// ipRateLimitScript atomically increments a counter and ensures it has a TTL.
+// On the first increment (count == 1) it sets the expiry. On subsequent
+// increments it re-applies the expiry if the key somehow lost its TTL (TTL == -1),
+// preventing a transient Redis failure from creating a permanent rate-limit.
+var ipRateLimitScript = redis.NewScript(`
+  local count = redis.call("INCR", KEYS[1])
+  if count == 1 then
+    redis.call("EXPIRE", KEYS[1], ARGV[1])
+  elseif redis.call("TTL", KEYS[1]) == -1 then
+    redis.call("EXPIRE", KEYS[1], ARGV[1])
+  end
+  return count
+`)
+
 // AbuseGuard enforces rate-limiting and cooldown controls for the signup flow.
 // All limits are tracked in Redis.
 type AbuseGuard struct {
@@ -34,24 +48,14 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 	// 1. IP hourly rate limit.
 	if g.cfg.MaxRequestsPerHour > 0 {
 		key := fmt.Sprintf("signup:rl:ip:%s", hashValue(ip, g.cfg.SigningSecret))
-		count, err := g.rdb.Incr(ctx, key).Result()
+		// Atomic INCR + EXPIRE via Lua to avoid a race where EXPIRE fails
+		// after INCR, leaving a key with no TTL (permanent rate-limit).
+		// If the key already exists but lost its TTL (TTL == -1), re-apply it.
+		count, err := ipRateLimitScript.Run(ctx, g.rdb, []string{key}, int(time.Hour.Seconds())).Int64()
 		if err != nil {
 			// Redis failure → fail open (don't block signups due to cache outage).
-		} else {
-			// Set TTL on the first increment; if EXPIRE fails, delete the key to
-			// avoid permanently rate-limiting this IP due to a missing TTL (fail-open).
-			ttlFailed := false
-			if count == 1 {
-				if expErr := g.rdb.Expire(ctx, key, time.Hour).Err(); expErr != nil {
-					_ = g.rdb.Del(ctx, key)
-					ttlFailed = true
-				}
-			}
-			// Perform limit check for every increment (not just count > 1).
-			// Skip on TTL failure to stay fail-open.
-			if !ttlFailed && int(count) > g.cfg.MaxRequestsPerHour {
-				return ErrRateLimited
-			}
+		} else if int(count) > g.cfg.MaxRequestsPerHour {
+			return ErrRateLimited
 		}
 	}
 
