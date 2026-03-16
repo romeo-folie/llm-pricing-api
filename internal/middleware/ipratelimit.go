@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/logger"
 )
 
 const (
@@ -22,7 +23,13 @@ const (
 // IPRateLimit returns a Fiber middleware that enforces per-IP rate limiting
 // using a Redis counter with a fixed window. Designed for public endpoints
 // (e.g. auth routes) that are not protected by Unkey API key auth.
-func IPRateLimit(redisClient *redis.Client) fiber.Handler {
+func IPRateLimit(redisClient *redis.Client, log ...zerolog.Logger) fiber.Handler {
+	var fallback zerolog.Logger
+	if len(log) > 0 {
+		fallback = log[0]
+	} else {
+		fallback = zerolog.Nop()
+	}
 	return func(c *fiber.Ctx) error {
 		now := time.Now().Unix()
 		windowSec := int64(ipRateLimitWindow.Seconds())
@@ -40,7 +47,8 @@ func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 		if count == 1 {
 			if expErr := redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err(); expErr != nil {
 				// Key has no TTL — will leak. Log but don't block the request.
-				zerolog.Ctx(c.Context()).Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: Expire failed — key may have no TTL")
+				l := logger.FromContext(c.Context(), fallback)
+				l.Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: Expire failed — key may have no TTL")
 				// Belt-and-suspenders: set absolute expiry at window end.
 				windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
 				_ = redisClient.ExpireAt(c.Context(), windowKey, windowEnd).Err()

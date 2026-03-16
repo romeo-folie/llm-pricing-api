@@ -97,6 +97,11 @@ func main() {
 		// ErrorHandler serialises all errors as RFC 7807 Problem Details
 		// with Content-Type: application/problem+json.
 		ErrorHandler: api.ErrorHandler,
+		// Trust all proxies — safe when running behind Railway/Fly load balancer.
+		// Ensures c.IP() returns the real client IP from X-Forwarded-For.
+		EnableTrustedProxyCheck: true,
+		TrustedProxies:          []string{"0.0.0.0/0"},
+		ProxyHeader:             fiber.HeaderXForwardedFor,
 	})
 
 	// Middleware order: security headers first, then OTel tracing, Prometheus
@@ -156,7 +161,7 @@ func main() {
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 	}, log)
-	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient))
+	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
 	auth.Register(authGroup, authHandler)
 
 	// Register public discovery routes outside the auth group.

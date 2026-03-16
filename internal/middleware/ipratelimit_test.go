@@ -44,6 +44,7 @@ func TestIPRateLimit_UnderLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusOK {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -73,6 +74,7 @@ func TestIPRateLimit_AtLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusOK {
 		t.Errorf("want 200 at limit=10, got %d", resp.StatusCode)
 	}
@@ -102,6 +104,7 @@ func TestIPRateLimit_OverLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusTooManyRequests {
 		t.Errorf("want 429, got %d", resp.StatusCode)
 	}
@@ -135,6 +138,7 @@ func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusOK {
 		t.Errorf("want 200 (fail-open), got %d", resp.StatusCode)
 	}
@@ -203,6 +207,7 @@ func TestIPRateLimit_XForwardedFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusTooManyRequests {
 		t.Errorf("want 429 for X-Forwarded-For IP, got %d", resp.StatusCode)
 	}

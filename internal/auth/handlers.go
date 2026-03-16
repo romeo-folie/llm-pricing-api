@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/logger"
 	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/signup"
 )
@@ -87,6 +88,8 @@ type requestLinkBody struct {
 // Always returns 200 with the same generic message to prevent account
 // enumeration — no indication whether the address is new or existing.
 func (h *Handler) RequestLink(c *fiber.Ctx) error {
+	log := logger.FromContext(c.UserContext(), h.log)
+
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil {
 		return api.NewBadRequest("invalid request body")
@@ -103,7 +106,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 
 	ident, err := h.store.CreateIdentity(ctx, email, ipHash, uaHash)
 	if err != nil {
-		h.log.Error().Err(err).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: create identity failed")
+		log.Error().Err(err).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: create identity failed")
 		return genericOK(c)
 	}
 
@@ -112,23 +115,23 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	const maxTokensPer15Min = 3
 	recentCount, countErr := h.store.CountRecentTokens(ctx, ident.ID, time.Now().Add(-15*time.Minute))
 	if countErr != nil {
-		h.log.Error().Err(countErr).Msg("auth: count recent tokens failed")
+		log.Error().Err(countErr).Msg("auth: count recent tokens failed")
 		return genericOK(c)
 	}
 	if recentCount >= maxTokensPer15Min {
-		h.log.Warn().Str("identity_id", ident.ID).Int("recent_tokens", recentCount).Msg("auth: rate limit exceeded, suppressing magic-link send")
+		log.Warn().Str("identity_id", ident.ID).Int("recent_tokens", recentCount).Msg("auth: rate limit exceeded, suppressing magic-link send")
 		return genericOK(c)
 	}
 
 	rawToken, err := signup.GenerateRawToken()
 	if err != nil {
-		h.log.Error().Err(err).Msg("auth: generate token failed")
+		log.Error().Err(err).Msg("auth: generate token failed")
 		return genericOK(c)
 	}
 
 	expiresAt := time.Now().Add(time.Duration(h.cfg.MagicLinkTTLMinutes) * time.Minute)
 	if _, err := h.store.CreateToken(ctx, ident.ID, rawToken, expiresAt); err != nil {
-		h.log.Error().Err(err).Str("identity_id", ident.ID).Msg("auth: create token failed")
+		log.Error().Err(err).Str("identity_id", ident.ID).Msg("auth: create token failed")
 		return genericOK(c)
 	}
 
@@ -140,7 +143,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(c.UserContext()), 10*time.Second)
 	defer cancel()
 	if sendErr := h.mailer.SendMagicLink(sendCtx, email, verifyURL); sendErr != nil {
-		h.log.Warn().Err(sendErr).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: magic-link email delivery failed")
+		log.Warn().Err(sendErr).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: magic-link email delivery failed")
 	}
 
 	return genericOK(c)

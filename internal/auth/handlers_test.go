@@ -184,6 +184,7 @@ func doRequest(t *testing.T, app *fiber.App, method, path, body string, cookies 
 	if err != nil {
 		t.Fatalf("app.Test(%s %s) failed: %v", method, path, err)
 	}
+	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
 
