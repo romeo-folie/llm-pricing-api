@@ -35,8 +35,8 @@ type Config struct {
 	// EmailFrom is the sender address for outbound magic-link emails.
 	// Example: "LLMRates <noreply@llmrates.live>"
 	EmailFrom string
-	// MagicLinkSigningSecret is a random secret used to HMAC-sign raw tokens
-	// before hashing for storage. Prevents offline brute-force of token_hash.
+	// MagicLinkSigningSecret is a random secret used to HMAC-sign session
+	// cookies. Token hashing uses plain SHA-256 (see signup.HashToken).
 	MagicLinkSigningSecret string
 	// MagicLinkTTLMinutes is the lifetime of a magic-link token. Defaults to 15.
 	MagicLinkTTLMinutes int
@@ -74,6 +74,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
+	signingSecret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
+	if appEnv != "development" && len(signingSecret) < 32 {
+		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes in non-development environments")
+	}
+
 	return &Config{
 		DatabaseURL:      dbURL,
 		RedisURL:         getEnv("REDIS_URL", "localhost:6379"),
@@ -91,7 +96,7 @@ func Load() (*Config, error) {
 
 		ResendAPIKey:            os.Getenv("RESEND_API_KEY"),
 		EmailFrom:               getEnv("EMAIL_FROM", "LLMRates <noreply@llmrates.live>"),
-		MagicLinkSigningSecret:  os.Getenv("MAGIC_LINK_SIGNING_SECRET"),
+		MagicLinkSigningSecret:  signingSecret,
 		MagicLinkTTLMinutes:     getEnvInt("MAGIC_LINK_TTL_MINUTES", 15),
 		MagicLinkBaseURL:        getEnv("MAGIC_LINK_BASE_URL", "https://llmrates.live"),
 		MagicLinkPath:           getEnv("MAGIC_LINK_PATH", "/signup/verify"),

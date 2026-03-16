@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log"
 	"net/mail"
 	"strings"
 	"time"
@@ -86,8 +87,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 
 	ident, err := h.store.CreateIdentity(ctx, email, ipHash, uaHash)
 	if err != nil {
-		// Log internally; return generic success to avoid enumeration.
-		_ = err
+		log.Printf("auth: create identity failed: %v", err)
 		return genericOK(c)
 	}
 
@@ -108,7 +108,9 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_ = h.mailer.SendMagicLink(bgCtx, email, verifyURL)
+		if sendErr := h.mailer.SendMagicLink(bgCtx, email, verifyURL); sendErr != nil {
+			log.Printf("auth: magic-link email delivery failed: %v", sendErr)
+		}
 	}()
 
 	return genericOK(c)
@@ -238,15 +240,24 @@ func (h *Handler) sessionFromCookie(c *fiber.Ctx) (signup.SessionPayload, error)
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func normalizeEmail(raw string) string {
-	return strings.ToLower(strings.TrimSpace(raw))
+	trimmed := strings.TrimSpace(raw)
+	// mail.ParseAddress accepts "Name <addr>" format; extract the bare address.
+	if addr, err := mail.ParseAddress(trimmed); err == nil {
+		return strings.ToLower(strings.TrimSpace(addr.Address))
+	}
+	return strings.ToLower(trimmed)
 }
 
 func isValidEmail(email string) bool {
 	if len(email) > 254 {
 		return false
 	}
-	_, err := mail.ParseAddress(email)
-	return err == nil
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return false
+	}
+	// Reject display-name inputs — only bare addresses are accepted for storage.
+	return strings.TrimSpace(addr.Address) == strings.TrimSpace(email)
 }
 
 func realIP(c *fiber.Ctx) string {

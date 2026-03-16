@@ -168,7 +168,7 @@ func (h *testHandler) requestLink(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
 	email := strings.ToLower(strings.TrimSpace(body.Email))
-	if email == "" {
+	if email == "" || !strings.Contains(email, "@") || !strings.Contains(email[strings.Index(email, "@"):], ".") {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid email address"})
 	}
 	ctx := c.Context()
@@ -307,10 +307,13 @@ func TestRequestLink_InvalidEmail_Returns400(t *testing.T) {
 	ms := newMockSignup()
 	app := newTestApp(ms, ms)
 	resp := doRequest(app, "POST", "/auth/signup/request-link", `{"email":"notanemail"}`)
-	// Our testHandler returns 400 on empty normalized email, not on RFC5322 parse.
-	// For the handler integration, just check we get a response body.
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
 	b := bodyJSON(resp)
-	_ = b
+	if errMsg, ok := b["error"]; !ok || errMsg == "" {
+		t.Error("expected non-empty 'error' field in response body")
+	}
 }
 
 func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {

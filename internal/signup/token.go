@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -28,9 +29,18 @@ func GenerateRawToken() (string, error) {
 }
 
 // BuildVerifyURL constructs the full magic-link URL from config values and
-// the raw (un-hashed) token.
+// the raw (un-hashed) token. Uses net/url for safe encoding.
 func BuildVerifyURL(baseURL, path, rawToken string) string {
-	return baseURL + path + "?token=" + rawToken
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		// Fallback: should not happen with validated config.
+		return baseURL + path + "?token=" + rawToken
+	}
+	u.Path, _ = url.JoinPath(u.Path, path)
+	q := u.Query()
+	q.Set("token", rawToken)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // ── Session cookie ────────────────────────────────────────────────────────────
@@ -47,6 +57,9 @@ type SessionPayload struct {
 // HMAC-SHA256 signature: "<payload>.<sig>".
 // The cookie value is self-contained — no server-side session store needed.
 func SignSession(secret string, p SessionPayload) (string, error) {
+	if len(secret) == 0 {
+		return "", fmt.Errorf("signup: session: signing secret must not be empty")
+	}
 	data, err := encodePayload(p)
 	if err != nil {
 		return "", err
@@ -60,6 +73,9 @@ func SignSession(secret string, p SessionPayload) (string, error) {
 // VerifySession parses and validates a signed session cookie value.
 // Returns the payload and nil on success; an error on tampering or expiry.
 func VerifySession(secret, cookieValue string) (SessionPayload, error) {
+	if len(secret) == 0 {
+		return SessionPayload{}, fmt.Errorf("signup: session: signing secret must not be empty")
+	}
 	dot := lastDot(cookieValue)
 	if dot < 0 {
 		return SessionPayload{}, fmt.Errorf("signup: session: malformed cookie")

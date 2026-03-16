@@ -93,7 +93,7 @@ func magicLinkHTML(verifyURL string) string {
       <h1 style="font-size:22px;font-weight:600;margin:0 0 16px;color:#f5f5f5">Your sign-in link</h1>
       <p style="font-size:15px;color:#aaa;margin:0 0 32px;line-height:1.6">
         Click the button below to verify your email and get your free API key.
-        This link expires in 15 minutes and can only be used once.
+        This link expires shortly and can only be used once.
       </p>
       <a href="` + verifyURL + `"
          style="display:inline-block;background:#22c55e;color:#0a0a0a;font-size:14px;
