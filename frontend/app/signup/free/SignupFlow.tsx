@@ -36,15 +36,20 @@ export default function SignupFlow() {
 
     const controller = new AbortController();
     (async () => {
-      const result = await getIdentity(controller.signal);
-      if (result.ok) {
-        setIdentity(result.identity);
-        setStep(result.identity.has_active_key ? "already-issued" : "verified");
-      } else {
-        setVerifyError(
-          "We couldn't confirm your session. The link may have expired — try again."
-        );
-        setStep("error");
+      try {
+        const result = await getIdentity(controller.signal);
+        if (result.ok) {
+          setIdentity(result.identity);
+          setStep(result.identity.has_active_key ? "already-issued" : "verified");
+        } else {
+          setVerifyError(
+            "We couldn't confirm your session. The link may have expired — try again."
+          );
+          setStep("error");
+        }
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        throw err;
       }
     })();
 

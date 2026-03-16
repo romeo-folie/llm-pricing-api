@@ -124,12 +124,15 @@ export async function regenerateKey(
 
 function parseError(status: number, body: Record<string, unknown>): ApiError {
   if (status === 429) {
-    const retryAfter = Number(body.retry_after_ms ?? body.retry_after ?? 0);
+    // retry_after_ms is already in milliseconds — do not multiply again.
+    const retryAfterMs = Number(body.retry_after_ms ?? 0);
+    const retryAfterSec = Number(body.retry_after ?? 0);
+    const retryMs = retryAfterMs || retryAfterSec * 1000;
     const msg = typeof body.error === "string" ? body.error : "Too many requests";
     if (msg.toLowerCase().includes("cooldown")) {
-      return { code: "cooldown", message: msg, retryAfterMs: retryAfter * 1000 };
+      return { code: "cooldown", message: msg, retryAfterMs: retryMs };
     }
-    return { code: "rate_limited", message: msg, retryAfterMs: retryAfter * 1000 };
+    return { code: "rate_limited", message: msg, retryAfterMs: retryMs };
   }
   if (status === 422 || status === 400) {
     const msg = typeof body.error === "string" ? body.error : "Invalid request";

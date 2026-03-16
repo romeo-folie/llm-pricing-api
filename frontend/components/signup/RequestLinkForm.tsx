@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useTransition } from "react";
+import React, { useEffect, useRef, useState, useTransition } from "react";
 import { requestMagicLink, type ApiError } from "@/lib/signup";
 
 interface Props {
@@ -13,6 +13,13 @@ export default function RequestLinkForm({ onSent }: Props) {
   const [cooldownMs, setCooldownMs] = useState(0);
   const [isPending, startTransition] = useTransition();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Clear cooldown interval on unmount to prevent leaked timers.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
   const startCooldownTimer = (ms: number) => {
     setCooldownMs(ms);

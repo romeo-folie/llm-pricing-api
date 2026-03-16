@@ -17,7 +17,13 @@ interface Props {
 
 export default async function VerifyPage({ searchParams }: Props) {
   const params = await searchParams;
-  const token = params.token ?? "";
+  const token = (params.token ?? "").trim();
+
+  if (!token) {
+    // No token supplied — redirect to the signup page instead of forwarding
+    // an empty token to the backend (which would return an error anyway).
+    redirect("/signup/free");
+  }
 
   // Forward to the backend handler which owns the cookie + redirect logic.
   redirect(`/auth/signup/verify?token=${encodeURIComponent(token)}`);

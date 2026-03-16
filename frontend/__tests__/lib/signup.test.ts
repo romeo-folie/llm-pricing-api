@@ -25,7 +25,7 @@ describe("requestMagicLink", () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 429,
-      json: async () => ({ error: "email cooldown active", retry_after_ms: 30 }),
+      json: async () => ({ error: "email cooldown active", retry_after_ms: 30_000 }),
     });
     const result = await requestMagicLink("test@example.com");
     expect(result.ok).toBe(false);
@@ -150,7 +150,7 @@ describe("regenerateKey", () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 429,
-      json: async () => ({ error: "regenerate cooldown active", retry_after_ms: 60 }),
+      json: async () => ({ error: "regenerate cooldown active", retry_after_ms: 60_000 }),
     });
     const result = await regenerateKey();
     expect(result.ok).toBe(false);

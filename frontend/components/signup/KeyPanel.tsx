@@ -39,12 +39,17 @@ export default function KeyPanel({ identity, initialKey }: Props) {
     const controller = new AbortController();
 
     (async () => {
-      const result = await issueKey(controller.signal);
-      if (cancelled) return;
-      if (result.ok) {
-        setKeyState({ phase: "revealing", plaintext: result.key.plaintext });
-      } else {
-        setKeyState({ phase: "error", error: result.error });
+      try {
+        const result = await issueKey(controller.signal);
+        if (cancelled) return;
+        if (result.ok) {
+          setKeyState({ phase: "revealing", plaintext: result.key.plaintext });
+        } else {
+          setKeyState({ phase: "error", error: result.error });
+        }
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        throw err;
       }
     })();
 
@@ -55,8 +60,20 @@ export default function KeyPanel({ identity, initialKey }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clear copy feedback timer on unmount to avoid state updates on unmounted component.
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
+
   const handleCopy = async (text: string) => {
-    await navigator.clipboard.writeText(text);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard API may be unavailable (e.g. non-HTTPS, permission denied).
+      return;
+    }
     setCopied(true);
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
