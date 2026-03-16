@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/auth"
 	"llm-pricing-api/internal/signup"
 )
@@ -158,9 +159,7 @@ var testCfg = auth.Config{
 }
 
 func newTestApp(store auth.Store, mailer auth.Mailer) *fiber.App {
-	app := fiber.New(fiber.Config{ErrorHandler: func(c *fiber.Ctx, err error) error {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}})
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
 	h := auth.New(store, mailer, testCfg, log)
 	authGroup := app.Group("/auth")
@@ -219,8 +218,8 @@ func TestRequestLink_InvalidEmail_Returns400(t *testing.T) {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 	b := bodyJSON(resp)
-	if errMsg, ok := b["error"]; !ok || errMsg == "" {
-		t.Error("expected non-empty 'error' field in response body")
+	if detail, ok := b["detail"]; !ok || detail == "" {
+		t.Error("expected non-empty 'detail' field in response body")
 	}
 }
 
@@ -312,8 +311,8 @@ func TestVerify_ExpiredToken_Returns410(t *testing.T) {
 		t.Fatalf("status = %d, want 410", resp.StatusCode)
 	}
 	b := bodyJSON(resp)
-	if b["error"] != "token expired" {
-		t.Errorf("error = %v, want 'token expired'", b["error"])
+	if b["detail"] != "token expired" {
+		t.Errorf("detail = %v, want 'token expired'", b["detail"])
 	}
 }
 
@@ -335,8 +334,8 @@ func TestVerify_ReusedToken_Returns410(t *testing.T) {
 		t.Fatalf("second verify status = %d, want 410", resp2.StatusCode)
 	}
 	b := bodyJSON(resp2)
-	if b["error"] != "token already used" {
-		t.Errorf("error = %v, want 'token already used'", b["error"])
+	if b["detail"] != "token already used" {
+		t.Errorf("detail = %v, want 'token already used'", b["detail"])
 	}
 }
 

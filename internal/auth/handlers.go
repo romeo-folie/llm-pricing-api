@@ -17,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 
+	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/signup"
 )
 
@@ -87,11 +88,11 @@ type requestLinkBody struct {
 func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return api.NewBadRequest("invalid request body")
 	}
 	email := normalizeEmail(body.Email)
 	if !isValidEmail(email) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid email address"})
+		return api.NewBadRequest("invalid email address")
 	}
 
 	ctx := c.Context()
@@ -164,7 +165,7 @@ func genericOK(c *fiber.Ctx) error {
 func (h *Handler) Verify(c *fiber.Ctx) error {
 	rawToken := strings.TrimSpace(c.Query("token"))
 	if rawToken == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing token"})
+		return api.NewBadRequest("missing token")
 	}
 
 	ctx := c.Context()
@@ -175,24 +176,24 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, signup.ErrNotFound):
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token"})
+			return api.NewUnauthorized("invalid token")
 		case errors.Is(err, signup.ErrTokenUsed):
-			return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": "token already used"})
+			return api.NewGone("token already used")
 		case errors.Is(err, signup.ErrTokenExpired):
-			return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": "token expired"})
+			return api.NewGone("token expired")
 		default:
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+			return api.NewInternalError("internal error")
 		}
 	}
 
 	// Mark identity verified (idempotent for re-verify flows).
 	if err := h.store.MarkEmailVerified(ctx, identityID); err != nil && !errors.Is(err, signup.ErrNotFound) {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+		return api.NewInternalError("internal error")
 	}
 
 	ident, err := h.store.FindIdentityByID(ctx, identityID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+		return api.NewInternalError("internal error")
 	}
 
 	// Issue signed session cookie.
@@ -205,7 +206,7 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	}
 	sessionValue, err := signup.SignSession(h.cfg.SigningSecret, payload)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+		return api.NewInternalError("internal error")
 	}
 	setSessionCookie(c, h.cfg.SignupSessionCookieName, sessionValue, h.cfg.SignupSessionTTLHours, h.cfg.SignupSessionSecure)
 
@@ -223,15 +224,15 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 func (h *Handler) Me(c *fiber.Ctx) error {
 	session, ok := SessionFromLocals(c)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
+		return api.NewUnauthorized("not authenticated")
 	}
 
 	ident, err := h.store.FindIdentityByID(c.Context(), session.IdentityID)
 	if err != nil {
 		if errors.Is(err, signup.ErrNotFound) {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "identity not found"})
+			return api.NewUnauthorized("identity not found")
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+		return api.NewInternalError("internal error")
 	}
 
 	return c.JSON(fiber.Map{
@@ -249,7 +250,7 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 func (h *Handler) RequireSession(c *fiber.Ctx) error {
 	session, err := h.sessionFromCookie(c)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
+		return api.NewUnauthorized("not authenticated")
 	}
 	c.Locals("signup_session", session)
 	return c.Next()
@@ -316,7 +317,7 @@ func realIP(c *fiber.Ctx) string {
 		if idx := strings.Index(ip, ","); idx >= 0 {
 			return strings.TrimSpace(ip[:idx])
 		}
-		return ip
+		return strings.TrimSpace(ip)
 	}
 	return c.IP()
 }

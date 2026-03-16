@@ -23,9 +23,12 @@ const (
 // (e.g. auth routes) that are not protected by Unkey API key auth.
 func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		now := time.Now().Unix()
+		windowSec := int64(ipRateLimitWindow.Seconds())
 		ip := realIP(c)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
-		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], time.Now().Unix()/int64(ipRateLimitWindow.Seconds()))
+		windowIndex := now / windowSec
+		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)
 
 		count, err := redisClient.Incr(c.Context(), windowKey).Result()
 		if err != nil {
@@ -38,7 +41,7 @@ func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 		}
 
 		if count > ipRateLimitMax {
-			windowEnd := time.Unix((time.Now().Unix()/int64(ipRateLimitWindow.Seconds())+1)*int64(ipRateLimitWindow.Seconds()), 0)
+			windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
 			retryAfter := int(time.Until(windowEnd).Seconds())
 			if retryAfter < 0 {
 				retryAfter = 0

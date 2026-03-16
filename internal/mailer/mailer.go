@@ -13,12 +13,11 @@ import (
 	"time"
 )
 
-const resendSendURL = "https://api.resend.com/emails"
-
 // Mailer sends transactional emails.
 type Mailer struct {
 	apiKey     string
 	from       string
+	baseURL    string
 	httpClient *http.Client
 }
 
@@ -26,13 +25,17 @@ type Mailer struct {
 // address (e.g. "LLMRates <noreply@llmrates.live>").
 func New(apiKey, from string) *Mailer {
 	return &Mailer{
-		apiKey: apiKey,
-		from:   from,
+		apiKey:  apiKey,
+		from:    from,
+		baseURL: "https://api.resend.com",
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
+
+// SetBaseURL overrides the Resend API base URL. Intended for testing.
+func (m *Mailer) SetBaseURL(u string) { m.baseURL = u }
 
 // sendPayload is the JSON body sent to POST /emails.
 type sendPayload struct {
@@ -58,7 +61,8 @@ func (m *Mailer) SendMagicLink(ctx context.Context, toEmail, verifyURL string) e
 		return fmt.Errorf("mailer: marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resendSendURL, bytes.NewReader(body))
+	sendURL := m.baseURL + "/emails"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sendURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("mailer: build request: %w", err)
 	}
