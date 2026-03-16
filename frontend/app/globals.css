@@ -117,15 +117,15 @@
     --purple:      #A78BFA;
     --purpleLt:    rgba(167, 139, 250, 0.12);
 
-    /* Hero endpoint cards — keep light bg in dark mode so text stays legible */
-    --hero-endpoint-bg:      #E8E4E0;
-    --hero-endpoint-border:  #C8C0B6;
-    --hero-endpoint-text:    #111827;
+    /* Hero endpoint cards — dark card + bright text in dark mode */
+    --hero-endpoint-bg:      #3E3C3A;
+    --hero-endpoint-border:  #58534E;
+    --hero-endpoint-text:    #F0EDE9;
 
-    /* Hero method pills — dark mode: saturated but readable on light card bg */
-    --hero-method-get-bg:    #3B82F6;
+    /* Hero method pills — saturated fills with light text */
+    --hero-method-get-bg:    #2563EB;
     --hero-method-get-text:  #EFF6FF;
-    --hero-method-post-bg:   #10B981;
+    --hero-method-post-bg:   #059669;
     --hero-method-post-text: #ECFDF5;
 
     /* Hero diagram labels — match provider name text (--ink) for consistency */
