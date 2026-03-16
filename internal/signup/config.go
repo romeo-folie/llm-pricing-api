@@ -17,7 +17,7 @@ type HandlerConfig struct {
 	SigningSecret  string
 	TokenTTL       time.Duration // default 15m
 	MagicLinkBase  string        // e.g. https://llmrates.live
-	MagicLinkPath  string        // e.g. /signup/verify
+	MagicLinkPath  string        // e.g. /auth/signup/verify — the backend verify endpoint, NOT a frontend route
 
 	// Unkey
 	UnkeyRootKey string

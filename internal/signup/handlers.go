@@ -77,7 +77,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 		})
 	}
 
-	identity, err := h.store.UpsertIdentity(c.Context(), email, hashValue(ip), hashValue(c.Get("User-Agent")))
+	identity, err := h.store.UpsertIdentity(c.Context(), email, hashValue(ip, h.cfg.SigningSecret), hashValue(c.Get("User-Agent"), h.cfg.SigningSecret))
 	if err != nil {
 		h.log.Error().Err(err).Str("email", email).Msg("signup: upsert identity failed")
 		return api.NewInternalError("could not process request")
@@ -125,7 +125,7 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 	_, tokenHash, err := ParseToken(signed, h.cfg.SigningSecret)
 	if err != nil {
 		// Log a hash-derived prefix — never log raw or truncated credential material.
-		h.log.Warn().Str("token_sha256_prefix", truncate(hashValue(signed), 12)).Err(err).Msg("signup: token parse failed")
+		h.log.Warn().Str("token_hmac_prefix", truncate(hashValue(signed, h.cfg.SigningSecret), 12)).Err(err).Msg("signup: token parse failed")
 		return api.NewUnauthorized("invalid or expired link")
 	}
 

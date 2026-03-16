@@ -31,7 +31,8 @@ func EncodeSession(s Session, secret string) (string, error) {
 }
 
 // DecodeSession parses and validates a signed cookie value.
-// Returns ErrSessionInvalid if the signature is bad or the session is expired.
+// Returns ErrSessionInvalid if the signature is bad, or ErrSessionExpired if
+// the session has passed its TTL.
 func DecodeSession(value, secret string) (*Session, error) {
 	idx := strings.LastIndex(value, ".")
 	if idx < 0 {

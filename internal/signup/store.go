@@ -2,8 +2,8 @@
 // onboarding flow: email identity management, magic-link token lifecycle,
 // and the Unkey-backed API key registry.
 //
-// Use NewPgxStore to obtain a PgxStore from a *pgxpool.Pool. All operations are
-// methods on PgxStore; there is no package-level state.
+// Use NewStore to obtain a Store from a *pgxpool.Pool. All operations are
+// safe for concurrent use; there is no package-level state.
 package signup
 
 import (
@@ -156,19 +156,20 @@ func (s *PgxStore) GetIdentityByID(ctx context.Context, id string) (*Identity, e
 }
 
 // MarkEmailVerified stamps email_verified_at = NOW() for an identity.
+// The update is idempotent: COALESCE preserves an existing verified timestamp.
+// Returns ErrNotFound when no identity with the given ID exists.
 func (s *PgxStore) MarkEmailVerified(ctx context.Context, identityID string) error {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE api_identities
-		SET email_verified_at = NOW(), updated_at = NOW()
-		WHERE id = $1 AND email_verified_at IS NULL`,
+		SET email_verified_at = COALESCE(email_verified_at, NOW()), updated_at = NOW()
+		WHERE id = $1`,
 		identityID,
 	)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		// Either not found or already verified — both are acceptable; idempotent.
-		return nil
+		return ErrNotFound
 	}
 	return nil
 }
@@ -193,8 +194,8 @@ func (s *PgxStore) InsertToken(ctx context.Context, identityID, tokenHash string
 // Returns ErrNotFound, ErrTokenConsumed, or ErrTokenExpired as appropriate.
 //
 // Uses FOR UPDATE row locking to prevent concurrent consumption. Expiry is
-// checked in the application layer after the lock so the disambiguating error
-// is always precise.
+// checked against the DB server clock (NOW()) to stay consistent with
+// DeleteExpiredTokens and avoid app/DB clock skew issues.
 func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLinkToken, error) {
 	if tokenHash == "" {
 		return nil, ErrNotFound
@@ -207,14 +208,17 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Lock row for update to prevent concurrent consumption.
+	// Fetch NOW() from the DB so expiry checks use the same clock as
+	// DeleteExpiredTokens and other server-side time comparisons.
 	var t MagicLinkToken
+	var serverNow time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT id, identity_id, token_hash, expires_at, used_at, created_at
+		SELECT id, identity_id, token_hash, expires_at, used_at, created_at, NOW()
 		FROM magic_link_tokens
 		WHERE token_hash = $1
 		FOR UPDATE`,
 		tokenHash,
-	).Scan(&t.ID, &t.IdentityID, &t.TokenHash, &t.ExpiresAt, &t.UsedAt, &t.CreatedAt)
+	).Scan(&t.ID, &t.IdentityID, &t.TokenHash, &t.ExpiresAt, &t.UsedAt, &t.CreatedAt, &serverNow)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -225,12 +229,11 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	if t.UsedAt != nil {
 		return nil, ErrTokenConsumed
 	}
-	if time.Now().After(t.ExpiresAt) {
+	if serverNow.After(t.ExpiresAt) {
 		return nil, ErrTokenExpired
 	}
 
-	now := time.Now()
-	_, err = tx.Exec(ctx, `UPDATE magic_link_tokens SET used_at = $1 WHERE id = $2`, now, t.ID)
+	_, err = tx.Exec(ctx, `UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1`, t.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +241,7 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	t.UsedAt = &now
+	t.UsedAt = &serverNow
 	return &t, nil
 }
 
