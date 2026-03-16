@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { requestMagicLink, type ApiError } from "@/lib/signup"
+import { useCooldown } from "@/hooks/useCooldown"
 
 interface Props {
   email: string
@@ -12,32 +13,14 @@ export default function SentConfirmation({ email, onBack }: Props) {
   const [resent, setResent] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [isResending, setIsResending] = useState(false)
-  const [cooldownMs, setCooldownMs] = useState(0)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { cooldownMs, startCooldown } = useCooldown()
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
       if (abortRef.current) abortRef.current.abort()
     }
   }, [])
-
-  const startCooldownTimer = (ms: number) => {
-    setCooldownMs(ms)
-    if (timerRef.current) clearInterval(timerRef.current)
-    const id = setInterval(() => {
-      setCooldownMs((prev) => {
-        if (prev <= 1000) {
-          clearInterval(id)
-          timerRef.current = null
-          return 0
-        }
-        return prev - 1000
-      })
-    }, 1000)
-    timerRef.current = id
-  }
 
   const handleResend = async () => {
     if (isResending || cooldownMs > 0) return
@@ -54,11 +37,11 @@ export default function SentConfirmation({ email, onBack }: Props) {
       if (controller.signal.aborted) return
       if (result.ok) {
         setResent(true)
-        startCooldownTimer(60_000)
+        startCooldown(60_000)
       } else {
         setError(result.error)
         if (result.error.retryAfterMs) {
-          startCooldownTimer(result.error.retryAfterMs)
+          startCooldown(result.error.retryAfterMs)
         }
       }
     } finally {

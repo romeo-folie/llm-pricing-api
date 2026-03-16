@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { requestMagicLink, type ApiError } from "@/lib/signup"
+import { useCooldown } from "@/hooks/useCooldown"
 
 interface Props {
   onSent: (email: string) => void
@@ -10,34 +11,16 @@ interface Props {
 export default function RequestLinkForm({ onSent }: Props) {
   const [email, setEmail] = useState("")
   const [error, setError] = useState<ApiError | null>(null)
-  const [cooldownMs, setCooldownMs] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { cooldownMs, startCooldown } = useCooldown()
   const abortRef = useRef<AbortController | null>(null)
 
-  // Clear cooldown interval and abort in-flight request on unmount.
+  // Abort in-flight request on unmount.
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
       if (abortRef.current) abortRef.current.abort()
     }
   }, [])
-
-  const startCooldownTimer = (ms: number) => {
-    setCooldownMs(ms)
-    if (timerRef.current) clearInterval(timerRef.current)
-    const id = setInterval(() => {
-      setCooldownMs((prev) => {
-        if (prev <= 1000) {
-          clearInterval(id)
-          timerRef.current = null
-          return 0
-        }
-        return prev - 1000
-      })
-    }, 1000)
-    timerRef.current = id
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,7 +40,7 @@ export default function RequestLinkForm({ onSent }: Props) {
       } else {
         setError(result.error)
         if (result.error.retryAfterMs) {
-          startCooldownTimer(result.error.retryAfterMs)
+          startCooldown(result.error.retryAfterMs)
         }
       }
     } finally {

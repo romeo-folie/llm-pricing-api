@@ -54,8 +54,9 @@ export default function SignupPage() {
         {/* ── Right panel: interactive flow ────────────────────────────── */}
         <section className="signup-main" aria-label="Get your free API key">
           <Suspense fallback={
-            <div className="signup-flow-center" role="status">
+            <div className="signup-flow-center" role="status" aria-label="Loading signup…">
               <span className="signup-spinner signup-spinner-lg" aria-hidden="true" />
+              <span className="sr-only">Loading signup…</span>
             </div>
           }>
             <SignupFlow />

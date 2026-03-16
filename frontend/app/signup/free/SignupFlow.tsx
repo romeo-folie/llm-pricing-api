@@ -51,6 +51,7 @@ export default function SignupFlow() {
           setIdentity(result.identity)
           setStep(result.identity.has_active_key ? "already-issued" : "verified")
         } else {
+          if (controller.signal.aborted) return
           setVerifyError(
             "We couldn't confirm your session. The link may have expired — try again."
           )
@@ -87,8 +88,8 @@ export default function SignupFlow() {
           onClick={() => {
             fetchedRef.current = false
             setVerifyError(null)
-            setStep("request")
             router.replace("/signup/free")
+            setStep("request")
           }}
         >
           Try again
