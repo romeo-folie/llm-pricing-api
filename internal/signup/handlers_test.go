@@ -191,7 +191,10 @@ func TestTokenParseRejectsBadSignature(t *testing.T) {
 		BaseURL:       "http://localhost",
 		Path:          "/signup/verify",
 	}
-	_, _, magicLink, _, _ := signup.GenerateToken(cfg)
+	_, _, magicLink, _, err := signup.GenerateToken(cfg)
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
 	parsedURL, err := url.Parse(magicLink)
 	if err != nil {
 		t.Fatalf("parse magic link URL: %v", err)
