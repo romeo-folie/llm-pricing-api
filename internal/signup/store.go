@@ -258,8 +258,14 @@ func (s *PgxStore) ConsumeToken(ctx context.Context, tokenHash string) (*MagicLi
 		// (e.g. token expired in the interim). Re-check to disambiguate.
 		var refreshUsedAt *time.Time
 		var refreshExpiry time.Time
-		_ = tx.QueryRow(ctx, `SELECT used_at, expires_at FROM magic_link_tokens WHERE id = $1`, t.ID).
+		disambigErr := tx.QueryRow(ctx, `SELECT used_at, expires_at FROM magic_link_tokens WHERE id = $1`, t.ID).
 			Scan(&refreshUsedAt, &refreshExpiry)
+		if disambigErr != nil {
+			if errors.Is(disambigErr, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, fmt.Errorf("signup.ConsumeToken: disambiguation query: %w", disambigErr)
+		}
 		if refreshUsedAt != nil {
 			return nil, ErrTokenConsumed
 		}

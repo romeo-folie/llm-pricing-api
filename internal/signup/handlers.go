@@ -369,6 +369,16 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 		defer revokeCancel()
 		var revokeErr error
 		for attempt := 1; attempt <= maxRevocationAttempts; attempt++ {
+			select {
+			case <-revokeCtx.Done():
+				h.log.Warn().Err(revokeCtx.Err()).Msg("signup: revoke context done, stopping retries")
+				revokeErr = revokeCtx.Err()
+				break
+			default:
+			}
+			if revokeErr != nil {
+				break
+			}
 			revokeErr = h.issuer.RevokeKey(revokeCtx, oldKey.ProviderKeyID)
 			if revokeErr == nil {
 				break

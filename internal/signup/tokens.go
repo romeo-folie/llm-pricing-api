@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -60,7 +61,21 @@ func GenerateToken(cfg TokenConfig) (rawToken, tokenHash, magicLinkURL string, e
 	}
 	expiresAt = time.Now().Add(ttl)
 
-	magicLinkURL = fmt.Sprintf("%s%s?token=%s", cfg.BaseURL, cfg.Path, signed)
+	base, parseErr := url.Parse(cfg.BaseURL)
+	if parseErr != nil {
+		err = fmt.Errorf("signup.GenerateToken: invalid base URL: %w", parseErr)
+		return
+	}
+	ref, parseErr := url.Parse(cfg.Path)
+	if parseErr != nil {
+		err = fmt.Errorf("signup.GenerateToken: invalid path: %w", parseErr)
+		return
+	}
+	u := base.ResolveReference(ref)
+	q := u.Query()
+	q.Set("token", signed)
+	u.RawQuery = q.Encode()
+	magicLinkURL = u.String()
 	return
 }
 

@@ -247,7 +247,8 @@ func TestSessionDecodeInvalidSignature(t *testing.T) {
 // ─── IssueKey / RegenerateKey handler tests ───────────────────────────────────
 
 // doRequestWithSession attaches a valid signed session cookie to the request.
-func doRequestWithSession(app *fiber.App, method, url string, body interface{}, identityID string) *http.Response {
+func doRequestWithSession(t *testing.T, app *fiber.App, method, url string, body interface{}, identityID string) *http.Response {
+	t.Helper()
 	const secret = "test-secret-32bytes-padding-here"
 	sess := signup.Session{
 		IdentityID: identityID,
@@ -255,7 +256,7 @@ func doRequestWithSession(app *fiber.App, method, url string, body interface{}, 
 	}
 	encoded, err := signup.EncodeSession(sess, secret)
 	if err != nil {
-		panic("doRequestWithSession: encode session: " + err.Error())
+		t.Fatalf("doRequestWithSession: EncodeSession failed: %v", err)
 	}
 
 	var reqBody io.Reader
@@ -283,7 +284,7 @@ func TestIssueKey_Success(t *testing.T) {
 	issuer := &mockIssuer{createKeyID: "key_abc123", createKeyText: "pt_abc123"}
 	app := buildApp(store, &noopMailer{}, issuer)
 
-	resp := doRequestWithSession(app, "POST", "/auth/signup/issue-key", nil, id.ID)
+	resp := doRequestWithSession(t, app,"POST", "/auth/signup/issue-key", nil, id.ID)
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("expected 201, got %d", resp.StatusCode)
 	}
@@ -311,7 +312,7 @@ func TestIssueKey_DuplicateActiveKey(t *testing.T) {
 	issuer := &mockIssuer{createKeyID: "key_new", createKeyText: "pt_new"}
 	app := buildApp(store, &noopMailer{}, issuer)
 
-	resp := doRequestWithSession(app, "POST", "/auth/signup/issue-key", nil, id.ID)
+	resp := doRequestWithSession(t, app,"POST", "/auth/signup/issue-key", nil, id.ID)
 	// Should NOT be 500 — handler must catch ErrDuplicateActiveKey and return existing key.
 	if resp.StatusCode == http.StatusInternalServerError {
 		t.Errorf("expected non-500 for duplicate key, got 500")
@@ -327,7 +328,7 @@ func TestIssueKey_IssuerError(t *testing.T) {
 	issuer := &mockIssuer{createErr: errors.New("unkey unavailable")}
 	app := buildApp(store, &noopMailer{}, issuer)
 
-	resp := doRequestWithSession(app, "POST", "/auth/signup/issue-key", nil, id.ID)
+	resp := doRequestWithSession(t, app,"POST", "/auth/signup/issue-key", nil, id.ID)
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", resp.StatusCode)
 	}
@@ -344,7 +345,7 @@ func TestRegenerateKey_Success(t *testing.T) {
 	issuer := &mockIssuer{createKeyID: "key_regen", createKeyText: "pt_regen"}
 	app := buildApp(store, &noopMailer{}, issuer)
 
-	resp := doRequestWithSession(app, "POST", "/auth/signup/regenerate-key", nil, id.ID)
+	resp := doRequestWithSession(t, app,"POST", "/auth/signup/regenerate-key", nil, id.ID)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
@@ -379,7 +380,7 @@ func TestRegenerateKey_IssuerError(t *testing.T) {
 	issuer := &mockIssuer{createErr: errors.New("unkey down")}
 	app := buildApp(store, &noopMailer{}, issuer)
 
-	resp := doRequestWithSession(app, "POST", "/auth/signup/regenerate-key", nil, id.ID)
+	resp := doRequestWithSession(t, app,"POST", "/auth/signup/regenerate-key", nil, id.ID)
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", resp.StatusCode)
 	}
