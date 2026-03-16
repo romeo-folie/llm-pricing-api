@@ -109,6 +109,9 @@ func TestIPRateLimit_OverLimit(t *testing.T) {
 	if retryAfter == "" {
 		t.Error("want Retry-After header, got empty")
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled redis expectations: %v", err)
+	}
 }
 
 // TestIPRateLimit_RedisError_AllowsThrough verifies fail-open on Redis errors.
@@ -172,6 +175,9 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 	if ct != "application/problem+json" {
 		t.Errorf("want Content-Type=application/problem+json, got %q", ct)
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled redis expectations: %v", err)
+	}
 }
 
 // TestIPRateLimit_XForwardedFor uses the X-Forwarded-For header for IP hashing.
@@ -199,5 +205,8 @@ func TestIPRateLimit_XForwardedFor(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusTooManyRequests {
 		t.Errorf("want 429 for X-Forwarded-For IP, got %d", resp.StatusCode)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled redis expectations: %v", err)
 	}
 }
