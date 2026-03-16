@@ -8,9 +8,12 @@ interface Props {
   onSent: (email: string) => void
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export default function RequestLinkForm({ onSent }: Props) {
   const [email, setEmail] = useState("")
   const [error, setError] = useState<ApiError | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { cooldownMs, startCooldown } = useCooldown()
   const abortRef = useRef<AbortController | null>(null)
@@ -25,6 +28,14 @@ export default function RequestLinkForm({ onSent }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isSubmitting || cooldownMs > 0) return
+
+    const trimmed = email.trim()
+    if (!EMAIL_RE.test(trimmed)) {
+      setEmailError("Please enter a valid email address.")
+      return
+    }
+
+    setEmailError(null)
     setError(null)
     setIsSubmitting(true)
 
@@ -54,7 +65,7 @@ export default function RequestLinkForm({ onSent }: Props) {
   const isBlocked = isSubmitting || cooldownMs > 0
 
   return (
-    <form onSubmit={handleSubmit} className="signup-form" noValidate>
+    <form onSubmit={handleSubmit} className="signup-form">
       <div className="signup-field">
         <label htmlFor="signup-email" className="signup-label">
           Work or personal email
@@ -68,14 +79,21 @@ export default function RequestLinkForm({ onSent }: Props) {
           value={email}
           onChange={(e) => {
             setEmail(e.target.value)
+            if (emailError) setEmailError(null)
             if (error) setError(null)
           }}
           disabled={isBlocked}
           className="signup-input"
-          aria-describedby={error ? "signup-error" : undefined}
-          aria-invalid={error ? "true" : undefined}
+          aria-describedby={emailError ? "signup-email-error" : error ? "signup-error" : undefined}
+          aria-invalid={emailError || error ? "true" : undefined}
         />
       </div>
+
+      {emailError && (
+        <p id="signup-email-error" className="signup-error" role="alert">
+          {emailError}
+        </p>
+      )}
 
       {error && (
         <p id="signup-error" className="signup-error" role="alert">

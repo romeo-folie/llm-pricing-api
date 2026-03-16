@@ -23,9 +23,12 @@ export function useCooldown() {
   }, [])
 
   const startCooldown = (ms: number) => {
+    const safeMs = Number.isFinite(ms) ? Math.max(0, ms) : 0
+    if (safeMs === 0) return
+
     clearTimer()
-    const endsAt = Date.now() + ms
-    setCooldownMs(ms)
+    const endsAt = Date.now() + safeMs
+    setCooldownMs(safeMs)
 
     const tick = () => {
       const remaining = endsAt - Date.now()
@@ -39,7 +42,7 @@ export function useCooldown() {
       timerRef.current = setTimeout(tick, nextTick)
     }
 
-    const firstTick = ms > 60_000 ? 30_000 : 1_000
+    const firstTick = safeMs > 60_000 ? 30_000 : 1_000
     timerRef.current = setTimeout(tick, firstTick)
   }
 
