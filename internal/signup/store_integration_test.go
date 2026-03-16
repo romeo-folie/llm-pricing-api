@@ -48,17 +48,17 @@ func randRawToken(t *testing.T) string {
 	return fmt.Sprintf("integ-token-%d", time.Now().UnixNano())
 }
 
-// ── CreateIdentity ─────────────────────────────────────────────────────────────
+// ── UpsertIdentity ────────────────────────────────────────────────────────────
 
-func TestIntegration_CreateIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
+func TestIntegration_UpsertIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
 	ctx := context.Background()
 	pool := newTestPool(t)
 	s := signup.NewStore(pool)
 	email := randEmail(t)
 
-	id1, err := s.CreateIdentity(ctx, email, "", "")
+	id1, err := s.UpsertIdentity(ctx, email, "", "")
 	if err != nil {
-		t.Fatalf("first CreateIdentity: %v", err)
+		t.Fatalf("first UpsertIdentity: %v", err)
 	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id1.ID); err != nil {
@@ -66,29 +66,27 @@ func TestIntegration_CreateIdentity_ReturnsExistingOnDuplicate(t *testing.T) {
 		}
 	})
 
-	id2, err := s.CreateIdentity(ctx, email, "", "")
+	id2, err := s.UpsertIdentity(ctx, email, "", "")
 	if err != nil {
-		t.Fatalf("second CreateIdentity (duplicate): %v", err)
+		t.Fatalf("second UpsertIdentity (duplicate): %v", err)
 	}
 	if id1.ID != id2.ID {
 		t.Errorf("duplicate email returned different IDs: %q vs %q", id1.ID, id2.ID)
 	}
 }
 
-func TestIntegration_CreateIdentity_NormalizesEmail(t *testing.T) {
+func TestIntegration_UpsertIdentity_NormalizesEmail(t *testing.T) {
 	ctx := context.Background()
 	pool := newTestPool(t)
 	s := signup.NewStore(pool)
 
-	// Construct a fixed input with known leading/trailing whitespace and mixed case.
-	// We capture the nano once so we can predict the expected normalised form exactly.
 	nano := time.Now().UnixNano()
 	mixed := fmt.Sprintf("  MIXED-%d@Example.Com  ", nano)
 	want := fmt.Sprintf("mixed-%d@example.com", nano)
 
-	id, err := s.CreateIdentity(ctx, mixed, "", "")
+	id, err := s.UpsertIdentity(ctx, mixed, "", "")
 	if err != nil {
-		t.Fatalf("CreateIdentity: %v", err)
+		t.Fatalf("UpsertIdentity: %v", err)
 	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
@@ -108,9 +106,9 @@ func TestIntegration_ConsumeToken_OneTimeUse(t *testing.T) {
 	pool := newTestPool(t)
 	s := signup.NewStore(pool)
 
-	id, err := s.CreateIdentity(ctx, randEmail(t), "", "")
+	id, err := s.UpsertIdentity(ctx, randEmail(t), "", "")
 	if err != nil {
-		t.Fatalf("CreateIdentity: %v", err)
+		t.Fatalf("UpsertIdentity: %v", err)
 	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
@@ -118,30 +116,29 @@ func TestIntegration_ConsumeToken_OneTimeUse(t *testing.T) {
 		}
 	})
 
-	// Use a unique token per run to avoid UNIQUE(token_hash) collisions against a
-	// persistent dev DB that may still hold rows from a prior test run.
 	raw := randRawToken(t)
-	_, err = s.CreateToken(ctx, id.ID, raw, time.Now().Add(15*time.Minute))
+	tokenHash := signup.HashToken(raw)
+	_, err = s.InsertToken(ctx, id.ID, tokenHash, time.Now().Add(15*time.Minute))
 	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
+		t.Fatalf("InsertToken: %v", err)
 	}
 
 	// First consume: should succeed.
-	gotID, err := s.ConsumeToken(ctx, raw)
+	tok, err := s.ConsumeToken(ctx, tokenHash)
 	if err != nil {
 		t.Fatalf("first ConsumeToken: %v", err)
 	}
-	if gotID != id.ID {
-		t.Errorf("ConsumeToken returned identityID %q, want %q", gotID, id.ID)
+	if tok.IdentityID != id.ID {
+		t.Errorf("ConsumeToken returned identityID %q, want %q", tok.IdentityID, id.ID)
 	}
 
-	// Second consume: must return ErrTokenUsed.
-	_, err = s.ConsumeToken(ctx, raw)
+	// Second consume: must return ErrTokenConsumed.
+	_, err = s.ConsumeToken(ctx, tokenHash)
 	if err == nil {
 		t.Fatal("second ConsumeToken should have failed")
 	}
-	if !errors.Is(err, signup.ErrTokenUsed) {
-		t.Errorf("second ConsumeToken: got %v, want ErrTokenUsed", err)
+	if !errors.Is(err, signup.ErrTokenConsumed) {
+		t.Errorf("second ConsumeToken: got %v, want ErrTokenConsumed", err)
 	}
 }
 
@@ -150,9 +147,9 @@ func TestIntegration_ConsumeToken_ExpiredToken(t *testing.T) {
 	pool := newTestPool(t)
 	s := signup.NewStore(pool)
 
-	id, err := s.CreateIdentity(ctx, randEmail(t), "", "")
+	id, err := s.UpsertIdentity(ctx, randEmail(t), "", "")
 	if err != nil {
-		t.Fatalf("CreateIdentity: %v", err)
+		t.Fatalf("UpsertIdentity: %v", err)
 	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
@@ -160,16 +157,15 @@ func TestIntegration_ConsumeToken_ExpiredToken(t *testing.T) {
 		}
 	})
 
-	// Use a unique token per run to avoid UNIQUE(token_hash) collisions against a
-	// persistent dev DB that may still hold rows from a prior test run.
 	raw := randRawToken(t)
+	tokenHash := signup.HashToken(raw)
 	// expires_at well in the past (-10s) to avoid false-pass due to DB/app clock skew.
-	_, err = s.CreateToken(ctx, id.ID, raw, time.Now().Add(-10*time.Second))
+	_, err = s.InsertToken(ctx, id.ID, tokenHash, time.Now().Add(-10*time.Second))
 	if err != nil {
-		t.Fatalf("CreateToken (expired): %v", err)
+		t.Fatalf("InsertToken (expired): %v", err)
 	}
 
-	_, err = s.ConsumeToken(ctx, raw)
+	_, err = s.ConsumeToken(ctx, tokenHash)
 	if err == nil {
 		t.Fatal("ConsumeToken of expired token should have failed")
 	}
@@ -182,22 +178,22 @@ func TestIntegration_ConsumeToken_NotFound(t *testing.T) {
 	ctx := context.Background()
 	s := signup.NewStore(newTestPool(t))
 
-	_, err := s.ConsumeToken(ctx, "nonexistent-token-xyz")
+	_, err := s.ConsumeToken(ctx, "nonexistent-token-hash-xyz")
 	if !errors.Is(err, signup.ErrNotFound) {
 		t.Errorf("got %v, want ErrNotFound", err)
 	}
 }
 
-// ── RegisterKey / RevokeKey ───────────────────────────────────────────────────
+// ── InsertKey / RevokeKey ─────────────────────────────────────────────────────
 
-func TestIntegration_RegisterKey_OneActiveKeyPerIdentity(t *testing.T) {
+func TestIntegration_InsertKey_OneActiveKeyPerIdentity(t *testing.T) {
 	ctx := context.Background()
 	pool := newTestPool(t)
 	s := signup.NewStore(pool)
 
-	id, err := s.CreateIdentity(ctx, randEmail(t), "", "")
+	id, err := s.UpsertIdentity(ctx, randEmail(t), "", "")
 	if err != nil {
-		t.Fatalf("CreateIdentity: %v", err)
+		t.Fatalf("UpsertIdentity: %v", err)
 	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
@@ -206,15 +202,15 @@ func TestIntegration_RegisterKey_OneActiveKeyPerIdentity(t *testing.T) {
 	})
 
 	pk1 := fmt.Sprintf("pkey-%d-1", time.Now().UnixNano())
-	_, err = s.RegisterKey(ctx, id.ID, pk1)
+	_, err = s.InsertKey(ctx, id.ID, pk1)
 	if err != nil {
-		t.Fatalf("RegisterKey (first): %v", err)
+		t.Fatalf("InsertKey (first): %v", err)
 	}
 
 	pk2 := fmt.Sprintf("pkey-%d-2", time.Now().UnixNano())
-	_, err = s.RegisterKey(ctx, id.ID, pk2)
+	_, err = s.InsertKey(ctx, id.ID, pk2)
 	if err == nil {
-		t.Fatal("RegisterKey with existing active key should fail (partial unique index)")
+		t.Fatal("InsertKey with existing active key should fail (partial unique index)")
 	}
 }
 
@@ -223,9 +219,9 @@ func TestIntegration_RevokeKey_AllowsNewKeyAfterRevoke(t *testing.T) {
 	pool := newTestPool(t)
 	s := signup.NewStore(pool)
 
-	id, err := s.CreateIdentity(ctx, randEmail(t), "", "")
+	id, err := s.UpsertIdentity(ctx, randEmail(t), "", "")
 	if err != nil {
-		t.Fatalf("CreateIdentity: %v", err)
+		t.Fatalf("UpsertIdentity: %v", err)
 	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, id.ID); err != nil {
@@ -234,21 +230,21 @@ func TestIntegration_RevokeKey_AllowsNewKeyAfterRevoke(t *testing.T) {
 	})
 
 	pk1 := fmt.Sprintf("pkey-revoke-%d-1", time.Now().UnixNano())
-	if _, err = s.RegisterKey(ctx, id.ID, pk1); err != nil {
-		t.Fatalf("RegisterKey: %v", err)
+	if _, err = s.InsertKey(ctx, id.ID, pk1); err != nil {
+		t.Fatalf("InsertKey: %v", err)
 	}
-	if err = s.RevokeKey(ctx, pk1); err != nil {
+	if err = s.RevokeKey(ctx, id.ID, pk1); err != nil {
 		t.Fatalf("RevokeKey: %v", err)
 	}
 
 	pk2 := fmt.Sprintf("pkey-revoke-%d-2", time.Now().UnixNano())
-	if _, err = s.RegisterKey(ctx, id.ID, pk2); err != nil {
-		t.Fatalf("RegisterKey after revoke: %v", err)
+	if _, err = s.InsertKey(ctx, id.ID, pk2); err != nil {
+		t.Fatalf("InsertKey after revoke: %v", err)
 	}
 
-	active, err := s.FindActiveKey(ctx, id.ID)
+	active, err := s.GetActiveKey(ctx, id.ID)
 	if err != nil {
-		t.Fatalf("FindActiveKey: %v", err)
+		t.Fatalf("GetActiveKey: %v", err)
 	}
 	if active.ProviderKeyID != pk2 {
 		t.Errorf("active key is %q, want %q", active.ProviderKeyID, pk2)

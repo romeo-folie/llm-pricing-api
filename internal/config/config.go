@@ -3,7 +3,25 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
+
+// parseBoolEnv returns the boolean value of the named env var using
+// strconv.ParseBool (accepts "1", "t", "TRUE", "true", etc.).
+// Returns the default when the variable is empty. Returns an error when the
+// variable is non-empty but not a valid boolean — this prevents typos like
+// "treu" from silently disabling features.
+func parseBoolEnv(key string, def bool) (bool, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return def, nil
+	}
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		return false, fmt.Errorf("config: %s=%q is not a valid boolean: %w", key, val, err)
+	}
+	return b, nil
+}
 
 type Config struct {
 	DatabaseURL      string
@@ -26,6 +44,10 @@ type Config struct {
 	// MetricsPort is the port for the internal Prometheus /metrics HTTP server.
 	// Defaults to "9091". Set to empty to disable.
 	MetricsPort string
+	// SignupEnabled controls whether the free-key signup endpoints are mounted.
+	// Accepts any value recognised by strconv.ParseBool (e.g. "true", "TRUE", "1").
+	// Defaults to false (off by default until DNS/Resend configured).
+	SignupEnabled bool
 }
 
 // Load reads configuration from environment variables.
@@ -46,6 +68,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
+	signupEnabled, err := parseBoolEnv("SIGNUP_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		DatabaseURL:      dbURL,
 		RedisURL:         getEnv("REDIS_URL", "localhost:6379"),
@@ -60,6 +87,7 @@ func Load() (*Config, error) {
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
 		MetricsPort:      getEnv("METRICS_PORT", "9091"),
+		SignupEnabled:    signupEnabled,
 	}, nil
 }
 
