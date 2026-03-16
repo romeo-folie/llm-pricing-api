@@ -197,7 +197,11 @@ func (s *PgxStore) InsertToken(ctx context.Context, identityID, tokenHash string
 		RETURNING id, identity_id, token_hash, expires_at, used_at, created_at`,
 		identityID, tokenHash, expiresAt,
 	)
-	return scanToken(row)
+	result, err := scanToken(row)
+	if err != nil {
+		return nil, fmt.Errorf("signup.InsertToken: %w", err)
+	}
+	return result, nil
 }
 
 // ConsumeToken atomically validates and marks a token as used.
@@ -344,7 +348,7 @@ func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
+		return nil, fmt.Errorf("signup.RevokeAndInsertKey: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -357,7 +361,7 @@ func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 			identityID, oldProviderKeyID,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("revoke old key: %w", err)
+			return nil, fmt.Errorf("signup.RevokeAndInsertKey: revoke old key: %w", err)
 		}
 		// Old key already revoked or missing is not fatal for regeneration.
 	}
@@ -374,11 +378,11 @@ func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 		if isPgUniqueViolation(err) {
 			return nil, ErrDuplicateActiveKey
 		}
-		return nil, fmt.Errorf("insert new key: %w", err)
+		return nil, fmt.Errorf("signup.RevokeAndInsertKey: insert new key: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
+		return nil, fmt.Errorf("signup.RevokeAndInsertKey: commit tx: %w", err)
 	}
 	return k, nil
 }

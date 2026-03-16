@@ -1,6 +1,7 @@
 package signup
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -134,7 +135,7 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 	_, tokenHash, err := ParseToken(signed, h.cfg.SigningSecret)
 	if err != nil {
 		// Log a hash-derived prefix — never log raw or truncated credential material.
-		h.log.Warn().Str("token_hmac_hash_prefix", truncate(HashToken(signed), 12)).Err(err).Msg("signup: token parse failed")
+		h.log.Warn().Str("token_hash_prefix", truncate(HashToken(signed), 12)).Err(err).Msg("signup: token parse failed")
 		return api.NewUnauthorized("invalid or expired link")
 	}
 
@@ -358,16 +359,20 @@ func (h *Handlers) RegenerateKey(c *fiber.Ctx) error {
 	// an operator can manually revoke via the Unkey dashboard or a reconciliation job.
 	if oldKey != nil {
 		const maxRevocationAttempts = 3
+		// Use a detached context so client disconnect cannot cancel revocation
+		// after the DB commit has already succeeded.
+		revokeCtx, revokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer revokeCancel()
 		var revokeErr error
 		for attempt := 1; attempt <= maxRevocationAttempts; attempt++ {
-			revokeErr = h.issuer.RevokeKey(c.Context(), oldKey.ProviderKeyID)
+			revokeErr = h.issuer.RevokeKey(revokeCtx, oldKey.ProviderKeyID)
 			if revokeErr == nil {
 				break
 			}
 			if attempt < maxRevocationAttempts {
 				select {
 				case <-time.After(time.Duration(attempt*200) * time.Millisecond):
-				case <-c.Context().Done():
+				case <-revokeCtx.Done():
 				}
 			}
 		}
