@@ -41,6 +41,9 @@ func IPRateLimit(redisClient *redis.Client) fiber.Handler {
 			if expErr := redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err(); expErr != nil {
 				// Key has no TTL — will leak. Log but don't block the request.
 				zerolog.Ctx(c.Context()).Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: Expire failed — key may have no TTL")
+				// Belt-and-suspenders: set absolute expiry at window end.
+				windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
+				_ = redisClient.ExpireAt(c.Context(), windowKey, windowEnd).Err()
 			}
 		}
 

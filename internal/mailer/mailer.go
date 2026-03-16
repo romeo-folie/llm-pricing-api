@@ -83,6 +83,8 @@ func (m *Mailer) SendMagicLink(ctx context.Context, toEmail, verifyURL string) e
 
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4096))
+	// Drain remainder to allow connection reuse regardless of which path we take.
+	_, _ = io.Copy(io.Discard, resp.Body)
 	raw := buf.String()
 
 	var errBody struct {
@@ -92,8 +94,6 @@ func (m *Mailer) SendMagicLink(ctx context.Context, toEmail, verifyURL string) e
 	if err := json.Unmarshal(buf.Bytes(), &errBody); err == nil && (errBody.Name != "" || errBody.Message != "") {
 		return fmt.Errorf("mailer: resend API %d: %s — %s", resp.StatusCode, errBody.Name, errBody.Message)
 	}
-	// Drain remaining body to allow connection reuse.
-	_, _ = io.Copy(io.Discard, resp.Body)
 	return fmt.Errorf("mailer: resend API %d: %s", resp.StatusCode, raw)
 }
 
