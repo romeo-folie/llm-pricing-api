@@ -1,13 +1,14 @@
-import type { Metadata } from "next";
-import { Suspense } from "react";
-import SignupFlow from "./SignupFlow";
+import type { Metadata } from "next"
+import { Suspense } from "react"
+import Link from "next/link"
+import SignupFlow from "./SignupFlow"
 
 export const metadata: Metadata = {
   title: "Free API Key — LLMRates",
   description:
     "Get a free API key for LLMRates. No credit card. Verify your email and start querying live LLM pricing data.",
   robots: { index: true, follow: true },
-};
+}
 
 export default function SignupPage() {
   return (
@@ -15,11 +16,11 @@ export default function SignupPage() {
       <div className="signup-shell">
         {/* ── Left panel: brand/value prop ─────────────────────────────── */}
         <aside className="signup-aside">
-          <a href="/" className="signup-logo" aria-label="LLMRates home">
+          <Link href="/" className="signup-logo" aria-label="LLMRates home">
             <span className="signup-logo-mark">LLM</span>
             <span className="signup-logo-dot">·</span>
             <span className="signup-logo-sub">Rates</span>
-          </a>
+          </Link>
 
           <div className="signup-aside-body">
             <h1 className="signup-aside-heading">
@@ -62,7 +63,7 @@ export default function SignupPage() {
         </section>
       </div>
     </main>
-  );
+  )
 }
 
 const FEATURES = [
@@ -70,4 +71,4 @@ const FEATURES = [
   { icon: "🔑", label: "API key in under 60 seconds" },
   { icon: "📦", label: "REST API — works in any language" },
   { icon: "🛡", label: "No credit card required" },
-];
+]

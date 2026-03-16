@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { issueKey, regenerateKey, type IdentityResponse, type ApiError } from "@/lib/signup"
 
 interface Props {

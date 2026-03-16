@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { getIdentity, type IdentityResponse, type SignupStep } from "@/lib/signup"
 import RequestLinkForm from "@/components/signup/RequestLinkForm"

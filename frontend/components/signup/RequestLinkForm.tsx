@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { requestMagicLink, type ApiError } from "@/lib/signup"
 
 interface Props {
@@ -26,15 +26,17 @@ export default function RequestLinkForm({ onSent }: Props) {
   const startCooldownTimer = (ms: number) => {
     setCooldownMs(ms)
     if (timerRef.current) clearInterval(timerRef.current)
-    timerRef.current = setInterval(() => {
+    const id = setInterval(() => {
       setCooldownMs((prev) => {
         if (prev <= 1000) {
-          clearInterval(timerRef.current!)
+          clearInterval(id)
+          timerRef.current = null
           return 0
         }
         return prev - 1000
       })
     }, 1000)
+    timerRef.current = id
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
