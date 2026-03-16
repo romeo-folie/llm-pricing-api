@@ -186,25 +186,32 @@ func run() error {
 	// a fresh deploy. The @every cron schedules only fire after the full
 	// interval elapses, which would leave the DB empty for hours on first boot.
 	// NOTE: this block must run before srv.Start(mux) because Start blocks.
+	//
+	// asynq.Unique(24h) prevents duplicate entries: if a previous deploy
+	// crashed mid-scrape and left a task pending in Redis, re-enqueueing
+	// the same task type without Unique would pile up additional copies.
+	// ErrDuplicateTask is returned (not a fatal error) when deduplication fires.
 	client := asynq.NewClient(redisOpt)
 	defer client.Close()
-	if _, err := client.Enqueue(asynq.NewTask(worker.TaskOpenRouterScrape, nil)); err != nil {
-		log.Warn().Err(err).Msg("initial openrouter scrape enqueue failed")
+	initialTasks := []struct {
+		taskType string
+		label    string
+	}{
+		{worker.TaskOpenRouterScrape, "openrouter"},
+		{worker.TaskLiteLLMScrape, "litellm"},
+		{worker.TaskHuggingFaceScrape, "huggingface"},
+		{worker.TaskOpenAIScrape, "openai"},
+		{worker.TaskAnthropicScrape, "anthropic"},
+		{worker.TaskGeminiScrape, "gemini"},
 	}
-	if _, err := client.Enqueue(asynq.NewTask(worker.TaskLiteLLMScrape, nil)); err != nil {
-		log.Warn().Err(err).Msg("initial litellm scrape enqueue failed")
-	}
-	if _, err := client.Enqueue(asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
-		log.Warn().Err(err).Msg("initial huggingface scrape enqueue failed")
-	}
-	if _, err := client.Enqueue(asynq.NewTask(worker.TaskOpenAIScrape, nil)); err != nil {
-		log.Warn().Err(err).Msg("initial openai scrape enqueue failed")
-	}
-	if _, err := client.Enqueue(asynq.NewTask(worker.TaskAnthropicScrape, nil)); err != nil {
-		log.Warn().Err(err).Msg("initial anthropic scrape enqueue failed")
-	}
-	if _, err := client.Enqueue(asynq.NewTask(worker.TaskGeminiScrape, nil)); err != nil {
-		log.Warn().Err(err).Msg("initial gemini scrape enqueue failed")
+	for _, t := range initialTasks {
+		_, err := client.Enqueue(
+			asynq.NewTask(t.taskType, nil),
+			asynq.Unique(24*time.Hour),
+		)
+		if err != nil && err != asynq.ErrDuplicateTask {
+			log.Warn().Err(err).Str("task", t.label).Msg("initial scrape enqueue failed")
+		}
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
 

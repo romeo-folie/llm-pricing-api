@@ -39,6 +39,21 @@ func NewSSRFSafeTransport() *http.Transport {
 			// (and the associated DNS rebinding window) inside the dialer.
 			return base.DialContext(ctx, network, net.JoinHostPort(resolved[0], port))
 		},
+		// ResponseHeaderTimeout caps the time waiting for the server to send
+		// response headers after the request body is sent. Without this, a
+		// server that accepts the connection but stalls before sending headers
+		// (or stalls mid-body on a large streaming response) can hang a worker
+		// slot indefinitely even when http.Client.Timeout is set — because
+		// http.Client.Timeout only fires if the entire round-trip hasn't
+		// completed within the deadline, and some runtimes reset that clock
+		// per read. 45s leaves headroom under a 60s client timeout.
+		ResponseHeaderTimeout: 45 * time.Second,
+		// TLSHandshakeTimeout bounds the TLS negotiation phase separately.
+		TLSHandshakeTimeout: 15 * time.Second,
+		// IdleConnTimeout recycles pooled connections that have been idle
+		// longer than 90s to avoid stale-connection errors on long-running
+		// workers that make infrequent scrape calls.
+		IdleConnTimeout: 90 * time.Second,
 	}
 }
 
