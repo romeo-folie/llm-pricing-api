@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getIdentity, type IdentityResponse, type SignupStep } from "@/lib/signup";
 import RequestLinkForm from "@/components/signup/RequestLinkForm";
 import SentConfirmation from "@/components/signup/SentConfirmation";
@@ -20,6 +20,7 @@ import KeyPanel from "@/components/signup/KeyPanel";
  * that param and immediately calls /auth/signup/me to retrieve identity state.
  */
 export default function SignupFlow() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const verified = searchParams.get("verified") === "1";
 
@@ -84,8 +85,10 @@ export default function SignupFlow() {
         <button
           className="signup-link-btn"
           onClick={() => {
-            setStep("request");
+            fetchedRef.current = false;
             setVerifyError(null);
+            setStep("request");
+            router.replace("/signup/free");
           }}
         >
           Try again

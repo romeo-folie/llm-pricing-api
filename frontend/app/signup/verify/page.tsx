@@ -9,22 +9,22 @@
  * case someone bookmarks /signup/verify or the proxy strips the /auth prefix.
  * It immediately redirects to the correct backend path.
  */
-import { redirect } from "next/navigation";
+import { redirect } from "next/navigation"
 
 interface Props {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ token?: string }>
 }
 
 export default async function VerifyPage({ searchParams }: Props) {
-  const params = await searchParams;
-  const token = (params.token ?? "").trim();
+  const params = await searchParams
+  const token = (params.token ?? "").trim()
 
   if (!token) {
     // No token supplied — redirect to the signup page instead of forwarding
     // an empty token to the backend (which would return an error anyway).
-    redirect("/signup/free");
+    redirect("/signup/free")
   }
 
   // Forward to the backend handler which owns the cookie + redirect logic.
-  redirect(`/auth/signup/verify?token=${encodeURIComponent(token)}`);
+  redirect(`/auth/signup/verify?token=${encodeURIComponent(token)}`)
 }

@@ -146,9 +146,12 @@ function parseError(res: Response, body: Record<string, unknown>): ApiError {
     // Legacy body fields.
     const bodyRetryMs = Number(body.retry_after_ms ?? 0);
     const bodyRetrySec = Number(body.retry_after ?? 0);
-    // Standard Retry-After header (in seconds).
-    const headerRetrySec = Number(res.headers.get("Retry-After") ?? 0);
-    const retryMs = extRetryMs || bodyRetryMs || bodyRetrySec * 1000 || headerRetrySec * 1000;
+    // Standard Retry-After header (in seconds) — parseInt guards against
+    // HTTP-date strings or non-numeric values that would produce NaN.
+    const rawHeader = res.headers.get("Retry-After") ?? "";
+    const headerRetrySec = parseInt(rawHeader, 10);
+    const safeHeaderMs = Number.isFinite(headerRetrySec) && headerRetrySec > 0 ? headerRetrySec * 1000 : 0;
+    const retryMs = extRetryMs || bodyRetryMs || bodyRetrySec * 1000 || safeHeaderMs;
 
     const msg = detailMsg ?? "Too many requests";
     if (msg.toLowerCase().includes("cooldown")) {
