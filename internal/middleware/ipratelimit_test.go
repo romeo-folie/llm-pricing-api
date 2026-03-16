@@ -154,6 +154,9 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != fiber.StatusTooManyRequests {
+		t.Fatalf("want 429, got %d", resp.StatusCode)
+	}
 	ct := resp.Header.Get("Content-Type")
 	if ct != "application/problem+json" {
 		t.Errorf("want Content-Type=application/problem+json, got %q", ct)
