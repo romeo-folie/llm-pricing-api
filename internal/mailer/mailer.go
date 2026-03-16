@@ -71,21 +71,24 @@ func (m *Mailer) SendMagicLink(ctx context.Context, toEmail, verifyURL string) e
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4096))
-		raw := buf.String()
-
-		var errBody struct {
-			Name    string `json:"name"`
-			Message string `json:"message"`
-		}
-		if err := json.Unmarshal(buf.Bytes(), &errBody); err == nil && (errBody.Name != "" || errBody.Message != "") {
-			return fmt.Errorf("mailer: resend API %d: %s — %s", resp.StatusCode, errBody.Name, errBody.Message)
-		}
-		return fmt.Errorf("mailer: resend API %d: %s", resp.StatusCode, raw)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// Drain body on success to enable HTTP connection reuse.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
 	}
-	return nil
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4096))
+	raw := buf.String()
+
+	var errBody struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &errBody); err == nil && (errBody.Name != "" || errBody.Message != "") {
+		return fmt.Errorf("mailer: resend API %d: %s — %s", resp.StatusCode, errBody.Name, errBody.Message)
+	}
+	return fmt.Errorf("mailer: resend API %d: %s", resp.StatusCode, raw)
 }
 
 // magicLinkHTML returns the email body for a magic-link request.

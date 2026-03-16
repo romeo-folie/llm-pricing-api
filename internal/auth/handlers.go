@@ -66,10 +66,11 @@ func New(store Store, mailer Mailer, cfg Config, log zerolog.Logger) *Handler {
 }
 
 // Register mounts the auth routes onto a Fiber router.
+// The caller is expected to pass a router group already mounted at /auth.
 func Register(router fiber.Router, h *Handler) {
-	router.Post("/auth/signup/request-link", h.RequestLink)
-	router.Get("/auth/signup/verify", h.Verify)
-	router.Get("/auth/signup/me", h.Me)
+	router.Post("/signup/request-link", h.RequestLink)
+	router.Get("/signup/verify", h.Verify)
+	router.Get("/signup/me", h.Me)
 }
 
 // ── POST /auth/signup/request-link ───────────────────────────────────────────
@@ -131,15 +132,14 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 
 	verifyURL := signup.BuildVerifyURL(h.cfg.MagicLinkBaseURL, h.cfg.MagicLinkPath, rawToken)
 
-	// Send email asynchronously — delivery failure must not block the response
-	// or reveal whether the email exists on the platform.
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if sendErr := h.mailer.SendMagicLink(bgCtx, email, verifyURL); sendErr != nil {
-			h.log.Error().Err(sendErr).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: magic-link email delivery failed")
-		}
-	}()
+	// Send email synchronously with a short timeout. Rate limiting (fix #1)
+	// bounds how many requests reach this point, so blocking is safe.
+	// Delivery failure must not leak whether the email exists.
+	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if sendErr := h.mailer.SendMagicLink(sendCtx, email, verifyURL); sendErr != nil {
+		h.log.Warn().Err(sendErr).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: magic-link email delivery failed")
+	}
 
 	return genericOK(c)
 }

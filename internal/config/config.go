@@ -1,7 +1,10 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 )
@@ -82,7 +85,12 @@ func Load() (*Config, error) {
 	signingSecret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
 	if signingSecret == "" {
 		if appEnv == "development" {
-			signingSecret = "dev-secret-at-least-32-bytes-long-for-testing"
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				return nil, fmt.Errorf("generate ephemeral signing secret: %w", err)
+			}
+			signingSecret = hex.EncodeToString(b)
+			log.Println("WARNING: MAGIC_LINK_SIGNING_SECRET not set — using ephemeral random secret (sessions will not survive restarts)")
 		} else {
 			return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET is required in non-development environments")
 		}

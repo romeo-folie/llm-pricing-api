@@ -163,11 +163,13 @@ func newTestApp(store auth.Store, mailer auth.Mailer) *fiber.App {
 	}})
 	log := zerolog.Nop()
 	h := auth.New(store, mailer, testCfg, log)
-	auth.Register(app, h)
+	authGroup := app.Group("/auth")
+	auth.Register(authGroup, h)
 	return app
 }
 
-func doRequest(app *fiber.App, method, path, body string, cookies ...*http.Cookie) *http.Response {
+func doRequest(t *testing.T, app *fiber.App, method, path, body string, cookies ...*http.Cookie) *http.Response {
+	t.Helper()
 	var bodyReader io.Reader
 	if body != "" {
 		bodyReader = strings.NewReader(body)
@@ -179,7 +181,10 @@ func doRequest(app *fiber.App, method, path, body string, cookies ...*http.Cooki
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}
-	resp, _ := app.Test(req, 5000)
+	resp, err := app.Test(req, 5000)
+	if err != nil {
+		t.Fatalf("app.Test(%s %s) failed: %v", method, path, err)
+	}
 	return resp
 }
 
@@ -195,7 +200,7 @@ func TestRequestLink_ValidEmail_Returns200(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
-	resp := doRequest(app, "POST", "/auth/signup/request-link", `{"email":"alice@example.com"}`)
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"alice@example.com"}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -209,7 +214,7 @@ func TestRequestLink_InvalidEmail_Returns400(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
-	resp := doRequest(app, "POST", "/auth/signup/request-link", `{"email":"notanemail"}`)
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"notanemail"}`)
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
@@ -226,7 +231,7 @@ func TestRequestLink_RateLimited_Returns200(t *testing.T) {
 
 	// Send 3 requests to hit the rate limit.
 	for i := 0; i < 3; i++ {
-		resp := doRequest(app, "POST", "/auth/signup/request-link", `{"email":"ratelimit@example.com"}`)
+		resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"ratelimit@example.com"}`)
 		if resp.StatusCode != 200 {
 			t.Fatalf("request %d: status = %d, want 200", i+1, resp.StatusCode)
 		}
@@ -234,7 +239,7 @@ func TestRequestLink_RateLimited_Returns200(t *testing.T) {
 
 	// 4th request should still return 200 (no enumeration leak) but not create a new token.
 	tokenCountBefore := len(store.tokens)
-	resp := doRequest(app, "POST", "/auth/signup/request-link", `{"email":"ratelimit@example.com"}`)
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"ratelimit@example.com"}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("rate-limited request: status = %d, want 200", resp.StatusCode)
 	}
@@ -253,7 +258,7 @@ func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {
 	store.identities["bob@example.com"] = &signup.Identity{ID: "id-bob", Email: "bob@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	store.tokens["validtoken123"] = mockToken{id: "tok-1", identityID: "id-bob", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
 
-	resp := doRequest(app, "GET", "/auth/signup/verify?token=validtoken123", "")
+	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=validtoken123", "")
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -280,7 +285,7 @@ func TestVerify_MissingToken_Returns400(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
-	resp := doRequest(app, "GET", "/auth/signup/verify", "")
+	resp := doRequest(t, app, "GET", "/auth/signup/verify", "")
 	if resp.StatusCode != 400 {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
@@ -290,7 +295,7 @@ func TestVerify_InvalidToken_Returns401(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
-	resp := doRequest(app, "GET", "/auth/signup/verify?token=doesnotexist", "")
+	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=doesnotexist", "")
 	if resp.StatusCode != 401 {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
@@ -302,7 +307,7 @@ func TestVerify_ExpiredToken_Returns410(t *testing.T) {
 	app := newTestApp(store, mailer)
 	store.identities["carol@example.com"] = &signup.Identity{ID: "id-carol", Email: "carol@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	store.tokens["expiredtok"] = mockToken{id: "tok-exp", identityID: "id-carol", expiresAt: time.Now().Add(-1 * time.Minute), createdAt: time.Now()}
-	resp := doRequest(app, "GET", "/auth/signup/verify?token=expiredtok", "")
+	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=expiredtok", "")
 	if resp.StatusCode != 410 {
 		t.Fatalf("status = %d, want 410", resp.StatusCode)
 	}
@@ -320,12 +325,12 @@ func TestVerify_ReusedToken_Returns410(t *testing.T) {
 	store.tokens["onetimetoken"] = mockToken{id: "tok-ot", identityID: "id-dave", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
 
 	// First use.
-	resp1 := doRequest(app, "GET", "/auth/signup/verify?token=onetimetoken", "")
+	resp1 := doRequest(t, app, "GET", "/auth/signup/verify?token=onetimetoken", "")
 	if resp1.StatusCode != 200 {
 		t.Fatalf("first verify status = %d, want 200", resp1.StatusCode)
 	}
 	// Second use.
-	resp2 := doRequest(app, "GET", "/auth/signup/verify?token=onetimetoken", "")
+	resp2 := doRequest(t, app, "GET", "/auth/signup/verify?token=onetimetoken", "")
 	if resp2.StatusCode != 410 {
 		t.Fatalf("second verify status = %d, want 410", resp2.StatusCode)
 	}
@@ -355,7 +360,7 @@ func TestMe_WithValidSession_Returns200(t *testing.T) {
 	}
 
 	cookie := &http.Cookie{Name: testCfg.SignupSessionCookieName, Value: sessionVal}
-	resp := doRequest(app, "GET", "/auth/signup/me", "", cookie)
+	resp := doRequest(t, app, "GET", "/auth/signup/me", "", cookie)
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -369,7 +374,7 @@ func TestMe_NoCookie_Returns401(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
-	resp := doRequest(app, "GET", "/auth/signup/me", "")
+	resp := doRequest(t, app, "GET", "/auth/signup/me", "")
 	if resp.StatusCode != 401 {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
@@ -380,7 +385,7 @@ func TestMe_TamperedCookie_Returns401(t *testing.T) {
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 	cookie := &http.Cookie{Name: testCfg.SignupSessionCookieName, Value: "tampered.value.here"}
-	resp := doRequest(app, "GET", "/auth/signup/me", "", cookie)
+	resp := doRequest(t, app, "GET", "/auth/signup/me", "", cookie)
 	if resp.StatusCode != 401 {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
@@ -399,7 +404,7 @@ func TestMe_ExpiredSession_Returns401(t *testing.T) {
 	}
 	sessionVal, _ := signup.SignSession(testCfg.SigningSecret, payload)
 	cookie := &http.Cookie{Name: testCfg.SignupSessionCookieName, Value: sessionVal}
-	resp := doRequest(app, "GET", "/auth/signup/me", "", cookie)
+	resp := doRequest(t, app, "GET", "/auth/signup/me", "", cookie)
 	if resp.StatusCode != 401 {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}

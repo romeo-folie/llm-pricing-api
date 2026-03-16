@@ -144,6 +144,7 @@ func main() {
 	)
 
 	// Register magic-link signup auth routes (public — no Unkey required).
+	// An IP-based rate limiter is applied to the auth group to prevent abuse.
 	signupStore := signup.NewStore(db)
 	ml := mailer.New(cfg.ResendAPIKey, cfg.EmailFrom)
 	authHandler := auth.New(signupStore, ml, auth.Config{
@@ -155,7 +156,8 @@ func main() {
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 	}, log)
-	auth.Register(app, authHandler)
+	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient))
+	auth.Register(authGroup, authHandler)
 
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)
