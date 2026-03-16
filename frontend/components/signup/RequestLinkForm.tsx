@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { FormEvent } from "react"
 import { requestMagicLink, type ApiError } from "@/lib/signup"
 import { useCooldown } from "@/hooks/useCooldown"
 
@@ -25,7 +26,7 @@ export default function RequestLinkForm({ onSent }: Props) {
     }
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (isSubmitting || cooldownMs > 0) return
 
