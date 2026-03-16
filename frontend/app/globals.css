@@ -113,6 +113,12 @@
     --hero-endpoint-border:  #D0CBC5;
     --hero-endpoint-text:    #1C1917;
 
+    /* Hero method pills — dark mode: deeper fills for contrast on light card bg */
+    --hero-method-get-bg:    #7BAED4;
+    --hero-method-get-text:  #042C53;
+    --hero-method-post-bg:   #6DC4A0;
+    --hero-method-post-text: #04342C;
+
     /* Hero diagram labels — match provider name text (--ink) for consistency */
     --hero-label:            #F0EDE9;
   }

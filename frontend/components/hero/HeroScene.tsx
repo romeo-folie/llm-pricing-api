@@ -45,7 +45,17 @@ const PLANET_COLOR: Record<string, string> = {
   "Hugging Face": "#FFD21E",
 };
 
-const ENDPOINTS = ["/v1/models", "/v1/history", "/v1/stream", "/v1/context"];
+interface Endpoint {
+  method: "GET" | "POST";
+  path: string;
+}
+
+const ENDPOINTS: Endpoint[] = [
+  { method: "GET",  path: "/v1/models"  },
+  { method: "GET",  path: "/v1/history" },
+  { method: "POST", path: "/v1/stream"  },
+  { method: "GET",  path: "/v1/context" },
+];
 
 /* ─── Planet radii ─────────────────────────────────────────────────────────── */
 
@@ -242,7 +252,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         </text>
 
         {/* ── Output flow lines: reactor → endpoints ────────────────── */}
-        {ENDPOINTS.map((_, i) => {
+        {ENDPOINTS.map((_ep, i) => {
           const ey = endpointY(i) + E_H / 2;
           const fanY = RCY - 15 + i * 10;
           const startX = RCX + REACTOR_EDGE;
@@ -274,29 +284,43 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         {/* ── Endpoint cards ────────────────────────────────────────── */}
         {ENDPOINTS.map((ep, i) => {
           const y = endpointY(i);
+          const cy = y + E_H / 2;
+          // Method pill geometry
+          const pillW = ep.method === "POST" ? 30 : 24;
+          const pillH = 13;
+          const pillX = E_X + 8;
+          const pillY = cy - pillH / 2;
+          // GET → blue pill; POST → green pill — both readable on light & dark bg
+          const pillBg   = ep.method === "POST" ? "var(--hero-method-post-bg,   #B9EDD8)" : "var(--hero-method-get-bg,  #B5D4F4)";
+          const pillText = ep.method === "POST" ? "var(--hero-method-post-text, #0C5E3A)" : "var(--hero-method-get-text, #0C447C)";
+          const pathX = pillX + pillW + 6;
           return (
-            <g key={ep}>
+            <g key={ep.path}>
               <rect
                 x={E_X} y={y} width={E_W} height={E_H} rx="4"
                 fill="var(--hero-endpoint-bg, var(--surfaceHi))"
                 stroke="var(--hero-endpoint-border, var(--border))"
                 strokeWidth="1"
               />
+              {/* Method pill */}
+              <rect x={pillX} y={pillY} width={pillW} height={pillH} rx="3" fill={pillBg} />
               <text
-                x={E_X + 10} y={y + E_H / 2 - 3}
-                fontSize="10" fontWeight="600"
+                x={pillX + pillW / 2} y={cy}
+                fontSize="7.5" fontWeight="700"
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--hero-endpoint-text, var(--ink))" dominantBaseline="middle"
+                fill={pillText} textAnchor="middle" dominantBaseline="middle"
               >
-                {ep}
+                {ep.method}
               </text>
+              {/* Route path */}
               <text
-                x={E_X + 10} y={y + E_H / 2 + 10}
-                fontSize="8" fontWeight="600"
+                x={pathX} y={cy}
+                fontSize="9" fontWeight="500"
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="var(--green)" dominantBaseline="middle" opacity="0.8"
+                fill="var(--hero-endpoint-text, var(--ink))"
+                dominantBaseline="middle"
               >
-                endpoint
+                {ep.path}
               </text>
             </g>
           );
