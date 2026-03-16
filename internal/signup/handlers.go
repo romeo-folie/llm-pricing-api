@@ -69,12 +69,12 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil || strings.TrimSpace(body.Email) == "" {
-		h.log.Warn().Msg("signup: request-link missing or unparseable email")
+		h.log.Info().Msg("signup: request-link missing or unparseable email")
 		return genericOK()
 	}
 	email := normalizeEmail(body.Email)
 	if !isValidEmail(email) {
-		h.log.Warn().Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).Msg("signup: request-link invalid email")
+		h.log.Info().Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).Msg("signup: request-link invalid email")
 		return genericOK()
 	}
 
@@ -82,7 +82,7 @@ func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	if err := h.guard.CheckRequestLink(c.Context(), ip, email); err != nil {
 		// Log the specific reason internally but return a generic response to
 		// avoid leaking which control was triggered.
-		h.log.Warn().
+		h.log.Info().
 			Str("ip_hash", truncate(hashValue(ip, h.cfg.SigningSecret), 12)).
 			Str("email_hash", truncate(hashValue(email, h.cfg.SigningSecret), 12)).
 			Err(err).Msg("signup: request-link blocked")

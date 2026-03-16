@@ -51,7 +51,7 @@ func buildApp(store signup.Store, mailer signup.Mailer, issuer signup.KeyIssuer)
 		ResendCooldown:    0,
 		MaxRequestsPerHour: 0, // disabled in tests
 	}
-	guard := signup.NewAbuseGuard(nil, cfg) // nil redis → guard fails open
+	guard := signup.NewAbuseGuard(nil, cfg, zerolog.Nop()) // nil redis → guard fails open
 	h := signup.NewHandlers(store, mailer, issuer, guard, cfg, zerolog.Nop())
 
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})

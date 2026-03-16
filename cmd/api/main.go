@@ -153,7 +153,7 @@ func main() {
 		signupStore := signup.NewStore(db)
 		signupMailer := signup.NewResendMailer(signupCfg.ResendAPIKey, signupCfg.EmailFrom)
 		signupIssuer := signup.NewUnkeyIssuer(signupCfg.UnkeyRootKey, signupCfg.UnkeyAPIID)
-		signupGuard := signup.NewAbuseGuard(redisClient, signupCfg)
+		signupGuard := signup.NewAbuseGuard(redisClient, signupCfg, log)
 		signupHandlers := signup.NewHandlers(signupStore, signupMailer, signupIssuer, signupGuard, signupCfg, log)
 		authGroup := app.Group("/auth/signup")
 		signupHandlers.Register(authGroup)

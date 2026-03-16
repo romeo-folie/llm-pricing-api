@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 )
 
 // ipRateLimitScript atomically increments a counter and ensures it has a TTL.
@@ -26,13 +27,14 @@ var ipRateLimitScript = redis.NewScript(`
 // AbuseGuard enforces rate-limiting and cooldown controls for the signup flow.
 // All limits are tracked in Redis.
 type AbuseGuard struct {
-	rdb    *redis.Client
-	cfg    *HandlerConfig
+	rdb *redis.Client
+	cfg *HandlerConfig
+	log zerolog.Logger
 }
 
 // NewAbuseGuard creates an AbuseGuard backed by the given Redis client.
-func NewAbuseGuard(rdb *redis.Client, cfg *HandlerConfig) *AbuseGuard {
-	return &AbuseGuard{rdb: rdb, cfg: cfg}
+func NewAbuseGuard(rdb *redis.Client, cfg *HandlerConfig, log zerolog.Logger) *AbuseGuard {
+	return &AbuseGuard{rdb: rdb, cfg: cfg, log: log}
 }
 
 // CheckRequestLink evaluates all abuse controls for the request-link endpoint.
@@ -61,6 +63,7 @@ func (g *AbuseGuard) CheckRequestLink(ctx context.Context, ip, email string) err
 		count, err := ipRateLimitScript.Run(ctx, g.rdb, []string{key}, int(time.Hour.Seconds())).Int64()
 		if err != nil {
 			// Redis failure → fail open (don't block signups due to cache outage).
+			g.log.Error().Err(err).Msg("signup: ip-rate-limit Redis error — failing open")
 		} else if int(count) > g.cfg.MaxRequestsPerHour {
 			return ErrRateLimited
 		}

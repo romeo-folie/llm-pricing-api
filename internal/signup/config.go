@@ -50,23 +50,44 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(secret))
 	}
 
+	tokenTTL, err := parseDurationMinutes("MAGIC_LINK_TTL_MINUTES", 15)
+	if err != nil {
+		return nil, err
+	}
+	sessionTTL, err := parseDurationHours("SIGNUP_SESSION_TTL_HOURS", 24)
+	if err != nil {
+		return nil, err
+	}
+	resendCooldown, err := parseDurationSeconds("SIGNUP_RESEND_COOLDOWN_SECONDS", 60)
+	if err != nil {
+		return nil, err
+	}
+	maxReqPerHour, err := getEnvInt("SIGNUP_MAX_REQUESTS_PER_IP_PER_HOUR", 5)
+	if err != nil {
+		return nil, err
+	}
+	regenCooldown, err := parseDurationSeconds("SIGNUP_REGENERATE_COOLDOWN_SECONDS", 0)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &HandlerConfig{
 		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
 		EmailFrom:          getEnvOr("EMAIL_FROM", "noreply@llmrates.live"),
 		SigningSecret:      secret,
-		TokenTTL:           parseDurationMinutes("MAGIC_LINK_TTL_MINUTES", 15),
+		TokenTTL:           tokenTTL,
 		MagicLinkBase:      getEnvOr("MAGIC_LINK_BASE_URL", "https://llmrates.live"),
 		MagicLinkPath:      getEnvOr("MAGIC_LINK_PATH", "/auth/signup/verify"),
 		UnkeyRootKey:       os.Getenv("UNKEY_ROOT_KEY"),
 		UnkeyAPIID:         os.Getenv("UNKEY_API_ID"),
-		SessionTTL:         parseDurationHours("SIGNUP_SESSION_TTL_HOURS", 24),
+		SessionTTL:         sessionTTL,
 		SessionCookieName:  getEnvOr("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
 		SessionSecure:      getEnvBool("SIGNUP_SESSION_SECURE", true),
 		SessionSameSite:    getEnvOr("SIGNUP_SESSION_SAMESITE", "Lax"),
-		ResendCooldown:     parseDurationSeconds("SIGNUP_RESEND_COOLDOWN_SECONDS", 60),
-		MaxRequestsPerHour: getEnvInt("SIGNUP_MAX_REQUESTS_PER_IP_PER_HOUR", 5),
+		ResendCooldown:     resendCooldown,
+		MaxRequestsPerHour: maxReqPerHour,
 		BlockDisposable:    getEnvBool("SIGNUP_DISPOSABLE_EMAIL_BLOCK", true),
-		RegenerateCooldown: parseDurationSeconds("SIGNUP_REGENERATE_COOLDOWN_SECONDS", 0),
+		RegenerateCooldown: regenCooldown,
 	}
 
 	// TokenTTL must be positive — a zero or negative value would cause the email
@@ -109,13 +130,15 @@ func getEnvOr(key, def string) string {
 	return def
 }
 
-func getEnvInt(key string, def int) int {
+func getEnvInt(key string, def int) (int, error) {
 	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("%s: invalid integer value %q", key, v)
 		}
+		return n, nil
 	}
-	return def
+	return def, nil
 }
 
 func getEnvBool(key string, def bool) bool {
@@ -127,14 +150,26 @@ func getEnvBool(key string, def bool) bool {
 	return def
 }
 
-func parseDurationMinutes(key string, defMinutes int) time.Duration {
-	return time.Duration(getEnvInt(key, defMinutes)) * time.Minute
+func parseDurationMinutes(key string, defMinutes int) (time.Duration, error) {
+	n, err := getEnvInt(key, defMinutes)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(n) * time.Minute, nil
 }
 
-func parseDurationHours(key string, defHours int) time.Duration {
-	return time.Duration(getEnvInt(key, defHours)) * time.Hour
+func parseDurationHours(key string, defHours int) (time.Duration, error) {
+	n, err := getEnvInt(key, defHours)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(n) * time.Hour, nil
 }
 
-func parseDurationSeconds(key string, defSeconds int) time.Duration {
-	return time.Duration(getEnvInt(key, defSeconds)) * time.Second
+func parseDurationSeconds(key string, defSeconds int) (time.Duration, error) {
+	n, err := getEnvInt(key, defSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(n) * time.Second, nil
 }
