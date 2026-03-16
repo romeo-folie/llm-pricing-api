@@ -48,7 +48,8 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 	}
 
 	return func(c *fiber.Ctx) error {
-		now := timeNow().Unix()
+		nowTime := timeNow()
+		now := nowTime.Unix()
 		windowSec := int64(ipRateLimitWindow.Seconds())
 		ip := RealIP(c, trustedProxies...)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
@@ -75,9 +76,9 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 		}
 
 		if count > ipRateLimitMax {
-			// Use the injected clock (timeNow) for both the window calculation
-			// and Retry-After so they stay consistent in deterministic tests.
-			retryAfter := int(windowEnd.Sub(timeNow()).Seconds())
+			// Reuse the captured nowTime so Retry-After is consistent with the
+			// window calculation above (no second clock read).
+			retryAfter := int(windowEnd.Sub(nowTime).Seconds())
 			if retryAfter < 0 {
 				retryAfter = 0
 			}

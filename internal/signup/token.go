@@ -5,7 +5,7 @@ package signup
 // NOTE: The signup package has two session implementations:
 //
 //   - session.go: EncodeSession/DecodeSession — used by the signup self-service
-//     flow (internal/signup/handlers.go). Cookie format: base64url(identityID:unix).<hmac>.
+//     flow (internal/signup/handlers.go). Cookie format: base64url(identityID:expiresUnix).<hmac>.
 //
 //   - token.go (this file): SignSession/VerifySession — used by the separate
 //     auth magic-link flow (internal/auth/handlers.go). Cookie format:
@@ -16,7 +16,8 @@ package signup
 // auditing both callers.
 //
 // Token hashing (for DB storage) lives in hash.go.
-// Magic-link URL generation and HMAC signing live in tokens.go.
+// Magic-link URL construction and raw token generation live in tokens.go.
+// Session HMAC signing and verification for the auth flow live in this file (token.go).
 
 import (
 	"crypto/hmac"

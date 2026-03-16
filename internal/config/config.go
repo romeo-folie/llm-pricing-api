@@ -96,9 +96,8 @@ func Load() (*Config, error) {
 	}
 	if len(signingSecret) < 32 {
 		// len() measures UTF-8 bytes, not Unicode code points. The message
-		// uses "characters" to avoid misleading operators into thinking a
-		// decoded (e.g. hex/base64) byte count is required.
-		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 characters (got %d)", len(signingSecret))
+		// uses "bytes" because that is what len() actually counts.
+		return nil, fmt.Errorf("MAGIC_LINK_SIGNING_SECRET must be at least 32 bytes (got %d)", len(signingSecret))
 	}
 
 	magicLinkTTL, err := getEnvIntPositive("MAGIC_LINK_TTL_MINUTES", 15)
