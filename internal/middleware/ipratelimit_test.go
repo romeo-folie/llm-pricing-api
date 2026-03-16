@@ -135,8 +135,10 @@ func TestIPRateLimit_RedisError_AllowsThrough(t *testing.T) {
 func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	now := time.Now()
+	// Fiber test mode reports c.IP() as "0.0.0.0".
 	key := ipWindowKey("0.0.0.0", now)
 
+	mock.MatchExpectationsInOrder(false)
 	mock.ExpectIncr(key).SetVal(11)
 
 	app := fiber.New(fiber.Config{
@@ -155,7 +157,7 @@ func TestIPRateLimit_429_HasProblemJSON(t *testing.T) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != fiber.StatusTooManyRequests {
-		t.Fatalf("want 429, got %d", resp.StatusCode)
+		t.Fatalf("want 429, got %d (mock expectations: %v)", resp.StatusCode, mock.ExpectationsWereMet())
 	}
 	ct := resp.Header.Get("Content-Type")
 	if ct != "application/problem+json" {
