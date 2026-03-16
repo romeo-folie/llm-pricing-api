@@ -34,9 +34,15 @@ export default function SignupFlow() {
 
   // When `verified` becomes true after mount (e.g. navigation with ?verified=1),
   // transition to the verifying step so the identity fetch runs.
+  // Conversely, when `verified` becomes false (e.g. after router.replace removes
+  // the query param), unblock the verifying→request transition so "Try again"
+  // doesn't leave the UI stuck on the spinner.
   useEffect(() => {
     if (verified && step === "request") {
       setStep("verifying")
+    }
+    if (!verified && step === "verifying") {
+      setStep("request")
     }
   }, [verified, step])
 
@@ -89,8 +95,13 @@ export default function SignupFlow() {
           onClick={() => {
             fetchedRef.current = false
             setVerifyError(null)
+            // Clear the query param first so the verified→verifying effect
+            // doesn't race with the step reset.
             router.replace("/signup/free")
             setStep("request")
+            // If verified is still true when React re-renders, the effect
+            // will briefly flip to "verifying", but the !verified guard
+            // resets back to "request" once the URL update lands.
           }}
         >
           Try again
