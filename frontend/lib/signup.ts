@@ -7,9 +7,8 @@ export type SignupStep =
   | "sent"           // link sent, waiting for user to check email
   | "verifying"      // /verify?token=... being processed
   | "verified"       // token consumed, session established
-  | "issued"         // key revealed for first time
   | "already-issued" // user has existing key
-  | "error";         // unrecoverable error
+  | "error"          // unrecoverable error
 
 export type ApiError = {
   code: "rate_limited" | "cooldown" | "invalid_email" | "disposable_domain" | "unknown";

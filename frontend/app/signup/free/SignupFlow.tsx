@@ -1,18 +1,18 @@
-"use client";
+"use client"
 
-import React, { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { getIdentity, type IdentityResponse, type SignupStep } from "@/lib/signup";
-import RequestLinkForm from "@/components/signup/RequestLinkForm";
-import SentConfirmation from "@/components/signup/SentConfirmation";
-import KeyPanel from "@/components/signup/KeyPanel";
+import React, { useEffect, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { getIdentity, type IdentityResponse, type SignupStep } from "@/lib/signup"
+import RequestLinkForm from "@/components/signup/RequestLinkForm"
+import SentConfirmation from "@/components/signup/SentConfirmation"
+import KeyPanel from "@/components/signup/KeyPanel"
 
 /**
  * SignupFlow orchestrates the state machine:
  *
  *  request  →  sent  (after form submission)
  *  ↓ (on page load with ?verified=1 and valid session)
- *  verified  →  issued / already-issued
+ *  verified  →  already-issued (if key exists)
  *
  * The verify callback (GET /auth/signup/verify?token=...) is handled entirely
  * server-side. The backend marks the identity verified, creates a session
@@ -20,50 +20,50 @@ import KeyPanel from "@/components/signup/KeyPanel";
  * that param and immediately calls /auth/signup/me to retrieve identity state.
  */
 export default function SignupFlow() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const verified = searchParams.get("verified") === "1";
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const verified = searchParams.get("verified") === "1"
 
-  const [step, setStep] = useState<SignupStep>(verified ? "verifying" : "request");
-  const [sentEmail, setSentEmail] = useState("");
-  const [identity, setIdentity] = useState<IdentityResponse | null>(null);
-  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [step, setStep] = useState<SignupStep>(verified ? "verifying" : "request")
+  const [sentEmail, setSentEmail] = useState("")
+  const [identity, setIdentity] = useState<IdentityResponse | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
 
-  const fetchedRef = useRef(false);
+  const fetchedRef = useRef(false)
 
   // When `verified` becomes true after mount (e.g. navigation with ?verified=1),
   // transition to the verifying step so the identity fetch runs.
   useEffect(() => {
     if (verified && step === "request") {
-      setStep("verifying");
+      setStep("verifying")
     }
-  }, [verified, step]);
+  }, [verified, step])
 
   useEffect(() => {
-    if (!verified || fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (!verified || fetchedRef.current) return
+    fetchedRef.current = true
 
-    const controller = new AbortController();
-    (async () => {
+    const controller = new AbortController()
+    ;(async () => {
       try {
-        const result = await getIdentity(controller.signal);
+        const result = await getIdentity(controller.signal)
         if (result.ok) {
-          setIdentity(result.identity);
-          setStep(result.identity.has_active_key ? "already-issued" : "verified");
+          setIdentity(result.identity)
+          setStep(result.identity.has_active_key ? "already-issued" : "verified")
         } else {
           setVerifyError(
             "We couldn't confirm your session. The link may have expired — try again."
-          );
-          setStep("error");
+          )
+          setStep("error")
         }
       } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        throw err;
+        if ((err as Error).name === "AbortError") return
+        throw err
       }
-    })();
+    })()
 
-    return () => controller.abort();
-  }, [verified]);
+    return () => controller.abort()
+  }, [verified])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ export default function SignupFlow() {
         <span className="signup-spinner signup-spinner-lg" aria-hidden="true" />
         <p className="signup-flow-status">Verifying your link…</p>
       </div>
-    );
+    )
   }
 
   if (step === "error") {
@@ -85,20 +85,20 @@ export default function SignupFlow() {
         <button
           className="signup-link-btn"
           onClick={() => {
-            fetchedRef.current = false;
-            setVerifyError(null);
-            setStep("request");
-            router.replace("/signup/free");
+            fetchedRef.current = false
+            setVerifyError(null)
+            setStep("request")
+            router.replace("/signup/free")
           }}
         >
           Try again
         </button>
       </div>
-    );
+    )
   }
 
   if ((step === "verified" || step === "already-issued") && identity) {
-    return <KeyPanel identity={identity} />;
+    return <KeyPanel identity={identity} />
   }
 
   if (step === "sent") {
@@ -106,20 +106,20 @@ export default function SignupFlow() {
       <SentConfirmation
         email={sentEmail}
         onBack={() => {
-          setSentEmail("");
-          setStep("request");
+          setSentEmail("")
+          setStep("request")
         }}
       />
-    );
+    )
   }
 
   // Default: request step
   return (
     <RequestLinkForm
       onSent={(email) => {
-        setSentEmail(email);
-        setStep("sent");
+        setSentEmail(email)
+        setStep("sent")
       }}
     />
-  );
+  )
 }
