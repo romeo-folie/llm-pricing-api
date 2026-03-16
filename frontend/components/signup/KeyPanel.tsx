@@ -1,15 +1,15 @@
-"use client";
+"use client"
 
-import React, { useEffect, useRef, useState, useTransition } from "react";
-import { issueKey, regenerateKey, type IdentityResponse, type ApiError } from "@/lib/signup";
+import React, { useEffect, useRef, useState } from "react"
+import { issueKey, regenerateKey, type IdentityResponse, type ApiError } from "@/lib/signup"
 
 interface Props {
-  identity: IdentityResponse;
+  identity: IdentityResponse
   /**
    * When the verify callback already issued the key (future extension),
    * pass it here to skip the issue-key call.
    */
-  initialKey?: string;
+  initialKey?: string
 }
 
 type KeyState =
@@ -17,7 +17,7 @@ type KeyState =
   | { phase: "revealing"; plaintext: string }
   | { phase: "hidden" }
   | { phase: "regenerating" }
-  | { phase: "error"; error: ApiError };
+  | { phase: "error"; error: ApiError }
 
 export default function KeyPanel({ identity, initialKey }: Props) {
   const [keyState, setKeyState] = useState<KeyState>(
@@ -26,92 +26,89 @@ export default function KeyPanel({ identity, initialKey }: Props) {
       : identity.has_active_key
       ? { phase: "hidden" }
       : { phase: "loading" }
-  );
-  const [copied, setCopied] = useState(false);
-  const [isPendingRegen, startRegen] = useTransition();
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const regenAbortRef = useRef<AbortController | null>(null);
+  )
+  const [copied, setCopied] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const regenAbortRef = useRef<AbortController | null>(null)
 
   // Auto-issue key on mount if identity has no key yet.
   // Guarded by hasFired ref to ensure idempotency across strict-mode double-mounts.
-  const hasFired = useRef(false);
+  const hasFired = useRef(false)
   useEffect(() => {
-    if (identity.has_active_key || initialKey || hasFired.current) return;
-    hasFired.current = true;
+    if (identity.has_active_key || initialKey || hasFired.current) return
+    hasFired.current = true
 
-    let cancelled = false;
-    const controller = new AbortController();
+    let cancelled = false
+    const controller = new AbortController()
 
-    (async () => {
-      try {
-        const result = await issueKey(controller.signal);
-        if (cancelled) return;
-        if (result.ok) {
-          setKeyState({ phase: "revealing", plaintext: result.key.plaintext });
-        } else {
-          setKeyState({ phase: "error", error: result.error });
-        }
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        throw err;
+    ;(async () => {
+      const result = await issueKey(controller.signal)
+      if (cancelled) return
+      if (result.ok) {
+        setKeyState({ phase: "revealing", plaintext: result.key.plaintext })
+      } else {
+        if (result.error.code === "aborted") return
+        setKeyState({ phase: "error", error: result.error })
       }
-    })();
+    })()
 
     return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [identity.has_active_key, initialKey]);
+      cancelled = true
+      controller.abort()
+    }
+  }, [identity.has_active_key, initialKey])
 
   // Clean up timers and in-flight requests on unmount.
   useEffect(() => {
     return () => {
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      if (regenAbortRef.current) regenAbortRef.current.abort();
-    };
-  }, []);
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+      if (regenAbortRef.current) regenAbortRef.current.abort()
+    }
+  }, [])
 
   const handleCopy = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(text)
     } catch {
       // Clipboard API may be unavailable (e.g. non-HTTPS, permission denied).
-      return;
+      return
     }
-    setCopied(true);
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), 2000);
-  };
+    setCopied(true)
+    if (copyTimer.current) clearTimeout(copyTimer.current)
+    copyTimer.current = setTimeout(() => setCopied(false), 2000)
+  }
 
-  const handleRegenerate = () => {
-    if (isPendingRegen) return;
+  const handleRegenerate = async () => {
+    if (isRegenerating) return
     const confirmed = confirm(
       "Regenerating your key will immediately revoke the old one. Any applications using it will stop working. Continue?"
-    );
-    if (!confirmed) return;
+    )
+    if (!confirmed) return
 
-    startRegen(async () => {
-      setKeyState({ phase: "regenerating" });
-      if (regenAbortRef.current) regenAbortRef.current.abort();
-      const controller = new AbortController();
-      regenAbortRef.current = controller;
+    setKeyState({ phase: "regenerating" })
+    setIsRegenerating(true)
 
-      try {
-        const result = await regenerateKey(controller.signal);
-        if (controller.signal.aborted) return;
-        if (result.ok) {
-          setKeyState({ phase: "revealing", plaintext: result.key.plaintext });
-        } else {
-          setKeyState({ phase: "error", error: result.error });
-        }
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        throw err;
+    if (regenAbortRef.current) regenAbortRef.current.abort()
+    const controller = new AbortController()
+    regenAbortRef.current = controller
+
+    try {
+      const result = await regenerateKey(controller.signal)
+      if (controller.signal.aborted) return
+      if (result.ok) {
+        setKeyState({ phase: "revealing", plaintext: result.key.plaintext })
+      } else {
+        setKeyState({ phase: "error", error: result.error })
       }
-    });
-  };
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsRegenerating(false)
+      }
+    }
+  }
 
-  const maskedKey = "sk-llmr-••••••••••••••••••••••••••••••";
+  const maskedKey = "sk-llmr-••••••••••••••••••••••••••••••"
 
   return (
     <div className="key-panel">
@@ -195,7 +192,7 @@ export default function KeyPanel({ identity, initialKey }: Props) {
           onClick={handleRegenerate}
           disabled={keyState.phase === "loading" || keyState.phase === "regenerating"}
           className="signup-link-btn key-regen-btn"
-          aria-busy={isPendingRegen}
+          aria-busy={isRegenerating}
         >
           Regenerate key
         </button>
@@ -205,7 +202,7 @@ export default function KeyPanel({ identity, initialKey }: Props) {
         </a>
       </div>
     </div>
-  );
+  )
 }
 
 function CopyIcon() {
@@ -219,7 +216,7 @@ function CopyIcon() {
         strokeLinecap="round"
       />
     </svg>
-  );
+  )
 }
 
 function CheckIcon() {
@@ -233,5 +230,5 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
-  );
+  )
 }

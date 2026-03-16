@@ -1,60 +1,72 @@
-"use client";
+"use client"
 
-import React, { useEffect, useRef, useState, useTransition } from "react";
-import { requestMagicLink, type ApiError } from "@/lib/signup";
+import React, { useEffect, useRef, useState } from "react"
+import { requestMagicLink, type ApiError } from "@/lib/signup"
 
 interface Props {
-  onSent: (email: string) => void;
+  onSent: (email: string) => void
 }
 
 export default function RequestLinkForm({ onSent }: Props) {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState<ApiError | null>(null);
-  const [cooldownMs, setCooldownMs] = useState(0);
-  const [isPending, startTransition] = useTransition();
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [email, setEmail] = useState("")
+  const [error, setError] = useState<ApiError | null>(null)
+  const [cooldownMs, setCooldownMs] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  // Clear cooldown interval on unmount to prevent leaked timers.
+  // Clear cooldown interval and abort in-flight request on unmount.
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
+      if (timerRef.current) clearInterval(timerRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
 
   const startCooldownTimer = (ms: number) => {
-    setCooldownMs(ms);
-    if (timerRef.current) clearInterval(timerRef.current);
+    setCooldownMs(ms)
+    if (timerRef.current) clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
       setCooldownMs((prev) => {
         if (prev <= 1000) {
-          clearInterval(timerRef.current!);
-          return 0;
+          clearInterval(timerRef.current!)
+          return 0
         }
-        return prev - 1000;
-      });
-    }, 1000);
-  };
+        return prev - 1000
+      })
+    }, 1000)
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isPending || cooldownMs > 0) return;
-    setError(null);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isSubmitting || cooldownMs > 0) return
+    setError(null)
+    setIsSubmitting(true)
 
-    startTransition(async () => {
-      const result = await requestMagicLink(email.trim());
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      const result = await requestMagicLink(email.trim(), controller.signal)
+      if (controller.signal.aborted) return
       if (result.ok) {
-        onSent(email.trim());
+        onSent(email.trim())
       } else {
-        setError(result.error);
+        setError(result.error)
         if (result.error.retryAfterMs) {
-          startCooldownTimer(result.error.retryAfterMs);
+          startCooldownTimer(result.error.retryAfterMs)
         }
       }
-    });
-  };
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsSubmitting(false)
+      }
+    }
+  }
 
-  const cooldownSec = Math.ceil(cooldownMs / 1000);
-  const isBlocked = isPending || cooldownMs > 0;
+  const cooldownSec = Math.ceil(cooldownMs / 1000)
+  const isBlocked = isSubmitting || cooldownMs > 0
 
   return (
     <form onSubmit={handleSubmit} className="signup-form" noValidate>
@@ -70,8 +82,8 @@ export default function RequestLinkForm({ onSent }: Props) {
           placeholder="you@example.com"
           value={email}
           onChange={(e) => {
-            setEmail(e.target.value);
-            if (error) setError(null);
+            setEmail(e.target.value)
+            if (error) setError(null)
           }}
           disabled={isBlocked}
           className="signup-input"
@@ -90,9 +102,9 @@ export default function RequestLinkForm({ onSent }: Props) {
         type="submit"
         disabled={isBlocked || !email.trim()}
         className="signup-submit"
-        aria-busy={isPending}
+        aria-busy={isSubmitting}
       >
-        {isPending ? (
+        {isSubmitting ? (
           <span className="signup-spinner" aria-hidden="true" />
         ) : cooldownMs > 0 ? (
           <>Resend in {cooldownSec}s</>
@@ -105,5 +117,5 @@ export default function RequestLinkForm({ onSent }: Props) {
         No password. No credit card. One link — you&apos;re in.
       </p>
     </form>
-  );
+  )
 }
