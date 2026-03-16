@@ -2,7 +2,6 @@ package signup
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -80,16 +79,6 @@ func DecodeSession(value, secret string) (*Session, error) {
 		return nil, ErrSessionExpired
 	}
 	return s, nil
-}
-
-// newSessionToken returns a cryptographically random opaque token
-// (used when a stateless signed cookie is not suitable).
-func newSessionToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // ErrSessionInvalid indicates a bad or tampered session cookie.
