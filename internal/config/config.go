@@ -74,6 +74,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ADMIN_PASSWORD must be explicitly set in non-development environments")
 	}
 
+	resendAPIKey := os.Getenv("RESEND_API_KEY")
+	if appEnv != "development" && resendAPIKey == "" {
+		return nil, fmt.Errorf("RESEND_API_KEY is required in non-development environments")
+	}
+
 	signingSecret := os.Getenv("MAGIC_LINK_SIGNING_SECRET")
 	if signingSecret == "" {
 		if appEnv == "development" {
@@ -110,7 +115,7 @@ func Load() (*Config, error) {
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
 		MetricsPort:      getEnv("METRICS_PORT", "9091"),
 
-		ResendAPIKey:            os.Getenv("RESEND_API_KEY"),
+		ResendAPIKey:            resendAPIKey,
 		EmailFrom:               getEnv("EMAIL_FROM", "LLMRates <noreply@llmrates.live>"),
 		MagicLinkSigningSecret:  signingSecret,
 		MagicLinkTTLMinutes:     magicLinkTTL,
@@ -118,7 +123,7 @@ func Load() (*Config, error) {
 		MagicLinkPath:           getEnv("MAGIC_LINK_PATH", "/signup/verify"),
 		SignupSessionCookieName: getEnv("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
 		SignupSessionTTLHours:   sessionTTL,
-		SignupSessionSecure:     getEnv("APP_ENV", "development") != "development",
+		SignupSessionSecure:     appEnv != "development",
 	}, nil
 }
 

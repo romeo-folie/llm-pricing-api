@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -72,7 +73,7 @@ func (m *Mailer) SendMagicLink(ctx context.Context, toEmail, verifyURL string) e
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(resp.Body)
+		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4096))
 		raw := buf.String()
 
 		var errBody struct {

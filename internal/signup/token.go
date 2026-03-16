@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"net/url"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 // GenerateRawToken returns a cryptographically random 32-byte token encoded
@@ -104,23 +102,10 @@ func VerifySession(secret, cookieValue string) (SessionPayload, error) {
 	return p, nil
 }
 
-// SetSessionCookie writes the signed session cookie onto the Fiber response.
-func SetSessionCookie(c *fiber.Ctx, name, value string, ttlHours int, secure bool) {
-	c.Cookie(&fiber.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		MaxAge:   ttlHours * 3600,
-		Secure:   secure,
-		HTTPOnly: true,
-		SameSite: "Lax",
-	})
-}
-
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 func encodePayload(p SessionPayload) (string, error) {
-	b, err := DefaultCodec.Marshal(p)
+	b, err := defaultCodec.Marshal(p)
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +117,7 @@ func decodePayload(encoded string, p *SessionPayload) error {
 	if err != nil {
 		return err
 	}
-	return DefaultCodec.Unmarshal(b, p)
+	return defaultCodec.Unmarshal(b, p)
 }
 
 func lastDot(s string) int {

@@ -20,6 +20,18 @@ import (
 	"llm-pricing-api/internal/signup"
 )
 
+// Store is the subset of signup.Store that auth handlers require.
+// Accepting an interface decouples the HTTP layer from the data-access
+// concrete type and makes unit testing straightforward.
+type Store interface {
+	CreateIdentity(ctx context.Context, email, ipHash, uaHash string) (signup.Identity, error)
+	CreateToken(ctx context.Context, identityID, rawToken string, expiresAt time.Time) (signup.Token, error)
+	ConsumeToken(ctx context.Context, rawToken string) (string, error)
+	MarkEmailVerified(ctx context.Context, identityID string) error
+	FindIdentityByID(ctx context.Context, id string) (signup.Identity, error)
+	CountRecentTokens(ctx context.Context, identityID string, since time.Time) (int, error)
+}
+
 // Mailer is the subset of mailer.Mailer that auth handlers require.
 // Using an interface here keeps the handler testable without a live Resend key.
 type Mailer interface {
@@ -42,14 +54,14 @@ type Config struct {
 
 // Handler handles magic-link auth endpoints.
 type Handler struct {
-	store  *signup.Store
+	store  Store
 	mailer Mailer
 	cfg    Config
 	log    zerolog.Logger
 }
 
 // New constructs an auth Handler.
-func New(store *signup.Store, mailer Mailer, cfg Config, log zerolog.Logger) *Handler {
+func New(store Store, mailer Mailer, cfg Config, log zerolog.Logger) *Handler {
 	return &Handler{store: store, mailer: mailer, cfg: cfg, log: log}
 }
 
@@ -89,6 +101,19 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	ident, err := h.store.CreateIdentity(ctx, email, ipHash, uaHash)
 	if err != nil {
 		h.log.Error().Err(err).Str("email_hash", truncate(hashField(email), 12)).Msg("auth: create identity failed")
+		return genericOK(c)
+	}
+
+	// Rate-limit: suppress token creation if this identity already has too many
+	// recent tokens. Returns 200 regardless to prevent account enumeration.
+	const maxTokensPer15Min = 3
+	recentCount, countErr := h.store.CountRecentTokens(ctx, ident.ID, time.Now().Add(-15*time.Minute))
+	if countErr != nil {
+		h.log.Error().Err(countErr).Msg("auth: count recent tokens failed")
+		return genericOK(c)
+	}
+	if recentCount >= maxTokensPer15Min {
+		h.log.Warn().Str("identity_id", ident.ID).Int("recent_tokens", recentCount).Msg("auth: rate limit exceeded, suppressing magic-link send")
 		return genericOK(c)
 	}
 
@@ -182,7 +207,7 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
-	signup.SetSessionCookie(c, h.cfg.SignupSessionCookieName, sessionValue, h.cfg.SignupSessionTTLHours, h.cfg.SignupSessionSecure)
+	setSessionCookie(c, h.cfg.SignupSessionCookieName, sessionValue, h.cfg.SignupSessionTTLHours, h.cfg.SignupSessionSecure)
 
 	return c.JSON(fiber.Map{
 		"verified":    true,
@@ -247,6 +272,20 @@ func (h *Handler) sessionFromCookie(c *fiber.Ctx) (signup.SessionPayload, error)
 	return signup.VerifySession(h.cfg.SigningSecret, val)
 }
 
+// setSessionCookie writes the signed session cookie onto the Fiber response.
+// This is HTTP-layer code and belongs in the auth package, not in signup.
+func setSessionCookie(c *fiber.Ctx, name, value string, ttlHours int, secure bool) {
+	c.Cookie(&fiber.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   ttlHours * 3600,
+		Secure:   secure,
+		HTTPOnly: true,
+		SameSite: "Lax",
+	})
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func normalizeEmail(raw string) string {
@@ -266,7 +305,8 @@ func isValidEmail(email string) bool {
 	if err != nil {
 		return false
 	}
-	// Reject display-name inputs — only bare addresses are accepted for storage.
+	// After normalizeEmail strips any display name, verify the result matches
+	// the input — if not, the original had a display-name component.
 	return strings.TrimSpace(addr.Address) == strings.TrimSpace(email)
 }
 
