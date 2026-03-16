@@ -75,6 +75,18 @@ func LoadHandlerConfig() (*HandlerConfig, error) {
 		return nil, fmt.Errorf("MAGIC_LINK_TTL_MINUTES must be > 0 (got %v)", cfg.TokenTTL)
 	}
 
+	// Validate SameSite — only Lax, Strict, None are valid values.
+	// SameSite=None requires Secure=true (modern browser requirement).
+	switch cfg.SessionSameSite {
+	case "Lax", "Strict", "None":
+		// valid
+	default:
+		return nil, fmt.Errorf("SIGNUP_SESSION_SAMESITE must be one of Lax, Strict, or None (got %q)", cfg.SessionSameSite)
+	}
+	if cfg.SessionSameSite == "None" && !cfg.SessionSecure {
+		return nil, fmt.Errorf("SIGNUP_SESSION_SAMESITE=None requires SIGNUP_SESSION_SECURE=true (required by modern browsers)")
+	}
+
 	// Validate required env vars so misconfigured deployments fail at startup
 	// rather than at first request (Resend/Unkey calls would silently fail).
 	if cfg.ResendAPIKey == "" {

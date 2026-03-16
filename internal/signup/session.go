@@ -41,11 +41,14 @@ func DecodeSession(value, secret string) (*Session, error) {
 		return nil, fmt.Errorf("signup.DecodeSession: secret must not be empty")
 	}
 	idx := strings.LastIndex(value, ".")
-	if idx < 0 {
+	if idx <= 0 {
 		return nil, ErrSessionInvalid
 	}
 	encoded := value[:idx]
 	sig := value[idx+1:]
+	if len(sig) != 64 {
+		return nil, ErrSessionInvalid
+	}
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(encoded))
