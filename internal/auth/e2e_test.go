@@ -36,11 +36,13 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping integration test")
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Skipf("pgxpool.New: %v — skipping", err)
 	}
-	if err := pool.Ping(context.Background()); err != nil {
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		t.Skipf("database unreachable: %v — skipping", err)
 	}
@@ -64,8 +66,13 @@ func newTestRedis(t *testing.T) *redis.Client {
 			opts = &redis.Options{Addr: rawURL}
 		}
 	}
+	opts.DialTimeout = 5 * time.Second
+	opts.ReadTimeout = 5 * time.Second
+	opts.WriteTimeout = 5 * time.Second
 	rc := redis.NewClient(opts)
-	if err := rc.Ping(context.Background()).Err(); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := rc.Ping(pingCtx).Err(); err != nil {
 		t.Skipf("Redis unreachable: %v — skipping", err)
 	}
 	t.Cleanup(func() { rc.Close() })

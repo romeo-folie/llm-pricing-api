@@ -194,7 +194,22 @@ func main() {
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 		SignupEnabled:           cfg.SignupEnabled,
 	}, log)
-	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
+	// When signup is disabled, short-circuit the request-link endpoint with
+	// 503 before the IP rate limiter runs. This avoids leaking 429 responses
+	// for a feature that is intentionally dark-launched.
+	authMiddlewares := []fiber.Handler{middleware.IPRateLimit(redisClient, log)}
+	if !cfg.SignupEnabled {
+		authMiddlewares = []fiber.Handler{
+			func(c *fiber.Ctx) error {
+				if c.Path() == "/auth/signup/request-link" && c.Method() == fiber.MethodPost {
+					return api.NewServiceUnavailable("signup is currently disabled")
+				}
+				return c.Next()
+			},
+			middleware.IPRateLimit(redisClient, log),
+		}
+	}
+	authGroup := app.Group("/auth", authMiddlewares...)
 	auth.Register(authGroup, authHandler)
 
 	// Register public discovery routes outside the auth group.
