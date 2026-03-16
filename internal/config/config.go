@@ -111,6 +111,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid SIGNUP_SESSION_TTL_HOURS: %w", err)
 	}
+	signupEnabled, err := getEnvBool("SIGNUP_ENABLED", true)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SIGNUP_ENABLED: %w", err)
+	}
 
 	return &Config{
 		DatabaseURL:      dbURL,
@@ -136,7 +140,7 @@ func Load() (*Config, error) {
 		SignupSessionCookieName: getEnv("SIGNUP_SESSION_COOKIE_NAME", "llmrates_signup"),
 		SignupSessionTTLHours:   sessionTTL,
 		SignupSessionSecure:     appEnv != "development",
-		SignupEnabled:           getEnvBool("SIGNUP_ENABLED", true),
+		SignupEnabled:           signupEnabled,
 	}, nil
 }
 
@@ -147,16 +151,16 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getEnvBool(key string, fallback bool) bool {
+func getEnvBool(key string, fallback bool) (bool, error) {
 	v := os.Getenv(key)
 	if v == "" {
-		return fallback
+		return fallback, nil
 	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
-		return fallback
+		return false, fmt.Errorf("%s: invalid boolean value %q (use true/false/1/0)", key, v)
 	}
-	return b
+	return b, nil
 }
 
 func getEnvIntPositive(key string, fallback int) (int, error) {

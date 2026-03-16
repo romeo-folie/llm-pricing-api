@@ -17,7 +17,7 @@ Before deploying, verify every item below:
 ### Database
 
 - [ ] Migration `000012` (api_identities table) has been applied
-- [ ] Migration `000013` (magic_link_tokens table) has been applied
+- [ ] Migration `000012` (`api_identities`, `magic_link_tokens`, `api_keys_registry` tables) has been applied
 - [ ] Verify: `SELECT COUNT(*) FROM api_identities;` returns 0 (no stale test data)
 
 ### Redis

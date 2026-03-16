@@ -95,9 +95,7 @@ type requestLinkBody struct {
 // enumeration — no indication whether the address is new or existing.
 func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	if !h.cfg.SignupEnabled {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": "signup is currently disabled",
-		})
+		return api.NewServiceUnavailable("signup is currently disabled")
 	}
 
 	log := logger.FromContext(c.Context(), h.log)

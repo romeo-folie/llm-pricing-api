@@ -431,8 +431,12 @@ func TestRequestLink_SignupDisabled_Returns503(t *testing.T) {
 		t.Fatalf("status = %d, want 503", resp.StatusCode)
 	}
 	b := bodyJSON(resp)
-	if b["error"] != "signup is currently disabled" {
-		t.Errorf("error = %v, want 'signup is currently disabled'", b["error"])
+	// Response is now RFC7807 ProblemDetail — check "detail" field.
+	if b["detail"] != "signup is currently disabled" {
+		t.Errorf("detail = %v, want 'signup is currently disabled'", b["detail"])
+	}
+	if b["status"] != float64(503) {
+		t.Errorf("status = %v, want 503", b["status"])
 	}
 }
 

@@ -49,16 +49,43 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 // newTestRedis connects to REDIS_URL. Skips if not set or unreachable.
 func newTestRedis(t *testing.T) *redis.Client {
 	t.Helper()
-	addr := os.Getenv("REDIS_URL")
-	if addr == "" {
-		addr = "localhost:6379"
+	rawURL := os.Getenv("REDIS_URL")
+	var opts *redis.Options
+	if rawURL == "" {
+		opts = &redis.Options{Addr: "localhost:6379"}
+	} else {
+		var err error
+		if opts, err = redis.ParseURL(rawURL); err != nil {
+			// Not a valid redis:// URL — treat as bare host:port.
+			opts = &redis.Options{Addr: rawURL}
+		}
 	}
-	rc := redis.NewClient(&redis.Options{Addr: addr})
+	rc := redis.NewClient(opts)
 	if err := rc.Ping(context.Background()).Err(); err != nil {
-		t.Skipf("Redis unreachable at %s: %v — skipping", addr, err)
+		t.Skipf("Redis unreachable: %v — skipping", err)
 	}
 	t.Cleanup(func() { rc.Close() })
 	return rc
+}
+
+// scanRedisKeys uses SCAN to find all keys matching pattern.
+// Safer than KEYS on managed Redis (KEYS can be disabled or block on large keyspaces).
+func scanRedisKeys(ctx context.Context, rc *redis.Client, pattern string) ([]string, error) {
+	var keys []string
+	var cursor uint64
+	for {
+		var batch []string
+		var err error
+		batch, cursor, err = rc.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return keys, err
+		}
+		keys = append(keys, batch...)
+		if cursor == 0 {
+			break
+		}
+	}
+	return keys, nil
 }
 
 func randEmail(t *testing.T) string {
@@ -294,15 +321,13 @@ func TestE2E_IPRateLimit_Blocks_After_Threshold(t *testing.T) {
 	app := newE2EApp(t, store, mailer, e2eCfg, rc)
 
 	// Flush rate limit keys to ensure clean state.
-	// Use a pattern delete to avoid affecting other Redis data.
+	// Use SCAN instead of KEYS — KEYS can be disabled or slow on managed Redis.
 	ctx := context.Background()
-	keys, _ := rc.Keys(ctx, "iprl:*").Result()
-	if len(keys) > 0 {
+	if keys, err := scanRedisKeys(ctx, rc, "iprl:*"); err == nil && len(keys) > 0 {
 		rc.Del(ctx, keys...)
 	}
 	t.Cleanup(func() {
-		keys, _ := rc.Keys(ctx, "iprl:*").Result()
-		if len(keys) > 0 {
+		if keys, err := scanRedisKeys(ctx, rc, "iprl:*"); err == nil && len(keys) > 0 {
 			rc.Del(ctx, keys...)
 		}
 	})
