@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
@@ -27,7 +28,8 @@ type Config struct {
 	// Defaults to "9091". Set to empty to disable.
 	MetricsPort string
 	// SignupEnabled controls whether the free-key signup endpoints are mounted.
-	// Set to "true" to enable. Defaults to false (off by default until DNS/Resend configured).
+	// Accepts any value recognised by strconv.ParseBool (e.g. "true", "TRUE", "1").
+	// Defaults to false (off by default until DNS/Resend configured).
 	SignupEnabled bool
 }
 
@@ -63,8 +65,16 @@ func Load() (*Config, error) {
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
 		MetricsPort:      getEnv("METRICS_PORT", "9091"),
-		SignupEnabled:    os.Getenv("SIGNUP_ENABLED") == "true",
+		SignupEnabled:    parseBoolEnv("SIGNUP_ENABLED"),
 	}, nil
+}
+
+// parseBoolEnv returns the boolean value of the named env var using
+// strconv.ParseBool (accepts "1", "t", "TRUE", "true", etc.).
+// Returns false when the variable is empty or unparseable.
+func parseBoolEnv(key string) bool {
+	v, _ := strconv.ParseBool(os.Getenv(key))
+	return v
 }
 
 func getEnv(key, fallback string) string {

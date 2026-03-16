@@ -62,9 +62,9 @@ type requestLinkBody struct {
 // whether an email exists.
 func (h *Handlers) RequestLink(c *fiber.Ctx) error {
 	genericOK := func() error {
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		return api.OK(c, fiber.Map{
 			"message": "If that email is valid, you'll receive a link shortly.",
-		})
+		}, api.TrustMeta{})
 	}
 
 	var body requestLinkBody

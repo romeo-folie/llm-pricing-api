@@ -25,7 +25,8 @@ type TokenConfig struct {
 
 // GenerateToken creates a cryptographically random raw token (32 bytes,
 // base64url encoded), signs it with HMAC-SHA256, and returns:
-//   - rawToken: the raw random token, used only for hashing/storage (never sent to user directly)
+//   - rawToken: the raw random token, embedded in the magic link as part of the signed
+//     value (rawToken + "." + HMAC-hex); only its SHA-256 hash is stored server-side
 //   - tokenHash: SHA-256 of rawToken, stored in the DB for lookup
 //   - expiresAt: absolute expiry timestamp
 //   - magicLinkURL: the full verification URL to email the user;
