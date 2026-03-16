@@ -30,6 +30,7 @@ export default function KeyPanel({ identity, initialKey }: Props) {
   const [copied, setCopied] = useState(false);
   const [isPendingRegen, startRegen] = useTransition();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const regenAbortRef = useRef<AbortController | null>(null);
 
   // Auto-issue key on mount if identity has no key yet.
   // Guarded by hasFired ref to ensure idempotency across strict-mode double-mounts.
@@ -62,10 +63,11 @@ export default function KeyPanel({ identity, initialKey }: Props) {
     };
   }, [identity.has_active_key, initialKey]);
 
-  // Clear copy feedback timer on unmount to avoid state updates on unmounted component.
+  // Clean up timers and in-flight requests on unmount.
   useEffect(() => {
     return () => {
       if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (regenAbortRef.current) regenAbortRef.current.abort();
     };
   }, []);
 
@@ -90,11 +92,21 @@ export default function KeyPanel({ identity, initialKey }: Props) {
 
     startRegen(async () => {
       setKeyState({ phase: "regenerating" });
-      const result = await regenerateKey();
-      if (result.ok) {
-        setKeyState({ phase: "revealing", plaintext: result.key.plaintext });
-      } else {
-        setKeyState({ phase: "error", error: result.error });
+      if (regenAbortRef.current) regenAbortRef.current.abort();
+      const controller = new AbortController();
+      regenAbortRef.current = controller;
+
+      try {
+        const result = await regenerateKey(controller.signal);
+        if (controller.signal.aborted) return;
+        if (result.ok) {
+          setKeyState({ phase: "revealing", plaintext: result.key.plaintext });
+        } else {
+          setKeyState({ phase: "error", error: result.error });
+        }
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        throw err;
       }
     });
   };

@@ -12,12 +12,13 @@
 import { redirect } from "next/navigation"
 
 interface Props {
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string | string[] }>
 }
 
 export default async function VerifyPage({ searchParams }: Props) {
   const params = await searchParams
-  const token = (params.token ?? "").trim()
+  const rawToken = Array.isArray(params.token) ? params.token[0] : params.token
+  const token = typeof rawToken === "string" ? rawToken.trim() : ""
 
   if (!token) {
     // No token supplied — redirect to the signup page instead of forwarding

@@ -44,6 +44,7 @@ export default function SentConfirmation({ email, onBack }: Props) {
       const result = await requestMagicLink(email);
       if (result.ok) {
         setResent(true);
+        startCooldownTimer(60_000);
       } else {
         setError(result.error);
         if (result.error.retryAfterMs) {
