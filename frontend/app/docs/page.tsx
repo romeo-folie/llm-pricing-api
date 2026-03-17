@@ -12,30 +12,30 @@ export default function DocsPage() {
   return (
     <>
       <style>{`
-        /* Hide the two central decorative rail lines — they sit in the middle of the
-           Scalar content area and are not appropriate for the full-width docs layout. */
+        /* Hide the two central decorative rail lines on the docs page. */
         body::before, body::after { display: none !important; }
 
-        /* Extend the Scalar sidebar border to the very top of the viewport.
-           The aside starts below the nav (top: 58px). A fixed pseudo-element
-           fills the gap from top: 0 to the sidebar top with the same border colour. */
-        .t-doc__sidebar::before {
-          content: "";
+        /* Extend the Scalar sidebar right-border to the top of the viewport.
+           Scalar's sidebar is 288px wide and starts 58px from the top (below the nav).
+           This fixed element fills the 58px gap above it. */
+        #docs-sidebar-extender {
           position: fixed;
           top: 0;
-          left: 0;
+          left: 288px;
           width: 1px;
           height: 58px;
-          background-color: var(--scalar-border-color, #DDD7D0);
+          background-color: #DDD7D0;
           z-index: 49;
           pointer-events: none;
         }
         @media (prefers-color-scheme: dark) {
-          .t-doc__sidebar::before {
+          #docs-sidebar-extender {
             background-color: #413F3C;
           }
         }
       `}</style>
+      {/* Gap-fill: extends sidebar border from viewport top to where Scalar's aside starts */}
+      <div id="docs-sidebar-extender" aria-hidden="true" />
       <main>
         <ApiReference specUrl="/openapi.json" />
       </main>
