@@ -1,16 +1,15 @@
+[variables]
+# Prevent Go from downloading a newer toolchain mid-build.
+# GOTOOLCHAIN=local forces use of the installed Go binary; combined with
+# go_1_24_2 in nixPkgs this keeps builds fast and deterministic.
+GOTOOLCHAIN = "local"
+
 [phases.setup]
-# Pin exact Go patch to match go.mod `toolchain go1.24.2`.
-# Using go_1_24 without a patch suffix may resolve to a different patch and
-# trigger a runtime toolchain download mid-build. go_1_24_2 is available in
-# nixpkgs-unstable (the channel nixpacks uses by default).
 nixPkgs = ["go_1_24_2"]
 
 [phases.build]
 cmds = [
-  # GOTOOLCHAIN=local prevents Go from downloading a newer toolchain mid-build
-  # when go.mod specifies `toolchain goX.Y.Z` or a dependency requires a newer version.
-  # The pinned go_1_24_2 Nix package provides Go 1.24.2 which satisfies all requirements.
-  "GOTOOLCHAIN=local GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1",
-  "GOTOOLCHAIN=local go build -o bin/api ./cmd/api",
-  "GOTOOLCHAIN=local go build -o bin/worker ./cmd/worker"
+  "GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1",
+  "go build -o bin/api ./cmd/api",
+  "go build -o bin/worker ./cmd/worker"
 ]
