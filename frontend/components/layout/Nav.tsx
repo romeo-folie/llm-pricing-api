@@ -58,7 +58,7 @@ export default function Nav() {
           {/* Right-side CTA */}
           <div className="hidden md:flex items-center justify-end">
             <a
-              href={process.env.NEXT_PUBLIC_LS_CHECKOUT_DEV || "/pricing"}
+              href="/signup/free"
               className="font-outfit text-sm font-semibold px-4 py-1.5"
               style={{
                 backgroundColor: "var(--accent)",
