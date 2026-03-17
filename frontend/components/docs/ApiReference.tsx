@@ -14,8 +14,8 @@ const customCss = `
     --scalar-color-2:        #78716C;
     --scalar-color-3:        #A8A29E;
     --scalar-background-1:   #F2EDE8;
-    --scalar-background-2:   #FDFAF7;
-    --scalar-background-3:   #EDE8E2;
+    --scalar-background-2:   #F2EDE8;
+    --scalar-background-3:   #F2EDE8;
     --scalar-border-color:   #DDD7D0;
     --scalar-color-accent:   #107E72;
     --scalar-button-1:       #107E72;
@@ -32,9 +32,9 @@ const customCss = `
     --scalar-color-2:        #9C9491;
     --scalar-color-3:        #6B6461;
     --scalar-background-1:   #2B2A28;
-    --scalar-background-2:   #343230;
-    --scalar-background-3:   #3E3C3A;
-    --scalar-background-4:   #514E4B;
+    --scalar-background-2:   #2B2A28;
+    --scalar-background-3:   #2B2A28;
+    --scalar-background-4:   #2B2A28;
     --scalar-border-color:   #413F3C;
     --scalar-color-accent:   #13A092;
     --scalar-button-1:       #13A092;
@@ -55,9 +55,9 @@ const customCss = `
       --scalar-color-2:        #9C9491 !important;
       --scalar-color-3:        #6B6461 !important;
       --scalar-background-1:   #2B2A28 !important;
-      --scalar-background-2:   #343230 !important;
-      --scalar-background-3:   #3E3C3A !important;
-      --scalar-background-4:   #514E4B !important;
+      --scalar-background-2:   #2B2A28 !important;
+      --scalar-background-3:   #2B2A28 !important;
+      --scalar-background-4:   #2B2A28 !important;
       --scalar-border-color:   #413F3C !important;
       --scalar-color-accent:   #13A092 !important;
       --scalar-button-1:       #13A092 !important;
