@@ -194,7 +194,6 @@ func run() error {
 	// Enqueue one-shot scrapes so the database is populated immediately after
 	// a fresh deploy. The @every cron schedules only fire after the full
 	// interval elapses, which would leave the DB empty for hours on first boot.
-	// NOTE: this block must run before srv.Start(mux) because Start blocks.
 	//
 	// asynq.Unique(24h) prevents duplicate entries: if a previous deploy
 	// crashed mid-scrape and left a task pending in Redis, re-enqueueing
@@ -231,18 +230,16 @@ func run() error {
 	}
 	log.Info().Msg("enqueued initial scrape tasks")
 
-	// Run the asynq server in a goroutine — srv.Start blocks until Shutdown
-	// is called. Running it in the foreground prevented the health server
-	// and signal handler from ever executing.
-	//
-	// srvErrCh receives the return value of srv.Start so that failures route
-	// to the main goroutine for a controlled shutdown rather than calling
-	// log.Fatal (which calls os.Exit and skips all deferred cleanup).
+	// Start the asynq server. srv.Start is non-blocking in asynq v0.26 — it
+	// spawns background goroutines and returns nil immediately. A non-nil
+	// return means startup itself failed (e.g. Redis unreachable), which is
+	// fatal. Signal handling and graceful shutdown are managed below via
+	// srv.Shutdown(), which blocks until in-flight tasks finish.
 	log.Info().Str("env", cfg.AppEnv).Int("concurrency", workerConcurrency).Msg("worker started")
-	srvErrCh := make(chan error, 1)
-	go func() {
-		srvErrCh <- srv.Start(mux)
-	}()
+	if err := srv.Start(mux); err != nil {
+		log.Error().Err(err).Msg("worker: asynq server failed to start")
+		return err
+	}
 
 	// Start a minimal HTTP server for Railway health checks. The worker is a
 	// pure asynq consumer with no Fiber router, but Railway expects every
@@ -284,8 +281,7 @@ func run() error {
 		}
 	}()
 
-	// Block until SIGINT/SIGTERM, an unexpected asynq server exit, or a
-	// health server bind failure.
+	// Block until SIGINT/SIGTERM or a health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
@@ -293,38 +289,18 @@ func run() error {
 	select {
 	case <-quit:
 		log.Info().Msg("worker shutting down...")
-	case srvErr := <-srvErrCh:
-		// srv.Start returned before a shutdown signal — treat as a fatal startup/runtime
-		// error. Returning a non-nil error from run() causes main() to call os.Exit(1)
-		// so the platform/supervisor registers this as a crash. All deferred cleanup
-		// (db.Close, scheduler.Shutdown, redisClient.Close, etc.) still runs because
-		// we return via run() rather than calling os.Exit directly.
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = healthSrv.Shutdown(shutdownCtx)
-		if srvErr != nil {
-			log.Error().Err(srvErr).Msg("worker exited unexpectedly")
-			return srvErr
-		}
-		log.Error().Msg("worker stopped without shutdown signal")
-		return fmt.Errorf("worker stopped without shutdown signal")
 	case healthErr := <-healthSrvErrCh:
 		// Health server failed unexpectedly — Railway health checks will never
-		// pass. Shut down asynq under the same 10 s bounded deadline used in the
-		// normal signal path (covers both srv.Shutdown() blocking on in-flight
-		// tasks and draining srvErrCh), then exit non-zero so the platform
-		// restarts the container.
+		// pass. Initiate a graceful asynq shutdown and exit non-zero so the
+		// platform restarts the container.
 		log.Error().Err(healthErr).Msg("health server error — initiating shutdown")
-		shutdownDoneHealth := make(chan error, 1)
+		shutdownDone := make(chan struct{})
 		go func() {
 			srv.Shutdown()
-			shutdownDoneHealth <- <-srvErrCh
+			close(shutdownDone)
 		}()
 		select {
-		case shutdownErr := <-shutdownDoneHealth:
-			if shutdownErr != nil {
-				log.Error().Err(shutdownErr).Msg("worker error during health-triggered shutdown")
-			}
+		case <-shutdownDone:
 		case <-time.After(10 * time.Second):
 			log.Warn().Msg("worker shutdown timed out during health-triggered exit")
 		}
@@ -335,23 +311,15 @@ func run() error {
 	defer cancel()
 	_ = healthSrv.Shutdown(shutdownCtx)
 
-	// Bound the entire asynq shutdown path — srv.Shutdown() blocks while
-	// in-flight tasks complete, and the Start goroutine needs to fully unwind
-	// afterwards. A single 10 s deadline covers both phases so that a stuck
-	// handler cannot push the total wait past Railway's SIGKILL window.
-	// (Using a separate timer only for the srvErrCh drain would leave
-	// srv.Shutdown() itself unbounded.)
-	shutdownDone := make(chan error, 1)
+	// srv.Shutdown blocks until all in-flight tasks complete. Bound it with
+	// a 10s deadline so a stuck handler cannot push past Railway's SIGKILL window.
+	shutdownDone := make(chan struct{})
 	go func() {
-		srv.Shutdown()           // blocks until in-flight tasks finish
-		shutdownDone <- <-srvErrCh // then drain the Start goroutine
+		srv.Shutdown()
+		close(shutdownDone)
 	}()
 	select {
-	case shutdownErr := <-shutdownDone:
-		if shutdownErr != nil {
-			log.Error().Err(shutdownErr).Msg("worker error on exit")
-			return shutdownErr
-		}
+	case <-shutdownDone:
 	case <-time.After(10 * time.Second):
 		log.Warn().Msg("worker shutdown timed out — forcing exit")
 		return fmt.Errorf("worker shutdown timed out")
