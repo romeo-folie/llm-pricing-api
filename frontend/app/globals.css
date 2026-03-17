@@ -287,3 +287,12 @@ body {
   width: var(--cell-size);
   font-size: 0.75rem;
 }
+
+/* ─── Docs page nav override ──────────────────────────────────────────────── */
+/* On the docs page only: nav extends full width. Side borders hidden so only
+   the bottom border spans the full viewport. */
+[data-page="docs"] header > div {
+  max-width: 100% !important;
+  border-left: none !important;
+  border-right: none !important;
+}
