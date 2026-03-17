@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["go_1_24"]
+
+[phases.build]
+cmds = [
+  "GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest",
+  "go build -o bin/api ./cmd/api",
+  "go build -o bin/worker ./cmd/worker"
+]
+
+[start]
+cmd = "./start.sh"
