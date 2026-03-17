@@ -11,13 +11,13 @@ import KeyPanel from "@/components/signup/KeyPanel"
  * SignupFlow orchestrates the state machine:
  *
  *  request  →  sent  (after form submission)
- *  ↓ (on page load with ?verified=1 and valid session)
+ *  ↓ (on page load with ?verified=1 — legacy; new flow redirects to /signup/verified)
  *  verified  →  already-issued (if key exists)
  *
  * The verify callback (GET /auth/signup/verify?token=...) is handled entirely
  * server-side. The backend marks the identity verified, creates a session
- * cookie, and redirects to /signup/free?verified=1. This component detects
- * that param and immediately calls /auth/signup/me to retrieve identity state.
+ * cookie, and redirects to /signup/verified. This component still handles the
+ * legacy ?verified=1 param for users with cached/old magic-link emails.
  */
 export default function SignupFlow() {
   const router = useRouter()
