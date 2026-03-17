@@ -1,13 +1,12 @@
 [variables]
-# Prevent Go from downloading a newer toolchain mid-build.
-# GOTOOLCHAIN=local forces use of the installed Go binary; combined with
-# go_1_24 in nixPkgs this keeps builds fast and deterministic.
-# Note: nixpkgs packages Go at minor-version granularity only (go_1_24),
-# not patch-level (go_1_24_2 does not exist as a nixpkgs attribute).
+# Force use of installed Go binary; prevents mid-build toolchain auto-download.
 GOTOOLCHAIN = "local"
 
 [phases.setup]
+# nixpkgs-unstable at f8573b9c has go_1_24 (verified).
+# The default pinned nixpkgs hash (e89cf1c9) only has go_1_21/go_1_22.
 nixPkgs = ["go_1_24"]
+nixpkgsArchive = "f8573b9c935cfaa162dd62cc9e75ae2db86f85df"
 
 [phases.build]
 cmds = [
