@@ -189,7 +189,7 @@ func (h *Handlers) Verify(c *fiber.Ctx) error {
 
 	// Redirect to the key reveal page (frontend handles issue-key call).
 	siteURL := h.cfg.MagicLinkBase
-	return c.Redirect(siteURL+"/signup/free?verified=1", fiber.StatusFound)
+	return c.Redirect(siteURL+"/signup/verified", fiber.StatusFound)
 }
 
 // ─── GET /auth/signup/me ──────────────────────────────────────────────────────
