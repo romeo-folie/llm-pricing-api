@@ -7,10 +7,9 @@ nixPkgs = ["go_1_24_2"]
 
 [phases.build]
 cmds = [
-  "GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest",
+  # Pin golang-migrate to the same version used in CI (see .github/workflows/ci.yml).
+  # @latest makes builds non-deterministic; a new upstream release can silently break builds.
+  "GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1",
   "go build -o bin/api ./cmd/api",
   "go build -o bin/worker ./cmd/worker"
 ]
-
-[start]
-cmd = "./start.sh"
