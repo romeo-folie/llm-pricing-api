@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
-import Link from "next/link"
 import SignupFlow from "./SignupFlow"
 
 export const metadata: Metadata = {
@@ -16,12 +15,6 @@ export default function SignupPage() {
       <div className="signup-shell">
         {/* ── Left panel: brand/value prop ─────────────────────────────── */}
         <aside className="signup-aside">
-          <Link href="/" className="signup-logo" aria-label="LLMRates home">
-            <span className="signup-logo-mark">LLM</span>
-            <span className="signup-logo-dot">·</span>
-            <span className="signup-logo-sub">Rates</span>
-          </Link>
-
           <div className="signup-aside-body">
             <h1 className="signup-aside-heading">
               Live pricing.
@@ -43,11 +36,6 @@ export default function SignupPage() {
                 </li>
               ))}
             </ul>
-          </div>
-
-          <div className="signup-aside-endpoint">
-            <span className="signup-aside-endpoint-method">GET</span>
-            <code className="signup-aside-endpoint-path">/v1/models</code>
           </div>
         </aside>
 

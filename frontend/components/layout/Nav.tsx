@@ -55,20 +55,22 @@ export default function Nav() {
             })}
           </nav>
 
-          {/* Right-side CTA */}
-          <div className="hidden md:flex items-center justify-end">
-            <Link
-              href="/signup/free"
-              className="font-outfit text-sm font-semibold px-4 py-1.5"
-              style={{
-                backgroundColor: "var(--accent)",
-                color: "var(--surfaceHi)",
-                border: "1px solid var(--accentDk)",
-              }}
-            >
-              Get API Key
-            </Link>
-          </div>
+          {/* Right-side CTA — hidden on signup pages (user is already there) */}
+          {!pathname.startsWith("/signup") && (
+            <div className="hidden md:flex items-center justify-end">
+              <Link
+                href="/signup/free"
+                className="font-outfit text-sm font-semibold px-4 py-1.5"
+                style={{
+                  backgroundColor: "var(--accent)",
+                  color: "var(--surfaceHi)",
+                  border: "1px solid var(--accentDk)",
+                }}
+              >
+                Get API Key
+              </Link>
+            </div>
+          )}
 
           {/* Mobile menu button */}
           <button

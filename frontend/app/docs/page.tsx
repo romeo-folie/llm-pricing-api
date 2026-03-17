@@ -25,7 +25,7 @@ export default function DocsPage() {
           width: 1px;
           height: 58px;
           background-color: #DDD7D0;
-          z-index: 49;
+          z-index: 51; /* above header z-50 so the line passes through it */
           pointer-events: none;
         }
         @media (prefers-color-scheme: dark) {
