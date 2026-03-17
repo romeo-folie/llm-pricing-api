@@ -9,7 +9,8 @@
       "nixpacks.toml",
       "railway.json",
       "start.sh",
-      "migrations/**"
+      "migrations/**",
+      "**/*.json"
     ]
   },
   "deploy": {
