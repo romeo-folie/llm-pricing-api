@@ -57,7 +57,7 @@ export default function Nav() {
 
           {/* Right-side CTA */}
           <div className="hidden md:flex items-center justify-end">
-            <a
+            <Link
               href="/signup/free"
               className="font-outfit text-sm font-semibold px-4 py-1.5"
               style={{
@@ -67,7 +67,7 @@ export default function Nav() {
               }}
             >
               Get API Key
-            </a>
+            </Link>
           </div>
 
           {/* Mobile menu button */}
