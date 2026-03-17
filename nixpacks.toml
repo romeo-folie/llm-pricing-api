@@ -1,0 +1,15 @@
+[phases.setup]
+# Pin exact Go patch to match go.mod `toolchain go1.24.2`.
+# Using go_1_24 without a patch suffix may resolve to a different patch and
+# trigger a runtime toolchain download mid-build. go_1_24_2 is available in
+# nixpkgs-unstable (the channel nixpacks uses by default).
+nixPkgs = ["go_1_24_2"]
+
+[phases.build]
+cmds = [
+  # Pin golang-migrate to the same version used in CI (see .github/workflows/ci.yml).
+  # @latest makes builds non-deterministic; a new upstream release can silently break builds.
+  "GOBIN=$(pwd)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1",
+  "go build -o bin/api ./cmd/api",
+  "go build -o bin/worker ./cmd/worker"
+]

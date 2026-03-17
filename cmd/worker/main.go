@@ -235,11 +235,12 @@ func run() error {
 	// return means startup itself failed (e.g. Redis unreachable), which is
 	// fatal. Signal handling and graceful shutdown are managed below via
 	// srv.Shutdown(), which blocks until in-flight tasks finish.
-	log.Info().Str("env", cfg.AppEnv).Int("concurrency", workerConcurrency).Msg("worker started")
+	log.Info().Str("env", cfg.AppEnv).Int("concurrency", workerConcurrency).Msg("worker starting")
 	if err := srv.Start(mux); err != nil {
 		log.Error().Err(err).Msg("worker: asynq server failed to start")
 		return err
 	}
+	log.Info().Msg("worker started")
 
 	// Start a minimal HTTP server for Railway health checks. The worker is a
 	// pure asynq consumer with no Fiber router, but Railway expects every
