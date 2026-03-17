@@ -38,3 +38,5 @@ Thumbs.db
 
 # Worktree context bootstrap — session-specific, never committed
 summary.md
+# compiled worker binary (produced by Railway build; not source-controlled)
+/worker

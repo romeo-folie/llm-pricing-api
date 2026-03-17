@@ -159,7 +159,16 @@ func run() error {
 		log.Error().Err(err).Msg("scheduler: register litellm")
 		return err
 	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceScrape, nil)); err != nil {
+	// HuggingFace tasks get an explicit 90s asynq-level timeout and capped retries.
+	// The HuggingFace API has been observed stalling mid-body for minutes; without
+	// a task timeout asynq never cancels the context and the slot hangs indefinitely.
+	// The handler also applies an inner 80s deadline for belt-and-suspenders protection.
+	// MaxRetry=3 prevents a retry storm when the API is degraded.
+	if _, err := scheduler.Register("@every 24h",
+		asynq.NewTask(worker.TaskHuggingFaceScrape, nil),
+		asynq.Timeout(90*time.Second),
+		asynq.MaxRetry(3),
+	); err != nil {
 		log.Error().Err(err).Msg("scheduler: register huggingface")
 		return err
 	}
@@ -193,22 +202,29 @@ func run() error {
 	// ErrDuplicateTask is returned (not a fatal error) when deduplication fires.
 	client := asynq.NewClient(redisOpt)
 	defer client.Close()
-	initialTasks := []struct {
+
+	type startupTask struct {
 		taskType string
 		label    string
-	}{
-		{worker.TaskOpenRouterScrape, "openrouter"},
-		{worker.TaskLiteLLMScrape, "litellm"},
-		{worker.TaskHuggingFaceScrape, "huggingface"},
-		{worker.TaskOpenAIScrape, "openai"},
-		{worker.TaskAnthropicScrape, "anthropic"},
-		{worker.TaskGeminiScrape, "gemini"},
+		opts     []asynq.Option
+	}
+	initialTasks := []startupTask{
+		{worker.TaskOpenRouterScrape, "openrouter", nil},
+		{worker.TaskLiteLLMScrape, "litellm", nil},
+		// HuggingFace startup task: 90s task-level timeout + MaxRetry=3 to prevent
+		// a hung slot from blocking all 10 worker goroutines on fresh deploys.
+		// The handler wraps the actual scrape in an 80s inner deadline as well.
+		{worker.TaskHuggingFaceScrape, "huggingface", []asynq.Option{
+			asynq.Timeout(90 * time.Second),
+			asynq.MaxRetry(3),
+		}},
+		{worker.TaskOpenAIScrape, "openai", nil},
+		{worker.TaskAnthropicScrape, "anthropic", nil},
+		{worker.TaskGeminiScrape, "gemini", nil},
 	}
 	for _, t := range initialTasks {
-		_, err := client.Enqueue(
-			asynq.NewTask(t.taskType, nil),
-			asynq.Unique(24*time.Hour),
-		)
+		opts := append([]asynq.Option{asynq.Unique(24 * time.Hour)}, t.opts...)
+		_, err := client.Enqueue(asynq.NewTask(t.taskType, nil), opts...)
 		if err != nil && err != asynq.ErrDuplicateTask {
 			log.Warn().Err(err).Str("task", t.label).Msg("initial scrape enqueue failed")
 		}
