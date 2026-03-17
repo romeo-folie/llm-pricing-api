@@ -13,8 +13,8 @@
   },
   "servers": [
     {
-      "url": "/",
-      "description": "Current server"
+      "url": "https://api.llmrates.live",
+      "description": "Production API"
     }
   ],
   "components": {
