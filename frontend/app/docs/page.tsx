@@ -21,7 +21,7 @@ export default function DocsPage() {
         #docs-sidebar-extender {
           position: fixed;
           top: 0;
-          left: 288px;
+          left: calc(288px - 0.5px); /* center-align with sidebar's subpixel border */
           width: 1px;
           height: 58px;
           background-color: #DDD7D0;
