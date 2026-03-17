@@ -37,11 +37,7 @@
   align-items: center;
   gap: 0.875rem;
   text-align: center;
-  padding: 2.5rem 2rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  /* Matches the flat, zero-radius aesthetic of the signup form */
-  border-radius: 0;
+  /* No card background — content sits directly on the page bg */
 }
 
 /* Key panel variant — left-align text for readability */
@@ -265,9 +261,7 @@
 
 @media (max-width: 480px) {
   .verified-card {
-    padding: 2rem 1.25rem;
-    border: none;
-    background: transparent;
+    padding: 0 1.25rem;
   }
 
   .verified-key-display {
