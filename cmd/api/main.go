@@ -215,7 +215,7 @@ func main() {
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 		SignupEnabled:           cfg.SignupEnabled,
-		UnkeyAPIID:              cfg.UnkeyAPIID,
+
 	}, log)
 	// Rate-limit all auth routes first (DDoS protection even when signup is
 	// disabled). Handler-level checks in auth.Handler manage the 503 response

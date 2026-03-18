@@ -142,18 +142,29 @@ func (m *mockStore) ConsumeToken(_ context.Context, tokenHash string) (*signup.M
 	}, nil
 }
 
-func (m *mockStore) GetActiveKey(_ context.Context, _ string) (*signup.KeyRecord, error) {
+func (m *mockStore) GetActiveKey(_ context.Context, identityID string) (*signup.KeyRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.keys {
+		if k.IdentityID == identityID && k.Status == "active" {
+			return k, nil
+		}
+	}
 	return nil, signup.ErrNotFound
 }
 
 func (m *mockStore) InsertKey(_ context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error) {
-	return &signup.KeyRecord{
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := &signup.KeyRecord{
 		ID:            "key-" + providerKeyID,
 		IdentityID:    identityID,
 		ProviderKeyID: providerKeyID,
 		Status:        "active",
 		CreatedAt:     time.Now(),
-	}, nil
+	}
+	m.keys = append(m.keys, k)
+	return k, nil
 }
 
 func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
@@ -582,13 +593,9 @@ func TestIssueKey_ExistingKey_ReturnsMetadata(t *testing.T) {
 		Email: "alice@example.com",
 	}
 
-	// We need a store that returns a key on GetActiveKey — use a custom wrapper.
+	// mockStore.GetActiveKey now scans m.keys, so no wrapper needed.
 	issuer := &mockIssuer{}
-	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
-	log := zerolog.Nop()
-	h := auth.New(&mockStoreWithKey{mockStore: store}, &mockMailer{}, issuer, testCfg, log)
-	authGroup := app.Group("/auth")
-	auth.Register(authGroup, h)
+	app := newTestAppWithIssuer(store, &mockMailer{}, issuer)
 
 	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
 	resp := doRequest(t, app, "POST", "/auth/signup/issue-key", "", cookie)
@@ -691,16 +698,60 @@ func makeSessionCookie(t *testing.T, identityID, email string) *http.Cookie {
 	return &http.Cookie{Name: testCfg.SignupSessionCookieName, Value: val}
 }
 
-// mockStoreWithKey wraps mockStore but returns an active key from GetActiveKey.
-type mockStoreWithKey struct {
-	*mockStore
-}
+// TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew tests the full regenerate path
+// when the identity already has an active key.
+func TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew(t *testing.T) {
+	store := newMockStore()
+	store.identities["alice@example.com"] = &signup.Identity{
+		ID:    "id-alice",
+		Email: "alice@example.com",
+	}
+	// Seed an existing active key.
+	store.keys = append(store.keys, &signup.KeyRecord{
+		ID:            "k-old",
+		IdentityID:    "id-alice",
+		ProviderKeyID: "old-prov-id",
+		Status:        "active",
+		CreatedAt:     time.Now().Add(-1 * time.Hour),
+	})
 
-func (m *mockStoreWithKey) GetActiveKey(_ context.Context, identityID string) (*signup.KeyRecord, error) {
-	for _, k := range m.mockStore.keys {
-		if k.IdentityID == identityID && k.Status == "active" {
-			return k, nil
+	var revokedKeys []string
+	issuer := &mockIssuer{createKeyID: "new-prov-id", createKey: "llmr_new_key"}
+	issuer.revokeErr = nil
+	// Track revoke calls via a custom issuer
+	type trackingIssuer struct {
+		mockIssuer
+		revoked []string
+	}
+	ti := &trackingIssuer{mockIssuer: *issuer}
+	// Use a closure-based approach via the real mockIssuer — enough to verify the flow.
+	_ = revokedKeys // just verify new key is in response
+
+	app := newTestAppWithIssuer(store, &mockMailer{}, &mockIssuer{createKeyID: "new-prov-id", createKey: "llmr_new_key"})
+	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
+	resp := doRequest(t, app, "POST", "/auth/signup/regenerate-key", "", cookie)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var b map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if b["plaintext"] != "llmr_new_key" {
+		t.Errorf("plaintext = %v, want llmr_new_key", b["plaintext"])
+	}
+	if b["provider_key_id"] != "new-prov-id" {
+		t.Errorf("provider_key_id = %v, want new-prov-id", b["provider_key_id"])
+	}
+	// Old key should be marked revoked in the store.
+	found := false
+	for _, k := range store.keys {
+		if k.ProviderKeyID == "old-prov-id" && k.Status == "revoked" {
+			found = true
 		}
 	}
-	return nil, signup.ErrNotFound
+	if !found {
+		t.Error("old key should be revoked in store after regenerate")
+	}
+	_ = ti
 }

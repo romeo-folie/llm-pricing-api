@@ -276,8 +276,8 @@ func TestE2E_RequestLink_Verify_Me(t *testing.T) {
 	if meBody["email"] != email {
 		t.Errorf("me email = %v, want %s", meBody["email"], email)
 	}
-	if meBody["identity_id"] != ident.ID {
-		t.Errorf("me identity_id = %v, want %s", meBody["identity_id"], ident.ID)
+	if meBody["id"] != ident.ID {
+		t.Errorf("me id = %v, want %s", meBody["id"], ident.ID)
 	}
 }
 
@@ -465,8 +465,7 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 }
 
 // ── Test 6: Key regeneration ────────────────────────────────────────────────
-// NOTE: The regenerate-key endpoint lives in internal/signup/handlers.go
-// (signup.Register) which is NOT wired in cmd/api/main.go — only the
-// internal/auth/ routes are active. Therefore we cannot E2E-test key
-// regeneration through HTTP. The store-level integration tests in
-// internal/signup/store_integration_test.go cover RevokeAndInsertKey.
+// NOTE: POST /auth/signup/regenerate-key is now wired via auth.Register() in
+// cmd/api/main.go (fixed in PR #137). The test below exercises the endpoint
+// through the HTTP layer using a nopIssuer. For RevokeAndInsertKey store
+// behaviour, see internal/signup/store_integration_test.go.

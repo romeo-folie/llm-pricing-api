@@ -70,8 +70,6 @@ type Config struct {
 	// SignupEnabled controls whether RequestLink accepts new signup requests.
 	// When false, the endpoint returns 503 Service Unavailable.
 	SignupEnabled bool
-	// Unkey — required for IssueKey / RegenerateKey.
-	UnkeyAPIID string
 }
 
 // Handler handles magic-link auth endpoints.
@@ -267,15 +265,21 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 	}
 
 	// Check whether the identity already has an active API key.
-	// A GetActiveKey error that is NOT ErrNotFound means a DB failure.
+	// ErrNotFound → no key yet. Any other error is a real DB failure — log it
+	// and fall through with hasActiveKey=false so the /me response still succeeds,
+	// but surface the error so it's visible in logs.
 	_, keyErr := h.store.GetActiveKey(c.Context(), ident.ID)
-	hasActiveKey := keyErr == nil // nil = found; ErrNotFound = no key
+	hasActiveKey := keyErr == nil
+	if keyErr != nil && !errors.Is(keyErr, signup.ErrNotFound) {
+		log := logger.FromContext(c.Context(), h.log)
+		log.Warn().Err(keyErr).Str("identity_id", ident.ID).Msg("auth: GetActiveKey error in /me — reporting has_active_key=false")
+	}
 
 	return c.JSON(fiber.Map{
-		"id":              ident.ID,
-		"email":           ident.Email,
-		"email_verified":  ident.EmailVerifiedAt != nil,
-		"has_active_key":  hasActiveKey,
+		"id":             ident.ID,
+		"email":          ident.Email,
+		"email_verified": ident.EmailVerifiedAt != nil,
+		"has_active_key": hasActiveKey,
 	})
 }
 
@@ -315,7 +319,7 @@ func (h *Handler) IssueKey(c *fiber.Ctx) error {
 	}
 
 	// Create a new Unkey key.
-	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), h.cfg.UnkeyAPIID, session.IdentityID)
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID)
 	if err != nil {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create Unkey key failed")
 		return api.NewInternalError("could not issue API key")
@@ -323,8 +327,9 @@ func (h *Handler) IssueKey(c *fiber.Ctx) error {
 
 	// Persist the key record.
 	if _, err := h.store.InsertKey(c.Context(), session.IdentityID, providerKeyID); err != nil {
-		// Attempt to clean up the dangling Unkey key to avoid orphans.
-		_ = h.issuer.RevokeKey(c.Context(), providerKeyID)
+		// Clean up the dangling Unkey key — use a background context so
+		// request cancellation doesn't silently skip the revocation.
+		_ = h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), providerKeyID)
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: insert key record failed")
 		return api.NewInternalError("could not persist API key")
 	}
@@ -365,14 +370,12 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 	}
 	if err == nil {
 		oldProviderKeyID = existing.ProviderKeyID
-		// Best-effort Unkey revocation — don't block key issuance if this fails.
-		if revokeErr := h.issuer.RevokeKey(c.Context(), oldProviderKeyID); revokeErr != nil {
-			log.Warn().Err(revokeErr).Str("provider_key_id", oldProviderKeyID).Msg("auth: Unkey revocation failed (continuing)")
-		}
 	}
 
-	// Create a new Unkey key.
-	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), h.cfg.UnkeyAPIID, session.IdentityID)
+	// Safe order: CREATE new key first, THEN revoke old one.
+	// Reversing this risks leaving the user with no key if CreateKey fails after
+	// the old key is already revoked.
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID)
 	if err != nil {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create replacement key failed")
 		return api.NewInternalError("could not issue replacement key")
@@ -380,9 +383,18 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 
 	// Atomically revoke old DB record and insert new one.
 	if _, err := h.store.RevokeAndInsertKey(c.Context(), session.IdentityID, oldProviderKeyID, providerKeyID); err != nil {
-		_ = h.issuer.RevokeKey(c.Context(), providerKeyID)
+		// Clean up the newly created Unkey key — use a background context so
+		// cancellation of the request context doesn't silently skip the revocation.
+		_ = h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), providerKeyID)
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: RevokeAndInsertKey failed")
 		return api.NewInternalError("could not persist replacement key")
+	}
+
+	// Revoke old Unkey key after DB is committed — best-effort, non-blocking.
+	if oldProviderKeyID != "" {
+		if revokeErr := h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), oldProviderKeyID); revokeErr != nil {
+			log.Warn().Err(revokeErr).Str("provider_key_id", oldProviderKeyID).Msg("auth: old key Unkey revocation failed (continuing — DB record already revoked)")
+		}
 	}
 
 	return c.JSON(fiber.Map{
