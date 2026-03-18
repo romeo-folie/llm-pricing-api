@@ -2,13 +2,10 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
-import Lottie from "lottie-react"
+import { useState, useRef } from "react"
+import Lottie, { LottieRefCurrentProps } from "lottie-react"
 import greenMoneyAnim from "@/public/animations/green-money.json"
 import { cn } from "@/lib/utils"
-
-// VARIANT: "brand" = rain over logo | "center" = rain from navbar center
-const LOTTIE_VARIANT: "brand" | "center" = "center"
 
 const NAV_LINKS = [
   { href: "/models", label: "Models" },
@@ -22,6 +19,8 @@ const NAV_LINKS = [
 export default function Nav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [animDone, setAnimDone] = useState(false)
+  const lottieRef = useRef<LottieRefCurrentProps>(null)
 
   return (
     <header
@@ -31,36 +30,17 @@ export default function Nav() {
       <div className="mx-auto max-w-[1280px] border-x border-y" style={{ borderColor: "var(--border)" }}>
         <div className="grid h-13 grid-cols-[auto_1fr_auto] items-center px-6 md:h-14 md:px-8" style={{ position: "relative" }}>
 
-          {/* Logo — Variant A: rain overlaid on brand */}
-          <Link href="/" className="flex items-center select-none whitespace-nowrap" style={{ position: "relative" }}>
+          {/* Logo */}
+          <Link href="/" className="flex items-center select-none whitespace-nowrap">
             <span className="font-orbitron text-base font-bold tracking-tight" style={{ color: "var(--ink)" }}>
               LLM
             </span><span className="font-outfit text-base font-semibold" style={{ color: "var(--accent)" }}>
               Rates
             </span>
-            {LOTTIE_VARIANT === "brand" && (
-              <span style={{
-                position: "absolute",
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%)",
-                width: 120,
-                height: 120,
-                pointerEvents: "none",
-                zIndex: 10,
-              }}>
-                <Lottie
-                  animationData={greenMoneyAnim}
-                  loop
-                  autoplay
-                  style={{ width: "100%", height: "100%" }}
-                />
-              </span>
-            )}
           </Link>
 
-          {/* Variant B: rain from navbar center */}
-          {LOTTIE_VARIANT === "center" && (
+          {/* Money rain — center of navbar, plays once on first page load */}
+          {!animDone && (
             <span style={{
               position: "absolute",
               top: "50%",
@@ -72,9 +52,11 @@ export default function Nav() {
               zIndex: 10,
             }}>
               <Lottie
+                lottieRef={lottieRef}
                 animationData={greenMoneyAnim}
-                loop
+                loop={false}
                 autoplay
+                onComplete={() => setAnimDone(true)}
                 style={{ width: "100%", height: "100%" }}
               />
             </span>
