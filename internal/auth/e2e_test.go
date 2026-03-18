@@ -128,13 +128,22 @@ func (m *mockMailerE2E) SendMagicLink(_ context.Context, email, verifyURL string
 	return nil
 }
 
+// nopIssuer is a no-op KeyIssuer used in e2e tests that don't exercise key issuance.
+type nopIssuer struct{}
+
+func (nopIssuer) CreateKey(_ context.Context, _, _ string) (string, string, error) {
+	return "test-key-id", "llmr_test_key", nil
+}
+
+func (nopIssuer) RevokeKey(_ context.Context, _ string) error { return nil }
+
 // newE2EApp builds a Fiber app with real DB store, mock mailer, and optional
 // IP rate limiting via real Redis.
 func newE2EApp(t *testing.T, store auth.Store, mailer auth.Mailer, cfg auth.Config, rc *redis.Client) *fiber.App {
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, cfg, log)
+	h := auth.New(store, mailer, nopIssuer{}, cfg, log)
 	authGroup := app.Group("/auth")
 	if rc != nil {
 		authGroup.Use(middleware.IPRateLimit(rc, log))
@@ -149,7 +158,7 @@ func newE2EAppWithRLConfig(t *testing.T, store auth.Store, mailer auth.Mailer, c
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, cfg, log)
+	h := auth.New(store, mailer, nopIssuer{}, cfg, log)
 	authGroup := app.Group("/auth")
 	if rc != nil {
 		authGroup.Use(middleware.IPRateLimitWithConfig(rc, log, rlCfg))
