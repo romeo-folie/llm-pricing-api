@@ -27,6 +27,7 @@ type mockStore struct {
 	mu         sync.Mutex
 	identities map[string]*signup.Identity // keyed by email
 	tokens     map[string]mockToken        // keyed by tokenHash (SHA-256 of rawToken)
+	keys       []*signup.KeyRecord         // append-only; active = last with status "active"
 }
 
 type mockToken struct {
@@ -155,6 +156,29 @@ func (m *mockStore) InsertKey(_ context.Context, identityID, providerKeyID strin
 	}, nil
 }
 
+func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Mark old key revoked if present.
+	for i, k := range m.keys {
+		if k.IdentityID == identityID && k.ProviderKeyID == oldProviderKeyID {
+			now := time.Now()
+			m.keys[i].Status = "revoked"
+			m.keys[i].RevokedAt = &now
+		}
+	}
+	// Insert new key.
+	k := &signup.KeyRecord{
+		ID:            "key-" + newProviderKeyID,
+		IdentityID:    identityID,
+		ProviderKeyID: newProviderKeyID,
+		Status:        "active",
+		CreatedAt:     time.Now(),
+	}
+	m.keys = append(m.keys, k)
+	return k, nil
+}
+
 func (m *mockStore) DeleteExpiredTokens(_ context.Context) (int64, error) {
 	return 0, nil
 }
@@ -190,10 +214,41 @@ var testCfg = auth.Config{
 	SignupEnabled:           true,
 }
 
+// mockIssuer is a no-op KeyIssuer for tests that don't exercise key issuance.
+type mockIssuer struct {
+	createKeyID  string
+	createKey    string
+	createErr    error
+	revokeErr    error
+}
+
+func (m *mockIssuer) CreateKey(_ context.Context, _, _ string) (string, string, error) {
+	if m.createErr != nil {
+		return "", "", m.createErr
+	}
+	id := m.createKeyID
+	if id == "" {
+		id = "test-provider-key-id"
+	}
+	k := m.createKey
+	if k == "" {
+		k = "llmr_test_plaintext_key"
+	}
+	return id, k, nil
+}
+
+func (m *mockIssuer) RevokeKey(_ context.Context, _ string) error {
+	return m.revokeErr
+}
+
 func newTestApp(store auth.Store, mailer auth.Mailer) *fiber.App {
+	return newTestAppWithIssuer(store, mailer, &mockIssuer{})
+}
+
+func newTestAppWithIssuer(store auth.Store, mailer auth.Mailer, issuer auth.KeyIssuer) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, testCfg, log)
+	h := auth.New(store, mailer, issuer, testCfg, log)
 	authGroup := app.Group("/auth")
 	auth.Register(authGroup, h)
 	return app
@@ -431,7 +486,7 @@ func TestRequestLink_SignupDisabled_Returns503(t *testing.T) {
 	disabledCfg.SignupEnabled = false
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, disabledCfg, log)
+	h := auth.New(store, mailer, &mockIssuer{}, disabledCfg, log)
 	authGroup := app.Group("/auth")
 	auth.Register(authGroup, h)
 
@@ -469,4 +524,183 @@ func TestMe_ExpiredSession_Returns401(t *testing.T) {
 	if resp.StatusCode != 401 {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
+}
+
+// ── IssueKey ──────────────────────────────────────────────────────────────────
+
+func TestIssueKey_NoSession_Returns401(t *testing.T) {
+	store := newMockStore()
+	app := newTestApp(store, &mockMailer{})
+	resp := doRequest(t, app, "POST", "/auth/signup/issue-key", "")
+	if resp.StatusCode != 401 {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestIssueKey_NewIdentity_IssuesKey(t *testing.T) {
+	store := newMockStore()
+	issuer := &mockIssuer{createKeyID: "prov-abc", createKey: "llmr_plaintext"}
+	app := newTestAppWithIssuer(store, &mockMailer{}, issuer)
+
+	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
+	// Seed identity so GetIdentityByID succeeds.
+	store.identities["alice@example.com"] = &signup.Identity{
+		ID:    "id-alice",
+		Email: "alice@example.com",
+	}
+
+	resp := doRequest(t, app, "POST", "/auth/signup/issue-key", "", cookie)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var b map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if b["plaintext"] != "llmr_plaintext" {
+		t.Errorf("plaintext = %v, want llmr_plaintext", b["plaintext"])
+	}
+	if b["provider_key_id"] != "prov-abc" {
+		t.Errorf("provider_key_id = %v, want prov-abc", b["provider_key_id"])
+	}
+}
+
+func TestIssueKey_ExistingKey_ReturnsMetadata(t *testing.T) {
+	store := newMockStore()
+	// Pre-populate a key in the store.
+	now := time.Now()
+	store.keys = append(store.keys, &signup.KeyRecord{
+		ID:            "k1",
+		IdentityID:    "id-alice",
+		ProviderKeyID: "existing-prov",
+		Status:        "active",
+		CreatedAt:     now,
+	})
+	// Override GetActiveKey to return the seeded key.
+	store.identities["alice@example.com"] = &signup.Identity{
+		ID:    "id-alice",
+		Email: "alice@example.com",
+	}
+
+	// We need a store that returns a key on GetActiveKey — use a custom wrapper.
+	issuer := &mockIssuer{}
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	log := zerolog.Nop()
+	h := auth.New(&mockStoreWithKey{mockStore: store}, &mockMailer{}, issuer, testCfg, log)
+	authGroup := app.Group("/auth")
+	auth.Register(authGroup, h)
+
+	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
+	resp := doRequest(t, app, "POST", "/auth/signup/issue-key", "", cookie)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var b map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if b["status"] != "existing" {
+		t.Errorf("status = %v, want existing", b["status"])
+	}
+	if b["plaintext"] != nil {
+		t.Errorf("plaintext should not be present for existing key response")
+	}
+}
+
+// ── RegenerateKey ─────────────────────────────────────────────────────────────
+
+func TestRegenerateKey_NoSession_Returns401(t *testing.T) {
+	store := newMockStore()
+	app := newTestApp(store, &mockMailer{})
+	resp := doRequest(t, app, "POST", "/auth/signup/regenerate-key", "")
+	if resp.StatusCode != 401 {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestRegenerateKey_IssuesNewKey(t *testing.T) {
+	store := newMockStore()
+	store.identities["alice@example.com"] = &signup.Identity{
+		ID:    "id-alice",
+		Email: "alice@example.com",
+	}
+	issuer := &mockIssuer{createKeyID: "new-prov", createKey: "llmr_new_key"}
+	app := newTestAppWithIssuer(store, &mockMailer{}, issuer)
+
+	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
+	resp := doRequest(t, app, "POST", "/auth/signup/regenerate-key", "", cookie)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200 (got %d)", resp.StatusCode, resp.StatusCode)
+	}
+	var b map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if b["plaintext"] != "llmr_new_key" {
+		t.Errorf("plaintext = %v, want llmr_new_key", b["plaintext"])
+	}
+}
+
+// ── Test Me includes has_active_key ──────────────────────────────────────────
+
+func TestMe_IncludesHasActiveKey(t *testing.T) {
+	store := newMockStore()
+	store.identities["alice@example.com"] = &signup.Identity{
+		ID:    "id-alice",
+		Email: "alice@example.com",
+	}
+	app := newTestApp(store, &mockMailer{})
+
+	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
+	resp := doRequest(t, app, "GET", "/auth/signup/me", "", cookie)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var b map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// mockStore.GetActiveKey always returns ErrNotFound → has_active_key = false
+	if b["has_active_key"] != false {
+		t.Errorf("has_active_key = %v, want false", b["has_active_key"])
+	}
+	if b["email_verified"] == nil {
+		t.Error("email_verified field missing from /me response")
+	}
+	if _, ok := b["id"]; !ok {
+		t.Error("id field missing from /me response")
+	}
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// makeSessionCookie builds a signed session cookie using testCfg.
+func makeSessionCookie(t *testing.T, identityID, email string) *http.Cookie {
+	t.Helper()
+	now := time.Now()
+	payload := signup.SessionPayload{
+		IdentityID: identityID,
+		Email:      email,
+		IssuedAt:   now.Unix(),
+		ExpiresAt:  now.Add(24 * time.Hour).Unix(),
+	}
+	val, err := signup.SignSession(testCfg.SigningSecret, payload)
+	if err != nil {
+		t.Fatalf("makeSessionCookie: %v", err)
+	}
+	return &http.Cookie{Name: testCfg.SignupSessionCookieName, Value: val}
+}
+
+// mockStoreWithKey wraps mockStore but returns an active key from GetActiveKey.
+type mockStoreWithKey struct {
+	*mockStore
+}
+
+func (m *mockStoreWithKey) GetActiveKey(_ context.Context, identityID string) (*signup.KeyRecord, error) {
+	for _, k := range m.mockStore.keys {
+		if k.IdentityID == identityID && k.Status == "active" {
+			return k, nil
+		}
+	}
+	return nil, signup.ErrNotFound
 }
