@@ -1,0 +1,117 @@
+/* ModelPicker — search input + dropdown list for the Compare page */
+
+/* ── Search input ─────────────────────────────────────────────────────────── */
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+  color: var(--ink);
+  outline: none;
+  font-size: 0.875rem; /* text-sm */
+  /* Ensure text stays readable on focus regardless of browser UA highlight */
+  caret-color: var(--ink);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+/* Explicit focus ring — replaces browser default which can obscure text */
+.input:focus {
+  border-color: var(--accent);
+  background-color: var(--bg);
+  color: var(--ink);
+}
+
+.input:disabled {
+  background-color: var(--surfaceLo);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* ── Dropdown list ────────────────────────────────────────────────────────── */
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  border: 1px solid var(--borderDk);
+  border-top: none;
+  background-color: var(--bg);
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ── Dropdown item button ─────────────────────────────────────────────────── */
+
+.option {
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--ink);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem; /* text-sm */
+  transition: background-color 0.12s;
+}
+
+/* Subtle hover — matches models page row hover (var(--surfaceHi)) */
+.option:hover {
+  background-color: var(--surfaceHi);
+  color: var(--ink);
+}
+
+/* ── Provider badge ───────────────────────────────────────────────────────── */
+
+.providerBadge {
+  font-size: 0.75rem; /* text-xs */
+  color: var(--muted);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* ── Selected chip ────────────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--borderDk);
+  background-color: var(--bg);
+  color: var(--ink);
+  font-size: 0.75rem; /* text-xs */
+}
+
+.chipRemove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.chipRemove:hover {
+  color: var(--ink);
+}

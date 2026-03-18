@@ -276,7 +276,7 @@ func TestRequestLink_MultipleRequests_AllReturn200(t *testing.T) {
 	}
 }
 
-func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {
+func TestVerify_ValidToken_Redirects302AndSetsCookie(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
@@ -286,14 +286,14 @@ func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {
 	store.tokens[signup.HashToken("validtoken123")] = mockToken{id: "tok-1", identityID: "id-bob", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
 
 	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=validtoken123", "")
-	if resp.StatusCode != 200 {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != 302 {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
 	}
-	b := bodyJSON(t, resp)
-	if b["verified"] != true {
-		t.Error("expected verified=true")
+	loc := resp.Header.Get("Location")
+	if loc != testCfg.MagicLinkBaseURL+"/signup/verified" {
+		t.Errorf("Location = %q, want /signup/verified redirect", loc)
 	}
-	// Check cookie is set.
+	// Check session cookie is set on the redirect response.
 	var cookieFound bool
 	for _, c := range resp.Cookies() {
 		if c.Name == testCfg.SignupSessionCookieName {
@@ -304,7 +304,7 @@ func TestVerify_ValidToken_Returns200AndSetsCookie(t *testing.T) {
 		}
 	}
 	if !cookieFound {
-		t.Error("session cookie not set on verify response")
+		t.Error("session cookie not set on verify redirect response")
 	}
 }
 
@@ -318,52 +318,58 @@ func TestVerify_MissingToken_Returns400(t *testing.T) {
 	}
 }
 
-func TestVerify_InvalidToken_Returns401(t *testing.T) {
+func TestVerify_InvalidToken_RedirectsWithError(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=doesnotexist", "")
-	if resp.StatusCode != 401 {
-		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	if resp.StatusCode != 302 {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if loc != testCfg.MagicLinkBaseURL+"/signup/free?error=invalid-link" {
+		t.Errorf("Location = %q, want invalid-link redirect", loc)
 	}
 }
 
-func TestVerify_ExpiredToken_Returns410(t *testing.T) {
+func TestVerify_ExpiredToken_RedirectsWithError(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 	store.identities["carol@example.com"] = &signup.Identity{ID: "id-carol", Email: "carol@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	store.tokens[signup.HashToken("expiredtok")] = mockToken{id: "tok-exp", identityID: "id-carol", expiresAt: time.Now().Add(-1 * time.Minute), createdAt: time.Now()}
 	resp := doRequest(t, app, "GET", "/auth/signup/verify?token=expiredtok", "")
-	if resp.StatusCode != 410 {
-		t.Fatalf("status = %d, want 410", resp.StatusCode)
+	if resp.StatusCode != 302 {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
 	}
-	b := bodyJSON(t, resp)
-	if b["detail"] != "token expired" {
-		t.Errorf("detail = %v, want 'token expired'", b["detail"])
+	loc := resp.Header.Get("Location")
+	if loc != testCfg.MagicLinkBaseURL+"/signup/free?error=link-expired" {
+		t.Errorf("Location = %q, want link-expired redirect", loc)
 	}
 }
 
-func TestVerify_ReusedToken_Returns410(t *testing.T) {
+func TestVerify_ReusedToken_RedirectsWithError(t *testing.T) {
 	store := newMockStore()
 	mailer := &mockMailer{}
 	app := newTestApp(store, mailer)
 	store.identities["dave@example.com"] = &signup.Identity{ID: "id-dave", Email: "dave@example.com", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	store.tokens[signup.HashToken("onetimetoken")] = mockToken{id: "tok-ot", identityID: "id-dave", expiresAt: time.Now().Add(15 * time.Minute), createdAt: time.Now()}
 
-	// First use.
+	// First use — expect redirect to /signup/verified.
 	resp1 := doRequest(t, app, "GET", "/auth/signup/verify?token=onetimetoken", "")
-	if resp1.StatusCode != 200 {
-		t.Fatalf("first verify status = %d, want 200", resp1.StatusCode)
+	if resp1.StatusCode != 302 {
+		t.Fatalf("first verify status = %d, want 302", resp1.StatusCode)
 	}
-	// Second use.
+	if loc := resp1.Header.Get("Location"); loc != testCfg.MagicLinkBaseURL+"/signup/verified" {
+		t.Errorf("first verify Location = %q, want /signup/verified redirect", loc)
+	}
+	// Second use — expect redirect to /signup/free?error=link-used.
 	resp2 := doRequest(t, app, "GET", "/auth/signup/verify?token=onetimetoken", "")
-	if resp2.StatusCode != 410 {
-		t.Fatalf("second verify status = %d, want 410", resp2.StatusCode)
+	if resp2.StatusCode != 302 {
+		t.Fatalf("second verify status = %d, want 302", resp2.StatusCode)
 	}
-	b := bodyJSON(t, resp2)
-	if b["detail"] != "token already used" {
-		t.Errorf("detail = %v, want 'token already used'", b["detail"])
+	if loc := resp2.Header.Get("Location"); loc != testCfg.MagicLinkBaseURL+"/signup/free?error=link-used" {
+		t.Errorf("second verify Location = %q, want link-used redirect", loc)
 	}
 }
 

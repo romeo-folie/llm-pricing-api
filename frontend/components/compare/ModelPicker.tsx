@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import type { Model } from "@/lib/api"
+import styles from "./ModelPicker.module.css"
 
 interface ModelPickerProps {
   models: Model[]
@@ -48,29 +49,16 @@ export default function ModelPicker({
 
   return (
     <div ref={containerRef} style={{ position: "relative" }}>
+      {/* Selected chips */}
       {selectedModels.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+        <div className={styles.chips}>
           {selectedModels.map((m) => (
-            <span
-              key={m.id}
-              className="font-outfit text-xs"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-                padding: "2px 8px",
-                border: "1px solid var(--borderDk)",
-
-
-                backgroundColor: "var(--bg)",
-                color: "var(--ink)",
-              }}
-            >
+            <span key={m.id} className={`font-outfit ${styles.chip}`}>
               {m.name}
               <button
                 onClick={() => onRemove(m.id)}
                 aria-label={`Remove ${m.name}`}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "0 2px", lineHeight: 1 }}
+                className={styles.chipRemove}
               >
                 ×
               </button>
@@ -79,6 +67,7 @@ export default function ModelPicker({
         </div>
       )}
 
+      {/* Search input */}
       <input
         type="text"
         value={query}
@@ -86,61 +75,25 @@ export default function ModelPicker({
         onFocus={() => setOpen(true)}
         placeholder={atMax ? `Max ${max} selected` : placeholder}
         disabled={atMax}
-        className="font-outfit text-sm w-full"
-        style={{
-          padding: "8px 12px",
-          border: "1px solid var(--border)",
-          backgroundColor: atMax ? "var(--surfaceLo)" : "var(--bg)",
-          color: "var(--ink)",
-          outline: "none",
-          width: "100%",
-        }}
+        className={`font-outfit ${styles.input}`}
       />
 
+      {/* Dropdown */}
       {open && !atMax && filtered.length > 0 && (
-        <ul
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            zIndex: 50,
-            border: "1px solid var(--borderDk)",
-            borderTop: "none",
-            backgroundColor: "var(--bg)",
-            maxHeight: "240px",
-            overflowY: "auto",
-            margin: 0,
-            padding: 0,
-            listStyle: "none",
-          }}
-        >
+        <ul className={styles.dropdown}>
           {filtered.slice(0, 20).map((m) => (
             <li key={m.id}>
               <button
-                onMouseDown={(e) => { e.preventDefault(); onSelect(m.id); setQuery(""); setOpen(false) }}
-                className="font-outfit text-sm"
-                style={{
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "8px 12px",
-                  background: "none",
-                  border: "none",
-                  borderBottom: "1px solid var(--border)",
-                  cursor: "pointer",
-                  color: "var(--ink)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  transition: "background-color 0.12s",
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onSelect(m.id)
+                  setQuery("")
+                  setOpen(false)
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FDFAF7" }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent" }}
+                className={`font-outfit ${styles.option}`}
               >
                 <span>{m.name}</span>
-                <span className="font-outfit text-xs" style={{ color: "var(--muted)", padding: "1px 6px", border: "1px solid var(--border)" }}>
-                  {m.provider}
-                </span>
+                <span className={styles.providerBadge}>{m.provider}</span>
               </button>
             </li>
           ))}

@@ -14,23 +14,63 @@ import KeyPanel from "@/components/signup/KeyPanel"
  *  ↓ (on page load with ?verified=1 — legacy; new flow redirects to /signup/verified)
  *  verified  →  already-issued (if key exists)
  *
+ * Error states surfaced via ?error= query param (set by the backend redirect):
+ *   link-used     — token was already consumed
+ *   link-expired  — token TTL elapsed
+ *   invalid-link  — token not found / malformed
+ *   server-error  — unexpected backend error
+ *
  * The verify callback (GET /auth/signup/verify?token=...) is handled entirely
  * server-side. The backend marks the identity verified, creates a session
  * cookie, and redirects to /signup/verified. This component still handles the
  * legacy ?verified=1 param for users with cached/old magic-link emails.
  */
+
+const ERROR_MESSAGES: Record<string, string> = {
+  "link-used":
+    "This sign-in link has already been used. Request a new one below.",
+  "link-expired":
+    "This sign-in link has expired. Request a fresh one — it only takes a second.",
+  "invalid-link":
+    "This link isn't valid. It may have been copied incorrectly. Try requesting a new one.",
+  "server-error":
+    "Something went wrong on our end. Please try again.",
+}
+
 export default function SignupFlow() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const verified = searchParams.get("verified") === "1"
+  const errorCode = searchParams.get("error")
 
-  const [step, setStep] = useState<SignupStep>(verified ? "verifying" : "request")
+  // If the backend redirected here with ?error=, start in the error step
+  // and show the appropriate message. Clear the query param immediately so
+  // a reload doesn't re-show the error.
+  const initialStep: SignupStep = errorCode
+    ? "error"
+    : verified
+      ? "verifying"
+      : "request"
+
+  const [step, setStep] = useState<SignupStep>(initialStep)
   const [sentEmail, setSentEmail] = useState("")
   const [sentAt, setSentAt] = useState<number | null>(null)
   const [identity, setIdentity] = useState<IdentityResponse | null>(null)
-  const [verifyError, setVerifyError] = useState<string | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(
+    errorCode ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES["server-error"] ?? null) : null
+  )
 
   const fetchedRef = useRef(false)
+
+  // Strip the ?error= / ?verified= param from the URL so a reload doesn't
+  // re-trigger the same state. Replace (not push) to avoid adding history entries.
+  useEffect(() => {
+    if (errorCode || verified) {
+      router.replace("/signup/free", { scroll: false })
+    }
+    // Only run on mount — intentionally omitting router from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // When `verified` becomes true after mount (e.g. navigation with ?verified=1),
   // transition to the verifying step so the identity fetch runs.
@@ -95,16 +135,10 @@ export default function SignupFlow() {
           onClick={() => {
             fetchedRef.current = false
             setVerifyError(null)
-            // Clear the query param first so the verified→verifying effect
-            // doesn't race with the step reset.
-            router.replace("/signup/free")
             setStep("request")
-            // If verified is still true when React re-renders, the effect
-            // will briefly flip to "verifying", but the !verified guard
-            // resets back to "request" once the URL update lands.
           }}
         >
-          Try again
+          Request a new link
         </button>
       </div>
     )

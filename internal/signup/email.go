@@ -33,53 +33,66 @@ func (m *resendMailer) SendMagicLink(ctx context.Context, to, magicLinkURL strin
 	params := &resend.SendEmailRequest{
 		From:    m.from,
 		To:      []string{to},
-		Subject: "Your LLMRates API key link",
+		Subject: "Your LLMRates API key",
 		Html: fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0a0a0a;color:#c8c4be;font-family:system-ui,-apple-system,sans-serif">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+</head>
+<body style="margin:0;padding:0;background:#F2EDE8;color:#1C1917;
+             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif">
   <table role="presentation" cellpadding="0" cellspacing="0" width="100%%"
-         style="background:#0a0a0a;padding:48px 24px">
+         style="background:#F2EDE8;padding:48px 24px">
     <tr><td align="center">
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%%"
              style="max-width:480px">
 
         <!-- Logo -->
-        <tr><td style="padding-bottom:32px">
-          <span style="font-family:'Courier New',Courier,monospace;font-size:17px;
-                        font-weight:700;letter-spacing:-0.01em;color:#F0EDE9">LLM</span><span
-                style="font-family:system-ui,-apple-system,sans-serif;font-size:17px;
-                       font-weight:600;color:#13A092">Rates</span>
+        <tr><td style="padding-bottom:40px">
+          <span style="font-family:'Courier New',Courier,monospace;font-size:16px;
+                       font-weight:700;letter-spacing:0.04em;color:#1C1917">LLM</span><span
+                style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+                       font-size:16px;font-weight:600;color:#107E72">Rates</span>
         </td></tr>
 
+        <!-- Divider -->
+        <tr><td style="padding-bottom:32px;border-top:1px solid #DDD7D0"></td></tr>
+
         <!-- Heading -->
-        <tr><td style="padding-bottom:12px">
-          <p style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#F0EDE9">
-            Verify your email
+        <tr><td style="padding-bottom:16px">
+          <p style="margin:0;font-family:'Courier New',Courier,monospace;
+                    font-size:24px;font-weight:700;letter-spacing:-0.01em;
+                    color:#1C1917;line-height:1.2">
+            Your API key is ready.
           </p>
         </td></tr>
 
         <!-- Body -->
-        <tr><td style="padding-bottom:28px">
-          <p style="margin:0;font-size:15px;line-height:1.65;color:#9a9690">
-            Click the button below to confirm your address and get your free API key.
-            The link expires shortly and can only be used once.
+        <tr><td style="padding-bottom:32px">
+          <p style="margin:0;font-size:15px;line-height:1.65;color:#78716C">
+            Click the button below to verify your email and collect your free API key.
+            This link expires shortly and can only be used once.
           </p>
         </td></tr>
 
         <!-- CTA -->
-        <tr><td style="padding-bottom:32px">
+        <tr><td style="padding-bottom:40px">
           <a href="%s"
-             style="display:inline-block;padding:12px 28px;background:#13A092;color:#F0EDE9;
-                    text-decoration:none;font-size:15px;font-weight:600;letter-spacing:0.01em">
-            Get my API key
+             style="display:inline-block;padding:13px 28px;
+                    background:#107E72;color:#FDFAF7;
+                    text-decoration:none;font-size:14px;font-weight:600;
+                    letter-spacing:0.02em;font-family:'Courier New',Courier,monospace">
+            Get my API key &rarr;
           </a>
         </td></tr>
 
         <!-- Divider -->
-        <tr><td style="border-top:1px solid #1e2020;padding-top:24px">
-          <p style="margin:0;font-size:12px;line-height:1.6;color:#555">
-            If you didn&rsquo;t request an API key, you can safely ignore this email.
+        <tr><td style="border-top:1px solid #DDD7D0;padding-top:24px">
+          <p style="margin:0;font-size:12px;line-height:1.6;color:#A8A29E">
+            If you didn&rsquo;t request this, you can safely ignore it.
+            This link will expire automatically.
           </p>
         </td></tr>
 
@@ -89,8 +102,10 @@ func (m *resendMailer) SendMagicLink(ctx context.Context, to, magicLinkURL strin
 </body>
 </html>`, magicLinkURL),
 		Text: fmt.Sprintf(
-			"LLMRates.live — verify your email\n\nOpen this link to get your free API key:\n%s\n\n"+
-				"The link expires shortly and can only be used once.",
+			"LLMRates — your API key is ready.\n\n"+
+				"Click the link below to verify your email and collect your free API key.\n"+
+				"This link expires shortly and can only be used once.\n\n%s\n\n"+
+				"If you didn't request this, you can safely ignore it.",
 			magicLinkURL,
 		),
 	}
