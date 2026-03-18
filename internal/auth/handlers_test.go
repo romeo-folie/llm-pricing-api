@@ -227,10 +227,12 @@ var testCfg = auth.Config{
 
 // mockIssuer is a no-op KeyIssuer for tests that don't exercise key issuance.
 type mockIssuer struct {
-	createKeyID  string
-	createKey    string
-	createErr    error
-	revokeErr    error
+	createKeyID string
+	createKey   string
+	createErr   error
+	revokeErr   error
+	// revokeHook is called with the providerKeyID on every RevokeKey call (optional).
+	revokeHook func(providerKeyID string)
 }
 
 func (m *mockIssuer) CreateKey(_ context.Context, _, _ string) (string, string, error) {
@@ -248,7 +250,10 @@ func (m *mockIssuer) CreateKey(_ context.Context, _, _ string) (string, string, 
 	return id, k, nil
 }
 
-func (m *mockIssuer) RevokeKey(_ context.Context, _ string) error {
+func (m *mockIssuer) RevokeKey(_ context.Context, providerKeyID string) error {
+	if m.revokeHook != nil {
+		m.revokeHook(providerKeyID)
+	}
 	return m.revokeErr
 }
 
@@ -715,19 +720,16 @@ func TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew(t *testing.T) {
 		CreatedAt:     time.Now().Add(-1 * time.Hour),
 	})
 
-	var revokedKeys []string
+	var mu sync.Mutex
+	var revokedProviderIDs []string
 	issuer := &mockIssuer{createKeyID: "new-prov-id", createKey: "llmr_new_key"}
-	issuer.revokeErr = nil
-	// Track revoke calls via a custom issuer
-	type trackingIssuer struct {
-		mockIssuer
-		revoked []string
+	issuer.revokeHook = func(providerKeyID string) {
+		mu.Lock()
+		defer mu.Unlock()
+		revokedProviderIDs = append(revokedProviderIDs, providerKeyID)
 	}
-	ti := &trackingIssuer{mockIssuer: *issuer}
-	// Use a closure-based approach via the real mockIssuer — enough to verify the flow.
-	_ = revokedKeys // just verify new key is in response
 
-	app := newTestAppWithIssuer(store, &mockMailer{}, &mockIssuer{createKeyID: "new-prov-id", createKey: "llmr_new_key"})
+	app := newTestAppWithIssuer(store, &mockMailer{}, issuer)
 	cookie := makeSessionCookie(t, "id-alice", "alice@example.com")
 	resp := doRequest(t, app, "POST", "/auth/signup/regenerate-key", "", cookie)
 	if resp.StatusCode != 200 {
@@ -753,5 +755,13 @@ func TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew(t *testing.T) {
 	if !found {
 		t.Error("old key should be revoked in store after regenerate")
 	}
-	_ = ti
+	// Verify Unkey RevokeKey was called for the old provider key ID.
+	mu.Lock()
+	revoked := append([]string{}, revokedProviderIDs...)
+	mu.Unlock()
+	if len(revoked) == 0 {
+		t.Error("expected RevokeKey to be called for old-prov-id, but it was not called")
+	} else if revoked[0] != "old-prov-id" {
+		t.Errorf("expected RevokeKey called with old-prov-id, got %v", revoked[0])
+	}
 }

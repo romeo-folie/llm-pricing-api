@@ -319,7 +319,7 @@ func (h *Handler) IssueKey(c *fiber.Ctx) error {
 	}
 
 	// Create a new Unkey key.
-	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID)
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
 	if err != nil {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create Unkey key failed")
 		return api.NewInternalError("could not issue API key")
@@ -375,7 +375,7 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 	// Safe order: CREATE new key first, THEN revoke old one.
 	// Reversing this risks leaving the user with no key if CreateKey fails after
 	// the old key is already revoked.
-	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID)
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
 	if err != nil {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create replacement key failed")
 		return api.NewInternalError("could not issue replacement key")

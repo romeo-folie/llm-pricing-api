@@ -466,6 +466,6 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 
 // ── Test 6: Key regeneration ────────────────────────────────────────────────
 // NOTE: POST /auth/signup/regenerate-key is now wired via auth.Register() in
-// cmd/api/main.go (fixed in PR #137). The test below exercises the endpoint
-// through the HTTP layer using a nopIssuer. For RevokeAndInsertKey store
-// behaviour, see internal/signup/store_integration_test.go.
+// cmd/api/main.go (fixed in PR #137). Unit-level coverage (including RevokeKey
+// call assertion) lives in handlers_test.go: TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew.
+// For RevokeAndInsertKey store behaviour, see internal/signup/store_integration_test.go.
