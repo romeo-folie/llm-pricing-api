@@ -205,7 +205,8 @@ func main() {
 	// An IP-based rate limiter is applied to the auth group to prevent abuse.
 	signupStore := signup.NewStore(db)
 	ml := mailer.New(cfg.ResendAPIKey, cfg.EmailFrom)
-	authHandler := auth.New(signupStore, ml, auth.Config{
+	unkeyIssuer := signup.NewUnkeyIssuer(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
+	authHandler := auth.New(signupStore, ml, unkeyIssuer, auth.Config{
 		SigningSecret:           cfg.MagicLinkSigningSecret,
 		MagicLinkTTLMinutes:     cfg.MagicLinkTTLMinutes,
 		MagicLinkBaseURL:        cfg.MagicLinkBaseURL,
@@ -214,6 +215,7 @@ func main() {
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 		SignupEnabled:           cfg.SignupEnabled,
+
 	}, log)
 	// Rate-limit all auth routes first (DDoS protection even when signup is
 	// disabled). Handler-level checks in auth.Handler manage the 503 response

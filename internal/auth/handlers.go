@@ -3,6 +3,8 @@
 //	POST /auth/signup/request-link  — request a one-time verification email
 //	GET  /auth/signup/verify        — consume token, set session cookie
 //	GET  /auth/signup/me            — return the verified identity (session required)
+//	POST /auth/signup/issue-key     — issue a new API key (session required)
+//	POST /auth/signup/regenerate-key — revoke and reissue key (session required)
 package auth
 
 import (
@@ -35,6 +37,7 @@ type Store interface {
 	MarkEmailVerified(ctx context.Context, identityID string) error
 	GetActiveKey(ctx context.Context, identityID string) (*signup.KeyRecord, error)
 	InsertKey(ctx context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error)
+	RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error)
 	DeleteExpiredTokens(ctx context.Context) (int64, error)
 }
 
@@ -42,6 +45,14 @@ type Store interface {
 // Using an interface here keeps the handler testable without a live Resend key.
 type Mailer interface {
 	SendMagicLink(ctx context.Context, toEmail, verifyURL string) error
+}
+
+// KeyIssuer abstracts Unkey key creation and revocation.
+// Matches the signup.KeyIssuer interface — accepting it here allows sharing
+// the same concrete NewUnkeyIssuer constructor from the signup package.
+type KeyIssuer interface {
+	CreateKey(ctx context.Context, apiID, ownedByID string) (providerKeyID, plaintext string, err error)
+	RevokeKey(ctx context.Context, providerKeyID string) error
 }
 
 // Config carries the values from config.Config that auth handlers need.
@@ -65,13 +76,14 @@ type Config struct {
 type Handler struct {
 	store  Store
 	mailer Mailer
+	issuer KeyIssuer
 	cfg    Config
 	log    zerolog.Logger
 }
 
 // New constructs an auth Handler.
-func New(store Store, mailer Mailer, cfg Config, log zerolog.Logger) *Handler {
-	return &Handler{store: store, mailer: mailer, cfg: cfg, log: log}
+func New(store Store, mailer Mailer, issuer KeyIssuer, cfg Config, log zerolog.Logger) *Handler {
+	return &Handler{store: store, mailer: mailer, issuer: issuer, cfg: cfg, log: log}
 }
 
 // Register mounts the auth routes onto a Fiber router.
@@ -80,6 +92,8 @@ func Register(router fiber.Router, h *Handler) {
 	router.Post("/signup/request-link", h.RequestLink)
 	router.Get("/signup/verify", h.Verify)
 	router.Get("/signup/me", h.RequireSession, h.Me)
+	router.Post("/signup/issue-key", h.RequireSession, h.IssueKey)
+	router.Post("/signup/regenerate-key", h.RequireSession, h.RegenerateKey)
 }
 
 // ── POST /auth/signup/request-link ───────────────────────────────────────────
@@ -233,6 +247,9 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 
 // Me returns the verified identity for the session cookie holder.
 // RequireSession must run before this handler to populate locals.
+//
+// Response includes has_active_key and email_verified so the frontend
+// /signup/verified page can decide whether to call issue-key.
 func (h *Handler) Me(c *fiber.Ctx) error {
 	session, ok := SessionFromLocals(c)
 	if !ok {
@@ -247,10 +264,142 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 		return api.NewInternalError("internal error")
 	}
 
+	// Check whether the identity already has an active API key.
+	// ErrNotFound → no key yet. Any other error is a real DB failure — log it
+	// and fall through with hasActiveKey=false so the /me response still succeeds,
+	// but surface the error so it's visible in logs.
+	_, keyErr := h.store.GetActiveKey(c.Context(), ident.ID)
+	hasActiveKey := keyErr == nil
+	if keyErr != nil && !errors.Is(keyErr, signup.ErrNotFound) {
+		log := logger.FromContext(c.Context(), h.log)
+		log.Warn().Err(keyErr).Str("identity_id", ident.ID).Msg("auth: GetActiveKey error in /me — reporting has_active_key=false")
+	}
+
 	return c.JSON(fiber.Map{
-		"identity_id":       ident.ID,
-		"email":             ident.Email,
-		"email_verified_at": ident.EmailVerifiedAt,
+		"id":             ident.ID,
+		"email":          ident.Email,
+		"email_verified": ident.EmailVerifiedAt != nil,
+		"has_active_key": hasActiveKey,
+	})
+}
+
+// ── POST /auth/signup/issue-key ───────────────────────────────────────────────
+
+// IssueKey creates a new Unkey API key for the session holder.
+// If the identity already has an active key, returns metadata only (no plaintext re-reveal).
+// RequireSession must run before this handler.
+func (h *Handler) IssueKey(c *fiber.Ctx) error {
+	session, ok := SessionFromLocals(c)
+	if !ok {
+		return api.NewUnauthorized("not authenticated")
+	}
+
+	log := logger.FromContext(c.Context(), h.log)
+
+	// Verify identity still exists.
+	if _, err := h.store.GetIdentityByID(c.Context(), session.IdentityID); err != nil {
+		if errors.Is(err, signup.ErrNotFound) {
+			return api.NewUnauthorized("identity not found")
+		}
+		return api.NewInternalError("could not verify identity")
+	}
+
+	// Return metadata only if a key already exists — plaintext is shown once on issue.
+	existing, err := h.store.GetActiveKey(c.Context(), session.IdentityID)
+	if err == nil {
+		return c.JSON(fiber.Map{
+			"status":     "existing",
+			"created_at": existing.CreatedAt,
+			"message":    "You already have an active API key. Use regenerate-key to replace it.",
+		})
+	}
+	if !errors.Is(err, signup.ErrNotFound) {
+		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: get active key failed")
+		return api.NewInternalError("could not check key status")
+	}
+
+	// Create a new Unkey key.
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
+	if err != nil {
+		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create Unkey key failed")
+		return api.NewInternalError("could not issue API key")
+	}
+
+	// Persist the key record.
+	if _, err := h.store.InsertKey(c.Context(), session.IdentityID, providerKeyID); err != nil {
+		// Clean up the dangling Unkey key — use a background context so
+		// request cancellation doesn't silently skip the revocation.
+		_ = h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), providerKeyID)
+		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: insert key record failed")
+		return api.NewInternalError("could not persist API key")
+	}
+
+	return c.JSON(fiber.Map{
+		"plaintext":       plaintext,
+		"provider_key_id": providerKeyID,
+	})
+}
+
+// ── POST /auth/signup/regenerate-key ─────────────────────────────────────────
+
+// RegenerateKey revokes the current Unkey key and issues a fresh one.
+// Uses RevokeAndInsertKey for the atomic DB update (old → revoked, new → active).
+// RequireSession must run before this handler.
+func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
+	session, ok := SessionFromLocals(c)
+	if !ok {
+		return api.NewUnauthorized("not authenticated")
+	}
+
+	log := logger.FromContext(c.Context(), h.log)
+
+	// Verify identity still exists.
+	if _, err := h.store.GetIdentityByID(c.Context(), session.IdentityID); err != nil {
+		if errors.Is(err, signup.ErrNotFound) {
+			return api.NewUnauthorized("identity not found")
+		}
+		return api.NewInternalError("could not verify identity")
+	}
+
+	// Fetch existing key (may not exist for first-time callers hitting regenerate).
+	var oldProviderKeyID string
+	existing, err := h.store.GetActiveKey(c.Context(), session.IdentityID)
+	if err != nil && !errors.Is(err, signup.ErrNotFound) {
+		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: get active key failed (regenerate)")
+		return api.NewInternalError("could not fetch existing key")
+	}
+	if err == nil {
+		oldProviderKeyID = existing.ProviderKeyID
+	}
+
+	// Safe order: CREATE new key first, THEN revoke old one.
+	// Reversing this risks leaving the user with no key if CreateKey fails after
+	// the old key is already revoked.
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
+	if err != nil {
+		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create replacement key failed")
+		return api.NewInternalError("could not issue replacement key")
+	}
+
+	// Atomically revoke old DB record and insert new one.
+	if _, err := h.store.RevokeAndInsertKey(c.Context(), session.IdentityID, oldProviderKeyID, providerKeyID); err != nil {
+		// Clean up the newly created Unkey key — use a background context so
+		// cancellation of the request context doesn't silently skip the revocation.
+		_ = h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), providerKeyID)
+		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: RevokeAndInsertKey failed")
+		return api.NewInternalError("could not persist replacement key")
+	}
+
+	// Revoke old Unkey key after DB is committed — best-effort, non-blocking.
+	if oldProviderKeyID != "" {
+		if revokeErr := h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), oldProviderKeyID); revokeErr != nil {
+			log.Warn().Err(revokeErr).Str("provider_key_id", oldProviderKeyID).Msg("auth: old key Unkey revocation failed (continuing — DB record already revoked)")
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"plaintext":       plaintext,
+		"provider_key_id": providerKeyID,
 	})
 }
 

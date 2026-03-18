@@ -128,13 +128,22 @@ func (m *mockMailerE2E) SendMagicLink(_ context.Context, email, verifyURL string
 	return nil
 }
 
+// nopIssuer is a no-op KeyIssuer used in e2e tests that don't exercise key issuance.
+type nopIssuer struct{}
+
+func (nopIssuer) CreateKey(_ context.Context, _, _ string) (string, string, error) {
+	return "test-key-id", "llmr_test_key", nil
+}
+
+func (nopIssuer) RevokeKey(_ context.Context, _ string) error { return nil }
+
 // newE2EApp builds a Fiber app with real DB store, mock mailer, and optional
 // IP rate limiting via real Redis.
 func newE2EApp(t *testing.T, store auth.Store, mailer auth.Mailer, cfg auth.Config, rc *redis.Client) *fiber.App {
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, cfg, log)
+	h := auth.New(store, mailer, nopIssuer{}, cfg, log)
 	authGroup := app.Group("/auth")
 	if rc != nil {
 		authGroup.Use(middleware.IPRateLimit(rc, log))
@@ -149,7 +158,7 @@ func newE2EAppWithRLConfig(t *testing.T, store auth.Store, mailer auth.Mailer, c
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, cfg, log)
+	h := auth.New(store, mailer, nopIssuer{}, cfg, log)
 	authGroup := app.Group("/auth")
 	if rc != nil {
 		authGroup.Use(middleware.IPRateLimitWithConfig(rc, log, rlCfg))
@@ -267,8 +276,8 @@ func TestE2E_RequestLink_Verify_Me(t *testing.T) {
 	if meBody["email"] != email {
 		t.Errorf("me email = %v, want %s", meBody["email"], email)
 	}
-	if meBody["identity_id"] != ident.ID {
-		t.Errorf("me identity_id = %v, want %s", meBody["identity_id"], ident.ID)
+	if meBody["id"] != ident.ID {
+		t.Errorf("me id = %v, want %s", meBody["id"], ident.ID)
 	}
 }
 
@@ -456,8 +465,7 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 }
 
 // ── Test 6: Key regeneration ────────────────────────────────────────────────
-// NOTE: The regenerate-key endpoint lives in internal/signup/handlers.go
-// (signup.Register) which is NOT wired in cmd/api/main.go — only the
-// internal/auth/ routes are active. Therefore we cannot E2E-test key
-// regeneration through HTTP. The store-level integration tests in
-// internal/signup/store_integration_test.go cover RevokeAndInsertKey.
+// NOTE: POST /auth/signup/regenerate-key is now wired via auth.Register() in
+// cmd/api/main.go (fixed in PR #137). Unit-level coverage (including RevokeKey
+// call assertion) lives in handlers_test.go: TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew.
+// For RevokeAndInsertKey store behaviour, see internal/signup/store_integration_test.go.
