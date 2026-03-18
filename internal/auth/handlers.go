@@ -183,14 +183,17 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, signup.ErrNotFound):
-			return api.NewUnauthorized("invalid token")
+			// Redirect to the frontend error page rather than returning raw JSON.
+			// The frontend /signup/free page renders a user-friendly message for
+			// each error code.
+			return c.Redirect(h.cfg.MagicLinkBaseURL+"/signup/free?error=invalid-link", fiber.StatusFound)
 		case errors.Is(err, signup.ErrTokenConsumed):
-			return api.NewGone("token already used")
+			return c.Redirect(h.cfg.MagicLinkBaseURL+"/signup/free?error=link-used", fiber.StatusFound)
 		case errors.Is(err, signup.ErrTokenExpired):
-			return api.NewGone("token expired")
+			return c.Redirect(h.cfg.MagicLinkBaseURL+"/signup/free?error=link-expired", fiber.StatusFound)
 		default:
 			log.Error().Err(err).Msg("auth: consume token failed")
-			return api.NewInternalError("internal error")
+			return c.Redirect(h.cfg.MagicLinkBaseURL+"/signup/free?error=server-error", fiber.StatusFound)
 		}
 	}
 
@@ -221,11 +224,9 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 	}
 	setSessionCookie(c, h.cfg.SignupSessionCookieName, sessionValue, h.cfg.SignupSessionTTLHours, h.cfg.SignupSessionSecure)
 
-	return c.JSON(fiber.Map{
-		"verified":    true,
-		"identity_id": ident.ID,
-		"email":       ident.Email,
-	})
+	// Redirect to the frontend key-reveal page. The frontend reads the session
+	// cookie (via GET /auth/signup/me) and shows the API key.
+	return c.Redirect(h.cfg.MagicLinkBaseURL+"/signup/verified", fiber.StatusFound)
 }
 
 // ── GET /auth/signup/me ───────────────────────────────────────────────────────
