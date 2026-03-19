@@ -194,7 +194,7 @@ export default function ChangesFeed({
 
 
   return (
-    <div>
+    <div style={{ overflowX: "hidden" }}>
       {/* Section header */}
       <div
         style={{
@@ -261,20 +261,34 @@ export default function ChangesFeed({
       <TimeWindowSelector value={timeWindow} onChange={handleTimeWindowChange} />
 
       {/* Dashboard: Heatmap + Leaderboard */}
+      {/* Mobile: BiggestMovers stacks above full-width Heatmap */}
+      {/* Desktop: side-by-side, heatmap takes remaining space */}
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 280px",
-          gap: "16px",
-          marginBottom: "24px",
-        }}
+        style={{ marginBottom: "24px" }}
         className="dashboard-grid"
       >
-        <PriceHeatmap
-          heatmap={summary?.heatmap ?? null}
-          onCellClick={(prov) => applyFilter(prov, since)}
-        />
-        <BiggestMovers topMovers={summary?.top_movers ?? null} />
+        <div className="block lg:hidden" style={{ marginBottom: "16px" }}>
+          <BiggestMovers topMovers={summary?.top_movers ?? null} />
+        </div>
+        <div
+          className="hidden lg:grid"
+          style={{
+            gridTemplateColumns: "1fr 280px",
+            gap: "16px",
+          }}
+        >
+          <PriceHeatmap
+            heatmap={summary?.heatmap ?? null}
+            onCellClick={(prov) => applyFilter(prov, since)}
+          />
+          <BiggestMovers topMovers={summary?.top_movers ?? null} />
+        </div>
+        <div className="block lg:hidden">
+          <PriceHeatmap
+            heatmap={summary?.heatmap ?? null}
+            onCellClick={(prov) => applyFilter(prov, since)}
+          />
+        </div>
       </div>
 
       {/* Feed section label */}
