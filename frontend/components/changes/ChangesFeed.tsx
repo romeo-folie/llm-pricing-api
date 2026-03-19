@@ -261,33 +261,20 @@ export default function ChangesFeed({
       <TimeWindowSelector value={timeWindow} onChange={handleTimeWindowChange} />
 
       {/* Dashboard: Heatmap + Leaderboard */}
-      {/* Mobile: BiggestMovers stacks above full-width Heatmap */}
-      {/* Desktop: side-by-side, heatmap takes remaining space */}
+      {/* Mobile: movers above, heatmap full-width below (CSS order flip) */}
+      {/* Desktop: side-by-side grid, heatmap takes remaining space */}
       <div
-        style={{ marginBottom: "24px" }}
-        className="dashboard-grid"
+        style={{ marginBottom: "24px", gap: "16px" }}
+        className="dashboard-grid flex flex-col lg:grid lg:grid-cols-[1fr_280px]"
       >
-        <div className="block lg:hidden" style={{ marginBottom: "16px" }}>
-          <BiggestMovers topMovers={summary?.top_movers ?? null} />
-        </div>
-        <div
-          className="hidden lg:grid"
-          style={{
-            gridTemplateColumns: "1fr 280px",
-            gap: "16px",
-          }}
-        >
+        <div className="order-2 lg:order-1">
           <PriceHeatmap
             heatmap={summary?.heatmap ?? null}
             onCellClick={(prov) => applyFilter(prov, since)}
           />
-          <BiggestMovers topMovers={summary?.top_movers ?? null} />
         </div>
-        <div className="block lg:hidden">
-          <PriceHeatmap
-            heatmap={summary?.heatmap ?? null}
-            onCellClick={(prov) => applyFilter(prov, since)}
-          />
+        <div className="order-1 lg:order-2">
+          <BiggestMovers topMovers={summary?.top_movers ?? null} />
         </div>
       </div>
 
