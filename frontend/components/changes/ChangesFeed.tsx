@@ -194,7 +194,7 @@ export default function ChangesFeed({
 
 
   return (
-    <div>
+    <div style={{ overflowX: "hidden" }}>
       {/* Section header */}
       <div
         style={{
@@ -261,20 +261,21 @@ export default function ChangesFeed({
       <TimeWindowSelector value={timeWindow} onChange={handleTimeWindowChange} />
 
       {/* Dashboard: Heatmap + Leaderboard */}
+      {/* Mobile: movers above, heatmap full-width below (CSS order flip) */}
+      {/* Desktop: side-by-side grid, heatmap takes remaining space */}
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 280px",
-          gap: "16px",
-          marginBottom: "24px",
-        }}
-        className="dashboard-grid"
+        style={{ marginBottom: "24px", gap: "16px" }}
+        className="dashboard-grid flex flex-col lg:grid lg:grid-cols-[1fr_280px]"
       >
-        <PriceHeatmap
-          heatmap={summary?.heatmap ?? null}
-          onCellClick={(prov) => applyFilter(prov, since)}
-        />
-        <BiggestMovers topMovers={summary?.top_movers ?? null} />
+        <div className="order-2 lg:order-1">
+          <PriceHeatmap
+            heatmap={summary?.heatmap ?? null}
+            onCellClick={(prov) => applyFilter(prov, since)}
+          />
+        </div>
+        <div className="order-1 lg:order-2">
+          <BiggestMovers topMovers={summary?.top_movers ?? null} />
+        </div>
       </div>
 
       {/* Feed section label */}

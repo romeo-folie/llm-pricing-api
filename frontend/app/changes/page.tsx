@@ -42,7 +42,7 @@ export default async function ChangesPage({ searchParams }: PageProps) {
 
   return (
     <main
-      className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
+      className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-10"
       style={{ paddingTop: "32px", paddingBottom: "64px" }}
     >
       {apiUnavailable && <ApiUnavailableBanner />}

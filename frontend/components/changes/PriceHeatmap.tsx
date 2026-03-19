@@ -269,38 +269,75 @@ export default function PriceHeatmap({
       </div>
       {/* Legend — outside border, below heatmap */}
       <div
-        className="font-outfit text-xs"
+        className="font-outfit"
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "16px",
-          marginTop: "8px",
-          color: "var(--dim)",
+          flexWrap: "wrap",
+          gap: "12px",
+          marginTop: "10px",
+          paddingTop: "8px",
+          borderTop: "1px solid var(--border)",
         }}
       >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "11px",
+            fontWeight: 500,
+            color: "var(--muted)",
+          }}
+        >
           <span
             style={{
-              width: "10px",
-              height: "10px",
-              backgroundColor: "rgba(5, 150, 105, 0.4)",
+              width: "12px",
+              height: "12px",
+              backgroundColor: "rgba(5, 150, 105, 0.6)",
+              border: "1px solid rgba(5, 150, 105, 0.9)",
               display: "inline-block",
+              flexShrink: 0,
             }}
           />
           Price decrease
         </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "11px",
+            fontWeight: 500,
+            color: "var(--muted)",
+          }}
+        >
           <span
             style={{
-              width: "10px",
-              height: "10px",
-              backgroundColor: "rgba(220, 38, 38, 0.4)",
+              width: "12px",
+              height: "12px",
+              backgroundColor: "rgba(220, 38, 38, 0.6)",
+              border: "1px solid rgba(220, 38, 38, 0.9)",
               display: "inline-block",
+              flexShrink: 0,
             }}
           />
           Price increase
         </span>
-        <span style={{ marginLeft: "auto" }}>
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: "11px",
+            color: "var(--dim)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="4" height="4" stroke="currentColor" strokeOpacity="0.5" fill="none"/>
+            <rect x="0.5" y="0.5" width="11" height="11" stroke="currentColor" strokeOpacity="0.3" fill="none"/>
+          </svg>
           Cell size = change frequency
         </span>
       </div>
