@@ -112,86 +112,60 @@ export default function FeaturesPage() {
           </p>
         </header>
 
-        {/* Unified endpoint reference table */}
+        {/* Unified endpoint reference — mobile-friendly card list */}
         <section style={{ marginBottom: "56px" }}>
-          <table
-            className="w-full"
-            style={{ border: "1px dashed var(--borderDk)", borderSpacing: 0, borderCollapse: "collapse" }}
-          >
-            <caption className="sr-only">LLMRates API endpoint reference</caption>
-            <thead className="sr-only">
-              <tr>
-                <th scope="col">Method</th>
-                <th scope="col">Path</th>
-                <th scope="col">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {FEATURE_GROUPS.map((group) => (
-                <>
-                  {/* Group header row */}
-                  <tr key={`header-${group.title}`}>
-                    <td
-                      colSpan={3}
+          <div className="w-full" style={{ border: "1px dashed var(--borderDk)" }}>
+            {FEATURE_GROUPS.map((group) => (
+              <div key={group.title}>
+                <div style={{
+                  padding: "10px 20px",
+                  backgroundColor: "var(--surfaceLo)",
+                  borderTop: "1px dashed var(--border)",
+                  borderBottom: "1px dashed var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                }}>
+                  <span className="font-outfit text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                    {group.title}
+                  </span>
+                  <span className="font-orbitron text-xs" style={{ color: "var(--accent)", opacity: 0.7 }}>
+                    {group.tag}
+                  </span>
+                </div>
+                {group.endpoints.map((ep) => {
+                  const ms = METHOD_STYLES[ep.method]
+                  return (
+                    <div
+                      key={ep.path}
                       style={{
-                        padding: "10px 20px",
-                        backgroundColor: "var(--surfaceLo)",
                         borderTop: "1px dashed var(--border)",
-                        borderBottom: "1px dashed var(--border)",
+                        padding: "12px 20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
                       }}
                     >
-                      <span
-                          className="font-outfit text-sm font-semibold"
-                          style={{ color: "var(--ink)" }}
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                        <span
+                          className="font-orbitron text-xs font-semibold"
+                          style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
                         >
-                          {group.title}
+                          {ep.method}
                         </span>
-                    </td>
-                  </tr>
-
-                  {/* Endpoint rows */}
-                  {group.endpoints.map((ep) => {
-                    const ms = METHOD_STYLES[ep.method]
-                    return (
-                      <tr
-                        key={ep.path}
-                        style={{ borderTop: "1px dashed var(--border)" }}
-                      >
-                        <td style={{ padding: "12px 20px", width: "1%", whiteSpace: "nowrap" }}>
-                          <span
-                            className="font-orbitron text-xs font-semibold"
-                            style={{
-                              padding: "2px 6px",
-                              backgroundColor: ms.bg,
-                              color: ms.color,
-                            }}
-                          >
-                            {ep.method}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 16px 12px 0", width: "1%", whiteSpace: "nowrap" }}>
-                          <code
-                            className="font-orbitron text-sm"
-                            style={{ color: "var(--ink)" }}
-                          >
-                            {ep.path}
-                          </code>
-                        </td>
-                        <td style={{ padding: "12px 20px 12px 0" }}>
-                          <span
-                            className="font-outfit text-sm"
-                            style={{ color: "var(--muted)" }}
-                          >
-                            {ep.desc}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </>
-              ))}
-            </tbody>
-          </table>
+                        <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
+                          {ep.path}
+                        </code>
+                      </div>
+                      <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                        {ep.desc}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* Divider */}
