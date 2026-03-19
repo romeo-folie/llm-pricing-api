@@ -395,12 +395,13 @@ export default async function Home() {
             </div>
 
             {/* Mobile-friendly endpoint list */}
-            <div className="flex-1 w-full" style={{ border: "1px dashed var(--borderDk)" }}>
+            <div className="flex-1 w-full" role="list" aria-label="Agent-optimized API endpoints" style={{ border: "1px dashed var(--borderDk)" }}>
               {AGENT_ENDPOINTS.map((ep, i) => {
-                const ms = METHOD_STYLES[ep.method]
+                const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
                 return (
                   <div
                     key={ep.path}
+                    role="listitem"
                     style={{
                       borderTop: i === 0 ? "none" : "1px dashed var(--border)",
                       padding: "14px 20px",

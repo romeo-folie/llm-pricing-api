@@ -114,7 +114,7 @@ export default function FeaturesPage() {
 
         {/* Unified endpoint reference — mobile-friendly card list */}
         <section style={{ marginBottom: "56px" }}>
-          <div className="w-full" style={{ border: "1px dashed var(--borderDk)" }}>
+          <div className="w-full" role="list" aria-label="LLMRates API endpoint reference" style={{ border: "1px dashed var(--borderDk)" }}>
             {FEATURE_GROUPS.map((group) => (
               <div key={group.title}>
                 <div style={{
@@ -134,10 +134,11 @@ export default function FeaturesPage() {
                   </span>
                 </div>
                 {group.endpoints.map((ep) => {
-                  const ms = METHOD_STYLES[ep.method]
+                  const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
                   return (
                     <div
                       key={ep.path}
+                      role="listitem"
                       style={{
                         borderTop: "1px dashed var(--border)",
                         padding: "12px 20px",
