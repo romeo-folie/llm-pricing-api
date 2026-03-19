@@ -57,27 +57,16 @@ const FEATURES = [
 ]
 
 const AGENT_ENDPOINTS = [
-  {
-    method: "GET",
-    path: "/v1/context",
-    desc: "~2k token pricing snapshot for agent system prompts",
-  },
-  {
-    method: "POST",
-    path: "/v1/ask",
-    desc: "Natural language → structured pricing response",
-  },
-  {
-    method: "GET",
-    path: "/v1/stream/changes",
-    desc: "SSE stream with Last-Event-ID reconnection",
-  },
-  {
-    method: "GET",
-    path: "/v1/recommend",
-    desc: "Ranked model recommendations by task, context, and price",
-  },
+  { method: "GET",  path: "/v1/context",        desc: "~2k token pricing snapshot for agent system prompts" },
+  { method: "POST", path: "/v1/ask",             desc: "Natural language → structured pricing response" },
+  { method: "GET",  path: "/v1/stream/changes",  desc: "SSE stream with Last-Event-ID reconnection" },
+  { method: "GET",  path: "/v1/recommend",        desc: "Ranked model recommendations by task, context, and price" },
 ]
+
+const METHOD_STYLES: Record<string, { bg: string; color: string }> = {
+  GET:  { bg: "var(--accentLt)", color: "var(--accentDk)" },
+  POST: { bg: "rgba(5,150,105,0.12)", color: "var(--green)" },
+}
 
 const FEATURE_HIGHLIGHTS = [
   {
@@ -405,60 +394,40 @@ export default async function Home() {
               </a>
             </div>
 
-            {/* Endpoint table — dashed border for architectural diagram feel */}
-            <table
-              className="flex-1 w-full"
-              style={{ border: "1px dashed var(--borderDk)", borderSpacing: 0 }}
-            >
-              <caption className="sr-only">Agent-optimized API endpoints</caption>
-              <thead className="sr-only">
-                <tr>
-                  <th scope="col">Method</th>
-                  <th scope="col">Path</th>
-                  <th scope="col">Description</th>
-                                  </tr>
-              </thead>
-              <tbody>
-                {AGENT_ENDPOINTS.map((ep, i) => (
-                  <tr
+            {/* Mobile-friendly endpoint list */}
+            <div className="flex-1 w-full" role="list" aria-label="Agent-optimized API endpoints" style={{ border: "1px dashed var(--borderDk)" }}>
+              {AGENT_ENDPOINTS.map((ep, i) => {
+                const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
+                return (
+                  <div
                     key={ep.path}
-                    className="transition-colors"
+                    role="listitem"
                     style={{
                       borderTop: i === 0 ? "none" : "1px dashed var(--border)",
+                      padding: "14px 20px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
                     }}
                   >
-                    <td className="px-4 py-4 w-px whitespace-nowrap">
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                       <span
-                        className="font-orbitron text-xs font-semibold px-1.5 py-0.5"
-                        style={{
-                          backgroundColor: "var(--accentLt)",
-                          color: "var(--accentDk)",
-                        }}
+                        className="font-orbitron text-xs font-semibold"
+                        style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
                       >
                         {ep.method}
                       </span>
-                    </td>
-                    <td className="px-4 py-4 w-px whitespace-nowrap">
-                      <code
-                        className="font-orbitron text-sm"
-                        style={{ color: "var(--ink)" }}
-                      >
+                      <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
                         {ep.path}
                       </code>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span
-                        className="font-outfit text-sm"
-                        style={{ color: "var(--muted)" }}
-                      >
-                        {ep.desc}
-                      </span>
-                    </td>
-                    
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                      {ep.desc}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
         </div>

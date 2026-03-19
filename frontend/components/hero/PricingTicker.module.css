@@ -37,13 +37,13 @@
   font-family: var(--font-geist-sans), sans-serif;
 }
 
-.badgeOpenAI    { background: var(--greenLt);  color: var(--accentDk); }
-.badgeAnthropic { background: var(--greenLt);  color: var(--accentDk); }
-.badgeGoogle    { background: var(--greenLt);  color: var(--accentDk); }
-.badgeMistral   { background: var(--yellowLt); color: var(--yellow); }
-.badgeCohere    { background: var(--blueLt);   color: var(--blue); }
-.badgeDeepSeek  { background: var(--purpleLt); color: var(--purple); }
-.badgeMeta      { background: var(--blueLt);   color: var(--blue); }
+.badgeOpenAI    { background: #e8f5e9; color: #1a6b2e; }
+.badgeAnthropic { background: #fdf3ec; color: #b45309; }
+.badgeGoogle    { background: #e8f0fe; color: #1a56db; }
+.badgeMistral   { background: #fef9c3; color: #854d0e; }
+.badgeCohere    { background: #ede9fe; color: #6d28d9; }
+.badgeDeepSeek  { background: #fce7f3; color: #9d174d; }
+.badgeMeta      { background: #dbeafe; color: #1e40af; }
 
 .modelName {
   font-size: 13px;
