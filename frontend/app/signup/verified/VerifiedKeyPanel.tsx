@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { issueKey, type IdentityResponse } from "@/lib/signup"
+import { issueKey, regenerateKey, type IdentityResponse } from "@/lib/signup"
 
 interface Props {
   identity: IdentityResponse
@@ -13,24 +13,26 @@ type KeyState =
   | { phase: "error"; message: string }
 
 export default function VerifiedKeyPanel({ identity }: Props) {
-  const [keyState, setKeyState] = useState<KeyState>(
-    identity.has_active_key ? { phase: "ready", plaintext: "" } : { phase: "loading" },
-  )
+  const [keyState, setKeyState] = useState<KeyState>({ phase: "loading" })
   const [copied, setCopied] = useState(false)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasFired = useRef(false)
 
-  // Auto-issue key on mount for new identities.
-  // Skipped if a key already exists — user must use the manage page to regenerate.
+  // On verified landing:
+  // - new identity: issue first key
+  // - existing identity: rotate (revoke + issue) so lost keys can be recovered
   useEffect(() => {
-    if (identity.has_active_key || hasFired.current) return
+    if (hasFired.current) return
     hasFired.current = true
 
     let cancelled = false
     const controller = new AbortController()
 
     ;(async () => {
-      const result = await issueKey(controller.signal)
+      const result = identity.has_active_key
+        ? await regenerateKey(controller.signal)
+        : await issueKey(controller.signal)
+
       if (cancelled) return
       if (result.ok) {
         setKeyState({ phase: "ready", plaintext: result.key.plaintext })
@@ -63,32 +65,13 @@ export default function VerifiedKeyPanel({ identity }: Props) {
     copyTimer.current = setTimeout(() => setCopied(false), 2000)
   }
 
-  // Existing user landing (key already issued — show manage link, not the plaintext)
-  if (identity.has_active_key) {
-    return (
-      <div className="verified-card">
-        <div className="verified-icon verified-icon-success" aria-hidden="true">
-          <CheckCircleIcon />
-        </div>
-        <h1 className="verified-heading">Email verified</h1>
-        <p className="verified-sub">
-          You already have an active API key. Manage it from the signup page.
-        </p>
-        <a href="/signup/free" className="verified-btn">
-          Manage your key
-        </a>
-        <a href="/docs" className="verified-link">
-          View API docs →
-        </a>
-      </div>
-    )
-  }
-
   if (keyState.phase === "loading") {
     return (
       <div className="verified-loading" role="status" aria-label="Issuing key">
         <span className="signup-spinner signup-spinner-lg" aria-hidden="true" />
-        <p className="verified-loading-text">Issuing your API key…</p>
+        <p className="verified-loading-text">
+          {identity.has_active_key ? "Reissuing your API key…" : "Issuing your API key…"}
+        </p>
       </div>
     )
   }
@@ -108,9 +91,8 @@ export default function VerifiedKeyPanel({ identity }: Props) {
     )
   }
 
-  // New key issued — show it once with copy button
+  // Key issued/reissued — show once with copy button
   const { plaintext } = keyState
-  const isHidden = !plaintext
 
   return (
     <div className="verified-card verified-card-key">
@@ -138,37 +120,33 @@ export default function VerifiedKeyPanel({ identity }: Props) {
       </p>
 
       {/* Key display */}
-      {!isHidden && (
-        <>
-          <div className="verified-key-display">
-            <code className="verified-key-value" aria-label="API key">
-              {plaintext}
-            </code>
-            <button
-              type="button"
-              onClick={() => void handleCopy(plaintext)}
-              className={`verified-copy-btn ${copied ? "verified-copy-btn-copied" : ""}`}
-              aria-label={copied ? "Key copied" : "Copy API key"}
-            >
-              {copied ? (
-                <>
-                  <CheckIcon />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <CopyIcon />
-                  <span>Copy key</span>
-                </>
-              )}
-            </button>
-          </div>
+      <div className="verified-key-display">
+        <code className="verified-key-value" aria-label="API key">
+          {plaintext}
+        </code>
+        <button
+          type="button"
+          onClick={() => void handleCopy(plaintext)}
+          className={`verified-copy-btn ${copied ? "verified-copy-btn-copied" : ""}`}
+          aria-label={copied ? "Key copied" : "Copy API key"}
+        >
+          {copied ? (
+            <>
+              <CheckIcon />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <CopyIcon />
+              <span>Copy key</span>
+            </>
+          )}
+        </button>
+      </div>
 
-          <p className="verified-once-warning">
-            ⚠ Copy your key now — it won&apos;t be shown again after you leave this page.
-          </p>
-        </>
-      )}
+      <p className="verified-once-warning">
+        ⚠ Copy your key now — it won&apos;t be shown again after you leave this page.
+      </p>
 
       {/* Footer links */}
       <div className="verified-footer">
