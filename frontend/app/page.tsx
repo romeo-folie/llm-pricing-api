@@ -267,6 +267,8 @@ export default async function Home() {
       {/* ── Data Sources Bar ───────────────────────────────────────────── */}
       <section aria-label="Data sources">
         <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        {/* Live pricing ticker — full-bleed inside bordered container */}
+        <PricingTicker />
         <div className="max-w-6xl mx-auto px-6 py-6">
           <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
             {DATA_SOURCES.map((source) => (
@@ -296,8 +298,6 @@ export default async function Home() {
             ))}
           </div>
         </div>
-        {/* Live pricing ticker — full-bleed inside bordered container */}
-        <PricingTicker />
         </div>
       </section>
 
