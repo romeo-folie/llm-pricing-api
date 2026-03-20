@@ -267,7 +267,9 @@ export default async function Home() {
       {/* ── Data Sources Bar ───────────────────────────────────────────── */}
       <section aria-label="Data sources">
         <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
-        <div className="max-w-6xl mx-auto px-6 py-6">
+        {/* Live pricing ticker — full-bleed inside bordered container */}
+        <PricingTicker />
+        <div className="max-w-6xl mx-auto px-6 py-6" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
             {DATA_SOURCES.map((source) => (
               <div key={source.name} className="flex flex-col items-center gap-1.5">
@@ -296,8 +298,6 @@ export default async function Home() {
             ))}
           </div>
         </div>
-        {/* Live pricing ticker — full-bleed inside bordered container */}
-        <PricingTicker />
         </div>
       </section>
 

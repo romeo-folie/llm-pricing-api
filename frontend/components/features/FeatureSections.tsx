@@ -42,7 +42,6 @@ export function FeatureSections() {
   return (
     <section className={styles.wrapper}>
       <div className={styles.sectionHeader}>
-        <span className={styles.tag}>[ FEATURE HIGHLIGHTS ]</span>
         <h2 id="feature-highlights-heading" className={styles.heading}>
           Feature highlights for agents and developers.
         </h2>
