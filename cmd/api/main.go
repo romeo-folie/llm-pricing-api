@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -26,11 +27,11 @@ import (
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
-	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/logger"
 	"llm-pricing-api/internal/mailer"
 	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/middleware"
+	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/review"
 	"llm-pricing-api/internal/signup"
 )
@@ -78,10 +79,10 @@ func main() {
 	// Initialise OpenTelemetry SDK.  When OTELEndpoint is empty the SDK
 	// defaults to a no-op provider — safe to call unconditionally.
 	otelShutdown, err := internalotel.Init(ctx, internalotel.Config{
-		ServiceName:  cfg.OTELServiceName,
+		ServiceName:    cfg.OTELServiceName,
 		ServiceVersion: "0.1.0",
-		Environment:  cfg.AppEnv,
-		OTLPEndpoint: cfg.OTELEndpoint,
+		Environment:    cfg.AppEnv,
+		OTLPEndpoint:   cfg.OTELEndpoint,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialise OTel SDK")
@@ -149,7 +150,7 @@ func main() {
 		// even when EnableTrustedProxyCheck is false.
 		EnableTrustedProxyCheck: len(trustedProxies) > 0,
 		TrustedProxies:          trustedProxies,
-		ProxyHeader:             func() string {
+		ProxyHeader: func() string {
 			if len(trustedProxies) > 0 {
 				return fiber.HeaderXForwardedFor
 			}
@@ -157,8 +158,21 @@ func main() {
 		}(),
 	})
 
-	// Middleware order: security headers first, then OTel tracing, Prometheus
-	// instrumentation, request logger, and panic recovery.
+	// CORS: allow docs UI (llmrates.live) and local frontend to call the API
+	// directly (e.g. API reference "Try it out" requests).
+	allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
+	if allowedOrigins == "" {
+		allowedOrigins = "https://llmrates.live,https://www.llmrates.live,http://localhost:3000"
+	}
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: allowedOrigins,
+		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
+		MaxAge:       86400,
+	}))
+
+	// Middleware order: CORS + security headers first, then OTel tracing,
+	// Prometheus instrumentation, request logger, and panic recovery.
 	app.Use(middleware.Security())
 	app.Use(otelfiber.Middleware())
 	app.Use(metrics.PrometheusMiddleware())
@@ -215,7 +229,6 @@ func main() {
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 		SignupEnabled:           cfg.SignupEnabled,
-
 	}, log)
 	// Rate-limit all auth routes first (DDoS protection even when signup is
 	// disabled). Handler-level checks in auth.Handler manage the 503 response

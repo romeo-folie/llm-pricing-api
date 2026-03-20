@@ -9,10 +9,10 @@ const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.googletagmanager.com;
   style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
-  font-src 'self' https://fonts.scalar.com;
+  font-src 'self' data: https://fonts.scalar.com;
   img-src 'self' data: blob: https:;
   media-src 'self';
-  connect-src 'self' https://api.llmrates.live https://checkout.lemonsqueezy.com https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://*.analytics.google.com;
+  connect-src 'self' https://api.llmrates.live https://cdn.jsdelivr.net https://checkout.lemonsqueezy.com https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://*.analytics.google.com;
   worker-src 'self' blob:;
   frame-src https://checkout.lemonsqueezy.com;
   object-src 'none';
