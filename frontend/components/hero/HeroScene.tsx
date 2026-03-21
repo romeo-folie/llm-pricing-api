@@ -125,7 +125,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
   return (
     <div
       className={className}
-      style={{ width: "100%", ...style }}
+      style={{ width: "100%", overflow: "visible", ...style }}
       role="img"
       aria-label="Architecture diagram: direct API pricing data from OpenAI, Anthropic, and Google, plus aggregated data from OpenRouter, LiteLLM, and Hugging Face, flows through a reconciliation engine to verified API endpoints"
     >
@@ -133,7 +133,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
         viewBox={`0 0 ${VW} ${VH}`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "auto", display: "block" }}
+        style={{ width: "100%", height: "auto", display: "block", transform: "scale(1.2)", transformOrigin: "center center", overflow: "visible" }}
       >
         {/* ── Glow definitions ──────────────────────────────────────── */}
         {/* ── Flow lines (planet → reactor) ─────────────────────────── */}
