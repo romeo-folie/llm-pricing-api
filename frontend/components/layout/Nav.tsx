@@ -26,8 +26,18 @@ export default function Nav() {
       className="sticky top-0 z-50 w-full"
       style={{ backgroundColor: "var(--bg)" }}
     >
-      <div className="mx-auto max-w-[1280px] border-x border-y" style={{ borderColor: "var(--border)" }}>
-        <div className="grid h-13 grid-cols-[auto_1fr_auto] items-center px-6 md:h-14 md:px-8" style={{ position: "relative" }}>
+      <div className="mx-auto max-w-[1280px] relative px-0" style={{ backgroundColor: "var(--bg)" }}>
+        {/* Animated Custom Borders (Start Sequence) */}
+        {/* Left Nav Rail */}
+        <div className="absolute top-0 left-0 w-px h-full" style={{ backgroundColor: "var(--border)", transformOrigin: "top", transform: "scaleY(0)", animation: "draw-vertical-rail 0.3s cubic-bezier(0.77, 0, 0.175, 1) forwards", animationDelay: "0.0s" }} />
+        {/* Right Nav Rail */}
+        <div className="absolute top-0 right-0 w-px h-full" style={{ backgroundColor: "var(--border)", transformOrigin: "top", transform: "scaleY(0)", animation: "draw-vertical-rail 0.3s cubic-bezier(0.77, 0, 0.175, 1) forwards", animationDelay: "0.0s" }} />
+        {/* Bottom Nav Rail (Left to Center) */}
+        <div className="absolute bottom-0 left-0 h-px w-1/2" style={{ backgroundColor: "var(--border)", transformOrigin: "left", transform: "scaleX(0)", animation: "draw-horizontal-rail 0.3s cubic-bezier(0.77, 0, 0.175, 1) forwards", animationDelay: "0.3s" }} />
+        {/* Bottom Nav Rail (Right to Center) */}
+        <div className="absolute bottom-0 right-0 h-px w-1/2" style={{ backgroundColor: "var(--border)", transformOrigin: "right", transform: "scaleX(0)", animation: "draw-horizontal-rail 0.3s cubic-bezier(0.77, 0, 0.175, 1) forwards", animationDelay: "0.3s" }} />
+
+        <div className="grid h-13 grid-cols-[auto_1fr_auto] items-center px-6 md:h-14 md:px-8" style={{ position: "relative", zIndex: 10 }}>
 
           {/* Animation + Logo */}
           <div className="flex items-center gap-1">
@@ -39,11 +49,22 @@ export default function Nav() {
                 style={{ width: "48px", height: "48px", transform: "scaleX(-1)" }}
               />
             </div>
-            <Link href="/" className="flex items-center select-none whitespace-nowrap">
+            <Link 
+              href="/" 
+              className="flex items-center select-none whitespace-nowrap"
+            >
               <span className="font-orbitron text-base font-bold tracking-tight" style={{ color: "var(--ink)" }}>
-                LLM
+                {"LLM".split("").map((c, i) => (
+                  <span key={`l-${i}`} className="animate-reveal-char" style={{ animationDelay: `${0.8 + i * 0.08}s` }}>
+                    {c}
+                  </span>
+                ))}
               </span><span className="font-outfit text-base font-semibold" style={{ color: "var(--accent)" }}>
-                Rates
+                {"Rates".split("").map((c, i) => (
+                  <span key={`r-${i}`} className="animate-reveal-char" style={{ animationDelay: `${1.04 + i * 0.08}s` }}>
+                    {c}
+                  </span>
+                ))}
               </span>
             </Link>
           </div>
@@ -51,16 +72,17 @@ export default function Nav() {
 
           {/* Navigation links — centered */}
           <nav className="hidden md:flex items-center justify-center gap-1" aria-label="Main navigation">
-            {NAV_LINKS.map(({ href, label }) => {
+            {NAV_LINKS.map(({ href, label }, i) => {
               const isActive = pathname === href || pathname.startsWith(href + "/")
               return (
                 <Link
                   key={href}
                   href={href}
-                  className={cn("relative px-3 py-1.5 text-sm font-medium font-outfit transition-colors")}
+                  className={cn("relative px-3 py-1.5 text-sm font-medium font-outfit transition-colors animate-reveal-nav-link")}
                   style={{
                     color: isActive ? "var(--ink)" : "var(--muted)",
                     fontWeight: isActive ? 600 : 500,
+                    animationDelay: `${1.1 + i * 0.05}s`
                   }}
                   aria-current={isActive ? "page" : undefined}
                 >
@@ -75,11 +97,12 @@ export default function Nav() {
             <div className="hidden md:flex items-center justify-end">
               <Link
                 href="/signup/free"
-                className="font-outfit text-sm font-semibold px-4 py-1.5"
+                className="font-outfit text-sm font-semibold px-4 py-1.5 animate-reveal-cta"
                 style={{
                   backgroundColor: "var(--accent)",
                   color: "var(--surfaceHi)",
                   border: "1px solid var(--accentDk)",
+                  animationDelay: "1.5s"
                 }}
               >
                 Get API Key

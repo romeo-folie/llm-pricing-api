@@ -7,27 +7,37 @@ import { providerStyle } from "@/lib/provider-colors"
 interface ChangeRowProps {
   change: PriceChange
   isNew?: boolean
+  index?: number
 }
 
-export default function ChangeRow({ change, isNew }: ChangeRowProps) {
+export default function ChangeRow({ change, isNew, index = 0 }: ChangeRowProps) {
   const increased = change.delta_pct >= 0
   const deltaColor = increased ? "var(--red)" : "var(--green)"
   const arrow      = increased ? "▲" : "▼"
   const { color: pvColor, bg: pvBg } = providerStyle(change.provider)
 
+  const drawDelay = 0.8 + Math.min(index, 20) * 0.05
+  const fadeDelay = 1.3 + Math.min(index, 20) * 0.05
+
   return (
     <div
-      className={isNew ? "animate-flash" : ""}
+      className={`${isNew ? "animate-flash " : ""}animate-draw-border-b`}
       style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: "12px",
-        padding: "12px 16px",
-        borderBottom: "1px solid var(--border)",
         backgroundColor: "transparent",
-      }}
+        "--draw-delay": `${drawDelay}s`
+      } as React.CSSProperties}
     >
+      <div
+        className="animate-wireframe-fade"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "12px",
+          padding: "12px 16px",
+          animationDelay: `${fadeDelay}s`,
+        }}
+      >
       {/* Model + provider */}
       <div style={{ flex: 1, minWidth: "160px" }}>
         <a
@@ -111,6 +121,7 @@ export default function ChangeRow({ change, isNew }: ChangeRowProps) {
         <span className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
           {formatRelative(change.changed_at)}
         </span>
+      </div>
       </div>
     </div>
   )

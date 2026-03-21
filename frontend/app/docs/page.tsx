@@ -16,7 +16,7 @@ export default function DocsPage() {
       <style>{`body::before, body::after { display: none !important; }`}</style>
       {/* Client component that adds/removes data-page="docs" on <html> for CSS targeting */}
       <DocsPageStyles />
-      <main>
+      <main className="animate-wireframe-fade" style={{ animationDelay: "0.6s" }}>
         <ApiReference specUrl="/openapi.json" />
       </main>
     </>

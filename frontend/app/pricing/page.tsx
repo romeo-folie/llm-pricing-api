@@ -114,7 +114,7 @@ export default function FeaturesPage() {
       <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
-        <header style={{ textAlign: "center", marginBottom: "48px" }}>
+        <header className="animate-wireframe-fade" style={{ textAlign: "center", marginBottom: "48px", animationDelay: "1.2s" }}>
           <h1 className="font-outfit text-3xl font-bold" style={{ color: "var(--ink)" }}>
             Features
           </h1>
@@ -126,53 +126,60 @@ export default function FeaturesPage() {
 
         {/* Unified endpoint reference — mobile-friendly card list */}
         <section style={{ marginBottom: "56px" }}>
-          <div className="w-full" role="list" aria-label="LLMRates API endpoint reference" style={{ border: "1px dashed var(--borderDk)" }}>
-            {FEATURE_GROUPS.map((group) => (
+          <div className="w-full animate-draw-border-box-dashed" role="list" aria-label="LLMRates API endpoint reference" style={{ "--draw-delay": "0.6s" } as React.CSSProperties}>
+            {FEATURE_GROUPS.map((group, groupIndex) => (
               <div key={group.title}>
-                <div style={{
-                  padding: "10px 20px",
-                  backgroundColor: "var(--surfaceLo)",
-                  borderTop: "1px dashed var(--border)",
-                  borderBottom: "1px dashed var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                }}>
-                  <span className="font-outfit text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                    {group.title}
-                  </span>
-                  <span className="font-orbitron text-xs" style={{ color: "var(--accent)", opacity: 0.7 }}>
-                    {group.tag}
-                  </span>
+                <div
+                  className="animate-draw-border-t animate-draw-border-b"
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: "var(--surfaceLo)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    "--draw-delay": `${0.7 + groupIndex * 0.1}s`
+                  } as React.CSSProperties}
+                >
+                  <div className="animate-wireframe-fade" style={{ display: "flex", gap: "10px", alignItems: "center", animationDelay: "1.4s" }}>
+                    <span className="font-outfit text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                      {group.title}
+                    </span>
+                    <span className="font-orbitron text-xs" style={{ color: "var(--accent)", opacity: 0.7 }}>
+                      {group.tag}
+                    </span>
+                  </div>
                 </div>
-                {group.endpoints.map((ep) => {
+                {group.endpoints.map((ep, epIndex) => {
                   const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
                   return (
                     <div
                       key={ep.path}
                       role="listitem"
+                      className="animate-draw-border-t block"
                       style={{
-                        borderTop: "1px dashed var(--border)",
                         padding: "12px 20px",
                         display: "flex",
                         flexDirection: "column",
                         gap: "6px",
-                      }}
+                        "--draw-delay": `${0.8 + epIndex * 0.1}s`
+                      } as React.CSSProperties}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                        <span
-                          className="font-orbitron text-xs font-semibold"
-                          style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
-                        >
-                          {ep.method}
+                      <div className="animate-wireframe-fade" style={{ display: "flex", flexDirection: "column", gap: "6px", animationDelay: `${1.5 + epIndex * 0.1}s` }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                          <span
+                            className="font-orbitron text-xs font-semibold"
+                            style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
+                          >
+                            {ep.method}
+                          </span>
+                          <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
+                            {ep.path}
+                          </code>
+                        </div>
+                        <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                          {ep.desc}
                         </span>
-                        <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
-                          {ep.path}
-                        </code>
                       </div>
-                      <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
-                        {ep.desc}
-                      </span>
                     </div>
                   )
                 })}
@@ -183,14 +190,15 @@ export default function FeaturesPage() {
 
         {/* Divider */}
         <div
+          className="animate-draw-border-t"
           style={{
-            borderTop: "1px solid var(--border)",
             marginBottom: "40px",
             width: "min(100vw, 80rem)",
             position: "relative",
             left: "50%",
             transform: "translateX(-50%)",
-          }}
+            "--draw-delay": "1.0s"
+          } as React.CSSProperties}
         />
 
         {/* FAQ */}
@@ -198,28 +206,26 @@ export default function FeaturesPage() {
           <div className="mx-auto max-w-4xl px-6 py-8 sm:px-10">
             <h2
               id="faq-heading"
-              className="font-outfit text-3xl font-bold text-center"
-              style={{ color: "var(--ink)", marginBottom: "28px" }}
+              className="font-outfit text-3xl font-bold text-center animate-wireframe-fade"
+              style={{ color: "var(--ink)", marginBottom: "28px", animationDelay: "1.2s" }}
             >
               Frequently Asked
             </h2>
 
-            <div style={{ border: "1px solid var(--border)" }}>
+            <div className="animate-draw-border-box" style={{ "--draw-delay": "0.8s" } as React.CSSProperties}>
               {FAQ.map((item, i) => (
                 <details
                   key={item.q}
-                  className="group"
-                  style={{
-                    borderBottom: i < FAQ.length - 1 ? "1px solid var(--border)" : "none",
-                  }}
+                  className={`group block ${i < FAQ.length - 1 ? 'animate-draw-border-b' : ''}`}
+                  style={{ "--draw-delay": `${0.9 + i * 0.1}s` } as React.CSSProperties}
                 >
                   <summary
-                    className="list-none cursor-pointer select-none py-4 px-5 font-outfit text-base font-medium flex items-start gap-4"
-                    style={{ color: "var(--ink)" }}
+                    className="animate-wireframe-fade list-none cursor-pointer select-none py-4 px-5 font-outfit text-base font-medium flex items-start gap-4"
+                    style={{ color: "var(--ink)", animationDelay: `${1.4 + i * 0.1}s` }}
                   >
                     <span
-                      className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center font-orbitron text-xs"
-                      style={{ color: "var(--accent)" }}
+                      className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center font-orbitron text-sm"
+                      style={{ color: "var(--ink)" }}
                     >
                       <span className="group-open:hidden">+</span>
                       <span className="hidden group-open:inline">−</span>

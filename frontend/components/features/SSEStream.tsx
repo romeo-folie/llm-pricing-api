@@ -109,7 +109,10 @@ export function SSEStream() {
   return (
     <div className={styles.card}>
       <div className={styles.streamHeader}>
-        <span className={styles.endpoint}>GET /v1/stream/changes</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span className={styles.method}>GET</span>
+          <span className={styles.endpoint}>/v1/stream/changes</span>
+        </div>
         <span className={styles.status}>
           <span
             className={`${styles.statusDot} ${!connected ? styles.off : ""}`}

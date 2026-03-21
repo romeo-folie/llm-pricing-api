@@ -156,9 +156,9 @@ export default async function Home() {
     <main>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section aria-labelledby="hero-heading">
-        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.6s' } as React.CSSProperties}>
         <div className="max-w-6xl mx-auto px-6 py-20 lg:py-32">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 items-center animate-wireframe-fade" style={{ animationDelay: "1.5s" }}>
             {/* Left: copy */}
             <div className="flex flex-col gap-6">
               <h1
@@ -207,8 +207,8 @@ export default async function Home() {
 
               {/* Stat strip */}
               <div
-                className="flex flex-wrap items-start gap-6 pt-4"
-                style={{ borderTop: "1px solid var(--border)" }}
+                className="flex flex-wrap items-start gap-6 pt-4 animate-draw-border-t animate-wireframe-fade"
+                style={{ '--draw-delay': '0.65s', animationDelay: "1.55s" } as React.CSSProperties}
               >
                 <div className="flex flex-col gap-0.5">
                   <span
@@ -256,7 +256,7 @@ export default async function Home() {
             </div>
 
             {/* Right: hero scene */}
-            <div className="w-full">
+            <div className="w-full animate-wireframe-fade" style={{ animationDelay: "1.5s" }}>
               <HeroScene />
             </div>
           </div>
@@ -266,12 +266,15 @@ export default async function Home() {
 
       {/* ── Data Sources Bar ───────────────────────────────────────────── */}
       <section aria-label="Data sources">
-        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.7s' } as React.CSSProperties}>
         {/* Live pricing ticker — full-bleed inside bordered container */}
-        <PricingTicker />
-        <div className="max-w-6xl mx-auto px-6 py-6" style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
-            {DATA_SOURCES.map((source) => (
+        <div className="animate-wireframe-fade" style={{ animationDelay: "1.6s" }}>
+          <PricingTicker />
+        </div>
+        <div className="max-w-7xl mx-auto animate-draw-border-t" style={{ '--draw-delay': '0.75s' } as React.CSSProperties}>
+          <div className="max-w-6xl mx-auto px-6 py-6 animate-wireframe-fade" style={{ animationDelay: "1.65s" }}>
+            <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
+              {DATA_SOURCES.map((source) => (
               <div key={source.name} className="flex flex-col items-center gap-1.5">
                 {source.logoDark ? (
                   <picture>
@@ -296,6 +299,7 @@ export default async function Home() {
                 </span>
               </div>
             ))}
+            </div>
           </div>
         </div>
         </div>
@@ -303,9 +307,9 @@ export default async function Home() {
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
       <section aria-labelledby="features-heading">
-        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.8s' } as React.CSSProperties}>
         <div className="max-w-6xl mx-auto px-6 py-16">
-          <div className="mb-10">
+          <div className="mb-10 animate-wireframe-fade" style={{ animationDelay: "1.7s" }}>
             <h2
               id="features-heading"
               className="font-outfit text-2xl font-bold mt-3 mb-2"
@@ -322,39 +326,39 @@ export default async function Home() {
             {FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="relative flex flex-col gap-3 p-5 transition-colors"
-                style={{
-                  border: "1px solid var(--border)",
-                }}
+                className="relative transition-colors animate-draw-border-box"
+                style={{ '--draw-delay': '0.85s', padding: "20px" } as React.CSSProperties}
               >
                 {/* Arrow icon — top right */}
                 <span
-                  className="absolute top-3 right-3"
-                  style={{ color: "var(--dim)" }}
+                  className="absolute top-3 right-3 animate-wireframe-fade"
+                  style={{ color: "var(--dim)", animationDelay: "1.75s" }}
                   aria-hidden="true"
                 >
                   <ArrowUpRight size={16} />
                 </span>
 
-                <span
-                  className="font-orbitron text-2xl"
-                  style={{ color: "var(--accent)" }}
-                  aria-hidden="true"
-                >
-                  {f.icon}
-                </span>
-                <h3
-                  className="font-orbitron text-sm font-bold"
-                  style={{ color: "var(--ink)" }}
-                >
-                  {f.title}
-                </h3>
-                <p
-                  className="font-outfit text-sm leading-relaxed"
-                  style={{ color: "var(--muted)" }}
-                >
-                  {f.description}
-                </p>
+                <div className="flex flex-col gap-3 animate-wireframe-fade" style={{ animationDelay: "1.75s" }}>
+                  <span
+                    className="font-orbitron text-2xl"
+                    style={{ color: "var(--accent)" }}
+                    aria-hidden="true"
+                  >
+                    {f.icon}
+                  </span>
+                  <h3
+                    className="font-orbitron text-sm font-bold"
+                    style={{ color: "var(--ink)" }}
+                  >
+                    {f.title}
+                  </h3>
+                  <p
+                    className="font-outfit text-sm leading-relaxed"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    {f.description}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
@@ -364,11 +368,11 @@ export default async function Home() {
 
       {/* ── Agent callout ────────────────────────────────────────────────── */}
       <section aria-labelledby="agent-heading">
-        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.9s' } as React.CSSProperties}>
         <div className="max-w-6xl mx-auto px-6 py-16">
           <div className="flex flex-col lg:flex-row gap-12 items-start">
             {/* Left copy */}
-            <div className="flex flex-col gap-4 lg:max-w-sm">
+            <div className="flex flex-col gap-4 lg:max-w-sm animate-wireframe-fade" style={{ animationDelay: "1.8s" }}>
               <h2
                 id="agent-heading"
                 className="font-outfit text-2xl font-bold"
@@ -395,35 +399,35 @@ export default async function Home() {
             </div>
 
             {/* Mobile-friendly endpoint list */}
-            <div className="flex-1 w-full" role="list" aria-label="Agent-optimized API endpoints" style={{ border: "1px dashed var(--borderDk)" }}>
+            <div className="flex-1 w-full animate-draw-border-box-dashed" role="list" aria-label="Agent-optimized API endpoints" style={{ '--draw-delay': '0.95s' } as React.CSSProperties}>
               {AGENT_ENDPOINTS.map((ep, i) => {
                 const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
                 return (
                   <div
                     key={ep.path}
                     role="listitem"
+                    className={i !== 0 ? "animate-draw-border-t" : ""}
                     style={{
-                      borderTop: i === 0 ? "none" : "1px dashed var(--border)",
                       padding: "14px 20px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "6px",
-                    }}
+                      "--draw-delay": `1.0s`
+                    } as React.CSSProperties}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                      <span
-                        className="font-orbitron text-xs font-semibold"
-                        style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
-                      >
-                        {ep.method}
+                    <div className="animate-wireframe-fade flex flex-col gap-[6px]" style={{ animationDelay: "1.85s" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                        <span
+                          className="font-orbitron text-xs font-semibold"
+                          style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
+                        >
+                          {ep.method}
+                        </span>
+                        <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
+                          {ep.path}
+                        </code>
+                      </div>
+                      <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                        {ep.desc}
                       </span>
-                      <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
-                        {ep.path}
-                      </code>
                     </div>
-                    <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
-                      {ep.desc}
-                    </span>
                   </div>
                 )
               })}
@@ -435,13 +439,15 @@ export default async function Home() {
 
       {/* ── Feature highlights ──────────────────────────────────────────── */}
       <section aria-labelledby="feature-highlights-heading">
-        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
-          <FeatureSections />
+        <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '1.0s' } as React.CSSProperties}>
+          <div className="animate-wireframe-fade" style={{ animationDelay: "1.9s" }}>
+            <FeatureSections />
+          </div>
         </div>
       </section>
 
       {/* ── Final CTA ────────────────────────────────────────────────────── */}
-      <section aria-labelledby="cta-heading">
+      <section aria-labelledby="cta-heading" className="animate-wireframe-fade" style={{ animationDelay: "2.0s" }}>
         <div className="max-w-6xl mx-auto px-6 py-24 text-center flex flex-col items-center gap-6">
           <h2
             id="cta-heading"

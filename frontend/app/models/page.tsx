@@ -97,7 +97,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
         {apiUnavailable && <ApiUnavailableBanner />}
 
         {/* Header */}
-        <div style={{ marginBottom: "24px" }}>
+        <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.2s" }}>
           <h1
             className="font-outfit text-2xl font-bold"
             style={{ color: "var(--ink)" }}
@@ -114,16 +114,14 @@ export default async function ModelsPage({ searchParams }: PageProps) {
         {/* Filters */}
         <form
           method="GET"
+          className="animate-draw-border-box"
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "8px",
             marginBottom: "20px",
-            padding: "12px",
-            border: "1px solid var(--border)",
             backgroundColor: "var(--bg)",
-          }}
+            "--draw-delay": "0.6s"
+          } as React.CSSProperties}
         >
+          <div className="animate-wireframe-fade flex flex-wrap gap:8px p-3" style={{ animationDelay: "1.3s", gap: "8px" }}>
           {/* Provider */}
           <select
             name="provider"
@@ -227,13 +225,14 @@ export default async function ModelsPage({ searchParams }: PageProps) {
               Clear
             </a>
           )}
+          </div>
         </form>
 
         {/* Result count */}
         {!apiUnavailable && total > 0 && (
           <p
-            className="font-outfit text-sm"
-            style={{ color: "var(--muted)", marginBottom: "12px" }}
+            className="font-outfit text-sm animate-wireframe-fade"
+            style={{ color: "var(--muted)", marginBottom: "12px", animationDelay: "1.35s" }}
           >
             Showing {rangeStart}–{rangeEnd} of {total} models
           </p>
@@ -241,54 +240,52 @@ export default async function ModelsPage({ searchParams }: PageProps) {
 
         {/* Column headers */}
         <div
-          className="font-orbitron text-xs"
+          className="font-orbitron text-xs animate-draw-border-b-dk"
           style={{
-            display: "flex",
             padding: "8px 16px",
-            color: "var(--dim)",
-            borderBottom: "2px solid var(--borderDk)",
-            gap: "12px",
-            alignItems: "center",
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-          }}
+            "--draw-delay": "0.7s"
+          } as React.CSSProperties}
         >
-          <span style={{ width: "8px" }} />
-          <span style={{ flex: 1 }}>Model</span>
-          <span>Status</span>
-          <span style={{ minWidth: "36px", textAlign: "right" }}>Ctx</span>
-          <span style={{ minWidth: "100px", textAlign: "right" }}>Price /1M</span>
+          <div className="animate-wireframe-fade" style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", color: "var(--dim)", textTransform: "uppercase", letterSpacing: "0.08em", animationDelay: "1.4s" }}>
+            <span style={{ width: "8px" }} />
+            <span style={{ flex: 1 }}>Model</span>
+            <span>Status</span>
+            <span style={{ minWidth: "36px", textAlign: "right" }}>Ctx</span>
+            <span style={{ minWidth: "100px", textAlign: "right" }}>Price /1M</span>
+          </div>
         </div>
 
         {/* Model list */}
         {models.length === 0 ? (
           <div
-            className="font-outfit text-sm"
+            className="font-outfit text-sm animate-draw-border-b"
             style={{
               textAlign: "center",
-              padding: "64px 24px",
-              color: "var(--muted)",
-              borderBottom: "1px solid var(--border)",
-            }}
+              "--draw-delay": "0.8s"
+            } as React.CSSProperties}
           >
-            {apiUnavailable ? "No data available — API is unreachable." : "No models match the current filters."}
+            <div className="animate-wireframe-fade" style={{ padding: "64px 24px", color: "var(--muted)", animationDelay: "1.5s" }}>
+              {apiUnavailable ? "No data available — API is unreachable." : "No models match the current filters."}
+            </div>
           </div>
         ) : (
           <div>
-            {models.map((model) => (
+            {models.map((model, index) => (
               <Suspense key={model.id} fallback={null}>
-                <ModelCard model={model} />
+                <ModelCard model={model} index={index} />
               </Suspense>
             ))}
           </div>
         )}
 
         {/* Pagination */}
-        <Pagination
-          currentPage={page}
-          totalPages={totalPages}
-          searchParams={paginationParams}
-        />
+        <div className="animate-wireframe-fade" style={{ animationDelay: "1.6s" }}>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            searchParams={paginationParams}
+          />
+        </div>
       </main>
 
       {/* Modal — reads ?model= param */}

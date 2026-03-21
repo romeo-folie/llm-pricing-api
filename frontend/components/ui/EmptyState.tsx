@@ -9,12 +9,13 @@ interface EmptyStateProps {
 export default function EmptyState({ children, padding = "64px 24px" }: EmptyStateProps) {
   return (
     <div
-      className="font-outfit text-sm"
+      className="font-outfit text-sm animate-wireframe-fade"
       style={{
         textAlign: "center",
         padding,
         color: "var(--dim)",
         letterSpacing: "0.02em",
+        animationDelay: "1.4s"
       }}
     >
       {children}

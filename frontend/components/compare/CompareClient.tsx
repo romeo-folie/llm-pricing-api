@@ -66,6 +66,7 @@ export default function CompareClient({
     <div>
       {/* Header */}
       <div
+        className="animate-wireframe-fade"
         style={{
           display: "flex",
           alignItems: "center",
@@ -73,6 +74,7 @@ export default function CompareClient({
           flexWrap: "wrap",
           gap: "12px",
           marginBottom: "24px",
+          animationDelay: "1.2s",
         }}
       >
         <div>
@@ -110,29 +112,34 @@ export default function CompareClient({
 
       {/* Picker */}
       <div
+        className="animate-draw-border-box"
         style={{
           padding: "16px",
-          border: "1px solid var(--border)",
           backgroundColor: "var(--surfaceLo)",
           marginBottom: "24px",
-        }}
+          "--draw-delay": "0.6s"
+        } as React.CSSProperties}
       >
-        <ModelPicker
-          models={allModels}
-          selected={selectedIds}
-          onSelect={handleSelect}
-          onRemove={handleRemove}
-          max={5}
-          placeholder="Search and add models to compare…"
-        />
+        <div className="animate-wireframe-fade" style={{ animationDelay: "1.3s" }}>
+          <ModelPicker
+            models={allModels}
+            selected={selectedIds}
+            onSelect={handleSelect}
+            onRemove={handleRemove}
+            max={5}
+            placeholder="Search and add models to compare…"
+          />
+        </div>
       </div>
 
       {/* Table or empty state */}
-      {compareModels.length < 2 ? (
-        <EmptyState padding="80px 24px">Select at least 2 models to compare.</EmptyState>
-      ) : (
-        <CompareTable models={compareModels} onRemove={handleRemove} />
-      )}
+      <div>
+        {compareModels.length < 2 ? (
+          <EmptyState padding="80px 24px">Select at least 2 models to compare.</EmptyState>
+        ) : (
+          <CompareTable models={compareModels} onRemove={handleRemove} />
+        )}
+      </div>
     </div>
   )
 }

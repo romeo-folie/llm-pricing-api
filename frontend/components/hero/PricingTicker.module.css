@@ -1,6 +1,5 @@
 .wrapper {
   overflow: hidden;
-  border-top: 1px solid var(--border);
   padding: 10px 0;
   mask-image: linear-gradient(to right, transparent, black 60px, black calc(100% - 60px), transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 60px, black calc(100% - 60px), transparent);

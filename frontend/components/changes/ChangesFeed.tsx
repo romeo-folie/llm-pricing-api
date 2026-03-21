@@ -197,6 +197,7 @@ export default function ChangesFeed({
     <div style={{ overflowX: "hidden" }}>
       {/* Section header */}
       <div
+        className="animate-wireframe-fade"
         style={{
           display: "flex",
           alignItems: "center",
@@ -204,6 +205,7 @@ export default function ChangesFeed({
           flexWrap: "wrap",
           gap: "12px",
           marginBottom: "16px",
+          animationDelay: "1.2s",
         }}
       >
         <div>
@@ -258,14 +260,16 @@ export default function ChangesFeed({
       </div>
 
       {/* Time window selector */}
-      <TimeWindowSelector value={timeWindow} onChange={handleTimeWindowChange} />
+      <div className="animate-wireframe-fade" style={{ animationDelay: "1.3s" }}>
+        <TimeWindowSelector value={timeWindow} onChange={handleTimeWindowChange} />
+      </div>
 
       {/* Dashboard: Heatmap + Leaderboard */}
       {/* Mobile: movers above, heatmap full-width below (CSS order flip) */}
       {/* Desktop: side-by-side grid, heatmap takes remaining space */}
       <div
-        style={{ marginBottom: "24px", gap: "16px" }}
-        className="dashboard-grid flex flex-col lg:grid lg:grid-cols-[1fr_280px]"
+        style={{ marginBottom: "24px", gap: "16px", animationDelay: "1.4s" }}
+        className="dashboard-grid flex flex-col lg:grid lg:grid-cols-[1fr_280px] animate-wireframe-fade"
       >
         <div className="order-2 lg:order-1">
           <PriceHeatmap
@@ -280,11 +284,12 @@ export default function ChangesFeed({
 
       {/* Feed section label */}
       <span
-        className="font-orbitron text-xs tracking-widest"
+        className="font-orbitron text-xs tracking-widest animate-wireframe-fade"
         style={{
           color: "var(--dim)",
           display: "block",
           marginBottom: "12px",
+          animationDelay: "1.5s",
         }}
       >
         LIVE FEED
@@ -292,16 +297,14 @@ export default function ChangesFeed({
 
       {/* Filters */}
       <div
+        className="animate-draw-border-box"
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "8px",
           marginBottom: "16px",
-          padding: "12px",
-          border: "1px solid var(--border)",
           backgroundColor: "var(--surfaceLo)",
-        }}
+          "--draw-delay": "0.6s"
+        } as React.CSSProperties}
       >
+        <div className="animate-wireframe-fade flex flex-wrap gap:8px p-3" style={{ animationDelay: "1.3s", gap: "8px" }}>
         <select
           value={provider}
           onChange={(e) => applyFilter(e.target.value, since)}
@@ -346,25 +349,23 @@ export default function ChangesFeed({
             Clear
           </button>
         )}
+        </div>
       </div>
 
       {/* Column header */}
       <div
-        className="font-orbitron text-xs"
+        className="font-orbitron text-xs animate-draw-border-b-dk"
         style={{
-          display: "flex",
           padding: "8px 16px",
-          color: "var(--dim)",
-          borderBottom: "2px solid var(--borderDk)",
-          gap: "12px",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
+          "--draw-delay": "0.7s"
+        } as React.CSSProperties}
       >
-        <span style={{ flex: 1 }}>Model</span>
-        <span style={{ minWidth: "180px" }}>Price Change</span>
-        <span style={{ minWidth: "64px", textAlign: "right" }}>Delta</span>
-        <span style={{ minWidth: "72px", textAlign: "right" }}>Source</span>
+        <div className="animate-wireframe-fade" style={{ display: "flex", gap: "12px", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--dim)", animationDelay: "1.4s" }}>
+          <span style={{ flex: 1 }}>Model</span>
+          <span style={{ minWidth: "180px" }}>Price Change</span>
+          <span style={{ minWidth: "64px", textAlign: "right" }}>Delta</span>
+          <span style={{ minWidth: "72px", textAlign: "right" }}>Source</span>
+        </div>
       </div>
 
       {/* Rows */}
@@ -372,11 +373,12 @@ export default function ChangesFeed({
         <EmptyState padding="80px 24px">No price changes yet.</EmptyState>
       ) : (
         <>
-          {changes.map((change) => (
+          {changes.map((change, i) => (
             <ChangeRow
               key={change.id}
               change={change}
               isNew={newIds.has(change.id)}
+              index={i}
             />
           ))}
 

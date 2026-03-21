@@ -7,6 +7,7 @@ import { safeJsonLd } from "@/lib/utils"
 
 interface ModelCardProps {
   model: Model
+  index?: number
 }
 
 function ConfidenceDot({ confidence }: { confidence: "high" | "medium" | "low" }) {
@@ -32,7 +33,7 @@ function ConfidenceDot({ confidence }: { confidence: "high" | "medium" | "low" }
   )
 }
 
-export default function ModelCard({ model }: ModelCardProps) {
+export default function ModelCard({ model, index = 0 }: ModelCardProps) {
   const router      = useRouter()
   const searchParams = useSearchParams()
 
@@ -59,6 +60,9 @@ export default function ModelCard({ model }: ModelCardProps) {
     }
   };
 
+  const drawDelay = 0.8 + Math.min(index, 20) * 0.05;
+  const fadeDelay = 1.3 + Math.min(index, 20) * 0.05;
+
   return (
     <>
       <script
@@ -67,17 +71,14 @@ export default function ModelCard({ model }: ModelCardProps) {
       />
       <button
         onClick={openModal}
-      className="w-full text-left"
+      className={`w-full text-left animate-draw-border-b block`}
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        padding: "12px 16px",
+        padding: "0",
         backgroundColor: "transparent",
-        borderBottom: "1px solid var(--border)",
         cursor: "pointer",
         transition: "background-color 0.12s",
-      }}
+        "--draw-delay": `${drawDelay}s`
+      } as React.CSSProperties}
       onMouseEnter={(e) => {
         e.currentTarget.style.backgroundColor = "var(--surface)"
       }}
@@ -85,57 +86,68 @@ export default function ModelCard({ model }: ModelCardProps) {
         e.currentTarget.style.backgroundColor = "transparent"
       }}
     >
-      {/* Confidence dot */}
-      <ConfidenceDot confidence={model.trust.confidence} />
-
-      {/* Model name + provider */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="font-outfit text-sm" style={{ color: "var(--ink)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {model.name}
-        </div>
-        <div className="font-outfit text-xs" style={{ color: "var(--muted)" }}>
-          {model.provider} · {model.modality}
-        </div>
-      </div>
-
-      {/* LIVE badge */}
-      <span
-        className="font-orbitron text-xs"
+      <div 
+        className="animate-wireframe-fade" 
         style={{
-          display: "inline-flex",
+          display: "flex",
           alignItems: "center",
-          gap: "4px",
-          padding: "1px 6px",
-          border: "none",
-          color: "#ffffff",
-          backgroundColor: "#10B981",
-          flexShrink: 0,
-          letterSpacing: "0.12em",
-          fontSize: "0.65rem",
-          lineHeight: 1.4,
+          gap: "12px",
+          padding: "12px 16px",
+          animationDelay: `${fadeDelay}s`
         }}
       >
-        <span className="animate-live" style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "rgba(255,255,255,0.7)", display: "inline-block" }} />
-        LIVE
-      </span>
+        {/* Confidence dot */}
+        <ConfidenceDot confidence={model.trust.confidence} />
 
-      {/* Context window */}
-      <span
-        className="font-orbitron text-xs"
-        style={{ color: "var(--dim)", flexShrink: 0, minWidth: "36px", textAlign: "right" }}
-      >
-        {formatContext(model.context_window)}
-      </span>
-
-      {/* Prices */}
-      <div style={{ flexShrink: 0, textAlign: "right", minWidth: "100px" }}>
-        <div className="font-orbitron text-xs" style={{ color: "var(--text)" }}>
-          {formatPrice(model.input_price_per_m)}
-          <span className="font-outfit" style={{ color: "var(--dim)", fontSize: "10px" }}> in</span>
+        {/* Model name + provider */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="font-outfit text-sm" style={{ color: "var(--ink)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {model.name}
+          </div>
+          <div className="font-outfit text-xs" style={{ color: "var(--muted)" }}>
+            {model.provider} · {model.modality}
+          </div>
         </div>
-        <div className="font-orbitron text-xs" style={{ color: "var(--muted)" }}>
-          {formatPrice(model.output_price_per_m)}
-          <span className="font-outfit" style={{ color: "var(--dim)", fontSize: "10px" }}> out</span>
+
+        {/* LIVE badge */}
+        <span
+          className="font-orbitron text-xs"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            padding: "1px 6px",
+            border: "none",
+            color: "#ffffff",
+            backgroundColor: "#10B981",
+            flexShrink: 0,
+            letterSpacing: "0.12em",
+            fontSize: "0.65rem",
+            lineHeight: 1.4,
+          }}
+        >
+          <span className="animate-live" style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "rgba(255,255,255,0.7)", display: "inline-block" }} />
+          LIVE
+        </span>
+
+        {/* Context window */}
+        <span
+          className="font-orbitron text-xs"
+          style={{ color: "var(--dim)", flexShrink: 0, minWidth: "36px", textAlign: "right" }}
+        >
+          {formatContext(model.context_window)}
+        </span>
+
+        {/* Prices */}
+        <div style={{ flexShrink: 0, textAlign: "right", minWidth: "100px" }}>
+          <div className="font-orbitron text-xs" style={{ color: "var(--text)" }}>
+            {formatPrice(model.input_price_per_m)}
+            <span className="font-outfit" style={{ color: "var(--dim)", fontSize: "10px" }}> in</span>
+          </div>
+          <div className="font-orbitron text-xs" style={{ color: "var(--muted)" }}>
+            {formatPrice(model.output_price_per_m)}
+            <span className="font-outfit" style={{ color: "var(--dim)", fontSize: "10px" }}> out</span>
+          </div>
         </div>
       </div>
     </button>

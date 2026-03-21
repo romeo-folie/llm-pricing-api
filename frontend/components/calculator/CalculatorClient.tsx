@@ -76,7 +76,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
 
   return (
     <div>
-      <div style={{ marginBottom: "24px" }}>
+      <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.2s" }}>
         <span
           className="font-orbitron text-xs tracking-widest"
           style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
@@ -93,19 +93,19 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
 
       {/* HUD / control panel */}
       <div
+        className="animate-draw-border-box"
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           gap: "16px",
           padding: "20px",
-          border: "1px solid var(--borderDk)",
-          borderTop: "1px solid var(--borderDk)",
           backgroundColor: "var(--surfaceLo)",
           marginBottom: "24px",
-        }}
+          "--draw-delay": "0.6s"
+        } as React.CSSProperties}
       >
         {/* Model picker — spans full width */}
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="animate-wireframe-fade" style={{ gridColumn: "1 / -1", animationDelay: "1.3s" }}>
           <label className="font-orbitron text-xs" style={{ color: "var(--dim)", display: "block", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
             Models (up to 3)
           </label>
@@ -120,7 +120,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
         </div>
 
         {/* Input tokens */}
-        <div>
+        <div className="animate-wireframe-fade" style={{ animationDelay: "1.4s" }}>
           <label className="font-orbitron text-xs" style={{ color: "var(--dim)", display: "block", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
             Input tokens / day
           </label>
@@ -143,7 +143,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
         </div>
 
         {/* Output tokens */}
-        <div>
+        <div className="animate-wireframe-fade" style={{ animationDelay: "1.4s" }}>
           <label className="font-orbitron text-xs" style={{ color: "var(--dim)", display: "block", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
             Output tokens / day
           </label>
@@ -166,7 +166,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
         </div>
 
         {/* Period toggle */}
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="animate-wireframe-fade" style={{ gridColumn: "1 / -1", animationDelay: "1.5s" }}>
           <label className="font-orbitron text-xs" style={{ color: "var(--dim)", display: "block", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
             View as
           </label>
@@ -212,18 +212,20 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
         <EmptyState>Add a model above to see cost estimates.</EmptyState>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
-          {results.map((r) => {
+          {results.map((r, i) => {
             const isCheapest = r.modelId === cheapestId
             return (
               <div
                 key={r.modelId}
+                className="animate-draw-border-box"
                 style={{
                   padding: "16px",
-                  border: "1px solid var(--border)",
-                  borderTop: isCheapest ? "1px solid var(--accent)" : "1px solid var(--border)",
                   backgroundColor: isCheapest ? "var(--accentLt)" : "var(--surfaceHi)",
-                }}
+                  "--draw-delay": `${0.8 + i * 0.1}s`
+                } as React.CSSProperties}
               >
+                <div className="animate-wireframe-fade" style={{ animationDelay: `${1.4 + i * 0.1}s` }}>
+
                 <div className="font-outfit text-sm" style={{ color: "var(--muted)", marginBottom: "4px" }}>
                   {r.modelName}
                 </div>
@@ -247,6 +249,7 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
                   <div className="font-outfit text-xs" style={{ color: "var(--dim)", marginTop: "4px", textAlign: "center" }}>
                     per {period === "daily" ? "day" : period === "monthly" ? "month" : "year"}
                   </div>
+                </div>
                 </div>
               </div>
             )

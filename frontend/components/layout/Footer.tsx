@@ -30,10 +30,10 @@ export default function Footer() {
       className="w-full mt-auto"
     >
       <div
-        className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10"
-        style={{ borderTop: "1px solid var(--borderDk)" }}
+        className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 animate-draw-border-t-dk"
+        style={{ '--draw-delay': '1.0s' } as React.CSSProperties}
       >
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4 animate-wireframe-fade" style={{ animationDelay: '1.5s' }}>
           {/* Brand */}
           <div className="lg:col-span-1">
             <div className="mb-3 flex items-center">
@@ -124,15 +124,17 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div
-          className="mt-8 pt-6 flex flex-col sm:flex-row justify-between items-center gap-2"
-          style={{ borderTop: "1px solid var(--border)" }}
+          className="mt-8 pt-6 flex flex-col sm:flex-row justify-between items-center gap-2 animate-draw-border-t"
+          style={{ '--draw-delay': '1.1s' } as React.CSSProperties}
         >
-          <p className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
-            &copy; <CopyrightYear /> LLMRates. All prices reconciled from multiple sources.
-          </p>
-          <p className="font-orbitron text-xs" style={{ color: "var(--dim)" }}>
-            p99 &lt;200ms &middot; updated every 5m
-          </p>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-2 w-full animate-wireframe-fade" style={{ animationDelay: '1.6s' }}>
+            <p className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
+              &copy; <CopyrightYear /> LLMRates. All prices reconciled from multiple sources.
+            </p>
+            <p className="font-orbitron text-xs" style={{ color: "var(--dim)" }}>
+              p99 &lt;200ms &middot; updated every 5m
+            </p>
+          </div>
         </div>
       </div>
     </footer>
