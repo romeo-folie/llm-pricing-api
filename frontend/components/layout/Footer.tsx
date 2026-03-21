@@ -6,6 +6,7 @@ const PRODUCT_LINKS = [
   { href: "/compare",    label: "Compare"       },
   { href: "/calculator", label: "Calculator"    },
   { href: "/changes",    label: "Price Changes" },
+  { href: "/why",        label: "Why LLMRates?" },
   { href: "/pricing",    label: "Features"      },
 ] as const
 

@@ -27,7 +27,7 @@ const sections = [
     reverse: true,
   },
   {
-    endpoint: "POST /v1/ask",
+    endpoint: "/v1/ask",
     label: "Natural language",
     title: "Ask pricing questions in plain English",
     description:

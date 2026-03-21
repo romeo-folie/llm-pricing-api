@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
 import { formatPrice, formatContext } from "@/lib/format"
+import { safeJsonLd } from "@/lib/utils"
 
 interface ModelCardProps {
   model: Model
@@ -41,9 +42,31 @@ export default function ModelCard({ model }: ModelCardProps) {
     router.push(`?${params.toString()}`, { scroll: false })
   }
 
+  const productSchema = {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": model.name,
+    "description": `${model.provider} ${model.name} model with ${formatContext(model.context_window)} context window.`,
+    "brand": {
+      "@type": "Brand",
+      "name": model.provider
+    },
+    "offers": {
+      "@type": "Offer",
+      "priceCurrency": "USD",
+      "price": model.input_price_per_m,
+      "description": `Input price: ${formatPrice(model.input_price_per_m)}, Output price: ${formatPrice(model.output_price_per_m)} per 1M tokens.`
+    }
+  };
+
   return (
-    <button
-      onClick={openModal}
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(productSchema) }}
+      />
+      <button
+        onClick={openModal}
       className="w-full text-left"
       style={{
         display: "flex",
@@ -116,5 +139,6 @@ export default function ModelCard({ model }: ModelCardProps) {
         </div>
       </div>
     </button>
+    </>
   )
 }

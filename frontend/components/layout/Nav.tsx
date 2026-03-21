@@ -4,7 +4,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState, useRef } from "react"
 import Lottie, { LottieRefCurrentProps } from "lottie-react"
-import greenMoneyAnim from "@/public/animations/green-money.json"
+import moneyStackAnim from "@/public/animations/money-stack.json"
+import moneyStackCoinsAnim from "@/public/animations/money-stack-w-coins.json"
 import { cn } from "@/lib/utils"
 
 const NAV_LINKS = [
@@ -19,8 +20,6 @@ const NAV_LINKS = [
 export default function Nav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [animDone, setAnimDone] = useState(false)
-  const lottieRef = useRef<LottieRefCurrentProps>(null)
 
   return (
     <header
@@ -30,37 +29,25 @@ export default function Nav() {
       <div className="mx-auto max-w-[1280px] border-x border-y" style={{ borderColor: "var(--border)" }}>
         <div className="grid h-13 grid-cols-[auto_1fr_auto] items-center px-6 md:h-14 md:px-8" style={{ position: "relative" }}>
 
-          {/* Logo */}
-          <Link href="/" className="flex items-center select-none whitespace-nowrap">
-            <span className="font-orbitron text-base font-bold tracking-tight" style={{ color: "var(--ink)" }}>
-              LLM
-            </span><span className="font-outfit text-base font-semibold" style={{ color: "var(--accent)" }}>
-              Rates
-            </span>
-          </Link>
-
-          {/* Money rain — center of navbar, plays once on first page load */}
-          {!animDone && (
-            <span style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: 160,
-              height: 160,
-              pointerEvents: "none",
-              zIndex: 10,
-            }}>
-              <Lottie
-                lottieRef={lottieRef}
-                animationData={greenMoneyAnim}
+          {/* Animation + Logo */}
+          <div className="flex items-center gap-1">
+            <div style={{ marginRight: "-6px", transform: "translateY(2px)" }}>
+              <Lottie 
+                animationData={moneyStackCoinsAnim}
                 loop={false}
-                autoplay
-                onComplete={() => setAnimDone(true)}
-                style={{ width: "100%", height: "100%" }}
+                autoplay={true}
+                style={{ width: "48px", height: "48px", transform: "scaleX(-1)" }}
               />
-            </span>
-          )}
+            </div>
+            <Link href="/" className="flex items-center select-none whitespace-nowrap">
+              <span className="font-orbitron text-base font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+                LLM
+              </span><span className="font-outfit text-base font-semibold" style={{ color: "var(--accent)" }}>
+                Rates
+              </span>
+            </Link>
+          </div>
+
 
           {/* Navigation links — centered */}
           <nav className="hidden md:flex items-center justify-center gap-1" aria-label="Main navigation">

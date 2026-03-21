@@ -71,6 +71,14 @@
   margin-bottom: 0.5rem;
 }
 
+@media (prefers-color-scheme: dark) {
+  .pill {
+    background: rgba(19, 160, 146, 0.15);
+    color: var(--accent);
+    border: 1px solid rgba(19, 160, 146, 0.25);
+  }
+}
+
 .label {
   font-family: var(--font-orbitron, monospace);
   font-size: 0.7rem;

@@ -59,10 +59,10 @@
   --hero-endpoint-bg:      #FFFFFF;
   --hero-endpoint-border:  #DDD7D0;
   --hero-endpoint-text:    #1E293B;
-  --hero-method-get-bg:    #B5D4F4;
-  --hero-method-get-text:  #0C447C;
-  --hero-method-post-bg:   #B9EDD8;
-  --hero-method-post-text: #0C5E3A;
+  --hero-method-get-bg:    #B9EDD8;
+  --hero-method-get-text:  #0C5E3A;
+  --hero-method-post-bg:   #B5D4F4;
+  --hero-method-post-text: #0C447C;
   --accent:      #107E72;
   --accentLt:    #E0F5F2;
   --accentDk:    #0A524A;
@@ -123,10 +123,10 @@
     --hero-endpoint-text:    #F0EDE9;
 
     /* Hero method pills — saturated fills with light text */
-    --hero-method-get-bg:    #2563EB;
-    --hero-method-get-text:  #EFF6FF;
-    --hero-method-post-bg:   #059669;
-    --hero-method-post-text: #ECFDF5;
+    --hero-method-get-bg:    #059669;
+    --hero-method-get-text:  #ECFDF5;
+    --hero-method-post-bg:   #2563EB;
+    --hero-method-post-text: #EFF6FF;
 
     /* Hero diagram labels — match provider name text (--ink) for consistency */
     --hero-label:            #F0EDE9;
@@ -288,10 +288,10 @@ body {
   font-size: 0.75rem;
 }
 
-/* ─── Docs page nav override ──────────────────────────────────────────────── */
-/* On the docs page only: nav extends full width. Side borders hidden so only
+/* On the docs page only: nav and footer extend full width. Side borders hidden so only
    the bottom border spans the full viewport. */
-[data-page="docs"] header > div {
+[data-page="docs"] header > div,
+[data-page="docs"] footer > div {
   max-width: 100% !important;
   border-left: none !important;
   border-right: none !important;

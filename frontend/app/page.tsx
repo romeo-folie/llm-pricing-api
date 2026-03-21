@@ -64,8 +64,8 @@ const AGENT_ENDPOINTS = [
 ]
 
 const METHOD_STYLES: Record<string, { bg: string; color: string }> = {
-  GET:  { bg: "var(--accentLt)", color: "var(--accentDk)" },
-  POST: { bg: "rgba(5,150,105,0.12)", color: "var(--green)" },
+  GET:  { bg: "var(--greenLt)", color: "var(--green)" },
+  POST: { bg: "var(--blueLt)", color: "var(--blue)" },
 }
 
 const FEATURE_HIGHLIGHTS = [
@@ -434,8 +434,10 @@ export default async function Home() {
       </section>
 
       {/* ── Feature highlights ──────────────────────────────────────────── */}
-      <section aria-labelledby="feature-highlights-heading" style={{ borderBottom: "1px solid var(--border)" }}>
-        <FeatureSections />
+      <section aria-labelledby="feature-highlights-heading">
+        <div className="max-w-7xl mx-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+          <FeatureSections />
+        </div>
       </section>
 
       {/* ── Final CTA ────────────────────────────────────────────────────── */}
