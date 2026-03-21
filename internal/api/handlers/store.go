@@ -94,6 +94,8 @@ type ListModelsFilter struct {
 	Provider string
 	// Modality filters by models.modality exact match.
 	Modality string
+	// Search filters by models.name or models.slug (case-insensitive ILIKE match).
+	Search string
 	// MinContext filters to models with context_window >= MinContext.
 	// nil means no lower bound.
 	MinContext *int
@@ -293,6 +295,11 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 	if filter.Modality != "" {
 		where += fmt.Sprintf(" AND m.modality = $%d", argIdx)
 		args = append(args, filter.Modality)
+		argIdx++
+	}
+	if filter.Search != "" {
+		where += fmt.Sprintf(" AND (m.name ILIKE $%d OR m.slug ILIKE $%d)", argIdx, argIdx)
+		args = append(args, "%"+filter.Search+"%")
 		argIdx++
 	}
 	if filter.MinContext != nil {

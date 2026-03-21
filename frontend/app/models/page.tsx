@@ -34,6 +34,7 @@ interface PageProps {
     min_context?: string
     model?: string
     page?: string
+    q?: string
   }>
 }
 
@@ -46,6 +47,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     provider:    sp.provider    || undefined,
     modality:    sp.modality    || undefined,
     min_context: sp.min_context ? Number(sp.min_context) : undefined,
+    q:           sp.q           || undefined,
   }
 
   const requestedPage = sp.page ? Math.max(1, Number(sp.page) || 1) : 1
@@ -71,6 +73,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
   if (sp.provider) paginationParams.provider = sp.provider
   if (sp.modality) paginationParams.modality = sp.modality
   if (sp.min_context) paginationParams.min_context = sp.min_context
+  if (sp.q) paginationParams.q = sp.q
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -122,6 +125,24 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           } as React.CSSProperties}
         >
           <div className="animate-wireframe-fade flex flex-wrap gap:8px p-3" style={{ animationDelay: "1.3s", gap: "8px" }}>
+          
+          {/* Text search */}
+          <input
+            type="text"
+            name="q"
+            defaultValue={sp.q ?? ""}
+            placeholder="Search models..."
+            className="font-outfit text-sm"
+            style={{
+              padding: "6px 12px",
+              border: "1px solid var(--border)",
+              backgroundColor: "var(--bg)",
+              color: "var(--ink)",
+              outline: "none",
+              flex: "1 1 max-content",
+            }}
+          />
+
           {/* Provider */}
           <select
             name="provider"
@@ -209,7 +230,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             Filter
           </button>
 
-          {(sp.provider || sp.modality || sp.min_context) && (
+          {(sp.provider || sp.modality || sp.min_context || sp.q) && (
             <a
               href="/models"
               className="font-outfit text-sm"

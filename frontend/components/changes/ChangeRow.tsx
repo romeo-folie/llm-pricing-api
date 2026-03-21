@@ -24,8 +24,15 @@ export default function ChangeRow({ change, isNew, index = 0 }: ChangeRowProps) 
       className={`${isNew ? "animate-flash " : ""}animate-draw-border-b`}
       style={{
         backgroundColor: "transparent",
+        transition: "background-color 0.12s",
         "--draw-delay": `${drawDelay}s`
       } as React.CSSProperties}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface)"
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "transparent"
+      }}
     >
       <div
         className="animate-wireframe-fade"

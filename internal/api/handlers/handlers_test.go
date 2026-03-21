@@ -364,13 +364,16 @@ func TestListModels_PassesFiltersToStore(t *testing.T) {
 	app := newApp(store)
 
 	minCtx := 4096
-	get(t, app, "/v1/models?provider=openai&modality=text&min_context=4096&page=2&per_page=10")
+	get(t, app, "/v1/models?provider=openai&modality=text&min_context=4096&page=2&per_page=10&q=gpt")
 
 	if capturedFilter.Provider != "openai" {
 		t.Errorf("provider: got %q, want openai", capturedFilter.Provider)
 	}
 	if capturedFilter.Modality != "text" {
 		t.Errorf("modality: got %q, want text", capturedFilter.Modality)
+	}
+	if capturedFilter.Search != "gpt" {
+		t.Errorf("search: got %q, want gpt", capturedFilter.Search)
 	}
 	if capturedFilter.MinContext == nil || *capturedFilter.MinContext != minCtx {
 		t.Errorf("min_context: got %v, want %d", capturedFilter.MinContext, minCtx)

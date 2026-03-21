@@ -105,7 +105,9 @@ func magicLinkHTML(verifyURL string) string {
 <body style="font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e5e5;padding:40px 24px;margin:0">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto">
     <tr><td>
-      <p style="font-size:13px;color:#888;margin:0 0 32px">LLMRates</p>
+      <div style="margin:0 0 32px;font-size:16px;letter-spacing:-0.02em;user-select:none;">
+        <span style="color:#f5f5f5;font-family:ui-monospace,monospace;font-weight:700;">LLM</span><span style="color:#13a092;font-weight:600;">Rates</span>
+      </div>
       <h1 style="font-size:22px;font-weight:600;margin:0 0 16px;color:#f5f5f5">Your sign-in link</h1>
       <p style="font-size:15px;color:#aaa;margin:0 0 32px;line-height:1.6">
         Click the button below to verify your email and get your free API key.

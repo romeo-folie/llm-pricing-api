@@ -50,6 +50,7 @@ func (h *Handlers) ListModels(c *fiber.Ctx) error {
 	filter := ListModelsFilter{
 		Provider: c.Query("provider"),
 		Modality: c.Query("modality"),
+		Search:   c.Query("q"),
 		Page:     1,
 		PerPage:  50,
 	}

@@ -96,6 +96,7 @@ func TestStreamChanges_ContentTypeHeader(t *testing.T) {
 		// Timed out before headers were written — this can happen with
 		// streaming responses in test mode; skip gracefully.
 		t.Skip("response not available (stream timeout)")
+		return
 	}
 	defer resp.Body.Close()
 
@@ -117,6 +118,7 @@ func TestStreamChanges_SSEHeaders(t *testing.T) {
 	}
 	if resp == nil {
 		t.Skip("response not available (stream timeout)")
+		return
 	}
 	defer resp.Body.Close()
 
