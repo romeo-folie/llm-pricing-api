@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "LLMRates — AI Model Pricing API",
+    name: "LLMRates Pricing Tracker",
     short_name: "LLMRates",
     description:
-      "Compare AI model pricing across providers. Reconciled LLM token costs with full price history and agent-optimized APIs.",
+      "Reconciled LLM token pricing comparison. Full history, real-time changes, and agent-optimized APIs.",
     start_url: "/",
     display: "standalone",
     background_color: "#F2EDE8",
