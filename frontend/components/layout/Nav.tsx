@@ -93,11 +93,11 @@ export default function Nav() {
           </nav>
 
           {/* Right-side CTA */}
-          {!pathname.startsWith("/signup") && (
-            <div className="hidden md:flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            {!pathname.startsWith("/signup") && (
               <Link
                 href="/signup/free"
-                className="font-outfit text-sm font-semibold px-4 py-1.5 animate-reveal-cta"
+                className="hidden sm:flex font-outfit text-sm font-semibold px-4 py-1.5 animate-reveal-cta"
                 style={{
                   backgroundColor: "var(--accent)",
                   color: "var(--surfaceHi)",
@@ -107,23 +107,23 @@ export default function Nav() {
               >
                 Get API Key
               </Link>
-            </div>
-          )}
+            )}
 
-          {/* Mobile menu button */}
-          <button
-            type="button"
-            className="justify-self-end p-2 md:hidden"
-            style={{ color: "var(--muted)", border: "1px solid var(--border)" }}
-            aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-nav"
-            onClick={() => setMobileOpen((o) => !o)}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
-            </svg>
-          </button>
+            {/* Mobile menu button */}
+            <button
+              type="button"
+              className="p-2 md:hidden"
+              style={{ color: "var(--muted)", border: "1px solid var(--border)" }}
+              aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-nav"
+              onClick={() => setMobileOpen((o) => !o)}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Mobile nav */}
@@ -153,6 +153,24 @@ export default function Nav() {
               </Link>
             )
           })}
+          
+          {/* Mobile CTA */}
+          {!pathname.startsWith("/signup") && (
+            <div className="px-6 py-4 border-t" style={{ borderColor: "var(--border)" }}>
+              <Link
+                href="/signup/free"
+                className="block w-full text-center font-outfit text-sm font-semibold px-4 py-3"
+                style={{
+                  backgroundColor: "var(--accent)",
+                  color: "var(--surfaceHi)",
+                  border: "1px solid var(--accentDk)",
+                }}
+                onClick={() => setMobileOpen(false)}
+              >
+                Get Free API Key
+              </Link>
+            </div>
+          )}
         </nav>
       </div>
     </header>

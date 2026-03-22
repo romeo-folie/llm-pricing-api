@@ -66,7 +66,7 @@ export default function RequestLinkForm({ onSent }: Props) {
   const isBlocked = isSubmitting || cooldownMs > 0
 
   return (
-    <form onSubmit={handleSubmit} className="signup-form">
+    <form onSubmit={handleSubmit} className="signup-form animate-reveal-card">
       <div className="signup-field">
         <label htmlFor="signup-email" className="signup-label">
           Work or personal email

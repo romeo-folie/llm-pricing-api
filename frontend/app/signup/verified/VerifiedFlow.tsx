@@ -42,7 +42,7 @@ export default function VerifiedFlow() {
 
   if (state.phase === "loading") {
     return (
-      <div className="verified-loading" role="status" aria-label="Loading your key">
+      <div className="verified-loading animate-reveal-card" role="status" aria-label="Loading your key">
         <span className="signup-spinner signup-spinner-lg" aria-hidden="true" />
         <p className="verified-loading-text">Preparing your API key…</p>
       </div>
@@ -51,7 +51,7 @@ export default function VerifiedFlow() {
 
   if (state.phase === "error") {
     return (
-      <div className="verified-card">
+      <div className="verified-card animate-reveal-card">
         <div className="verified-icon verified-icon-error" aria-hidden="true">
           <ErrorIcon />
         </div>

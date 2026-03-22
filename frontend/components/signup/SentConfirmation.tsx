@@ -61,7 +61,7 @@ export default function SentConfirmation({ email, initialCooldownMs, onBack }: P
   }
 
   return (
-    <div className="signup-sent">
+    <div className="signup-sent animate-reveal-card">
       <div className="signup-sent-icon" aria-hidden="true">
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
           <rect width="48" height="48" rx="8" fill="var(--accentLt)" />

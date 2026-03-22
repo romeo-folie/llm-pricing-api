@@ -67,7 +67,7 @@ export default function VerifiedKeyPanel({ identity }: Props) {
 
   if (keyState.phase === "loading") {
     return (
-      <div className="verified-loading" role="status" aria-label="Issuing key">
+      <div className="verified-loading animate-reveal-card" role="status" aria-label="Issuing key">
         <span className="signup-spinner signup-spinner-lg" aria-hidden="true" />
         <p className="verified-loading-text">
           {identity.has_active_key ? "Reissuing your API key…" : "Issuing your API key…"}
@@ -78,7 +78,7 @@ export default function VerifiedKeyPanel({ identity }: Props) {
 
   if (keyState.phase === "error") {
     return (
-      <div className="verified-card">
+      <div className="verified-card animate-reveal-card">
         <div className="verified-icon verified-icon-error" aria-hidden="true">
           <ErrorIcon />
         </div>
@@ -95,7 +95,7 @@ export default function VerifiedKeyPanel({ identity }: Props) {
   const { plaintext } = keyState
 
   return (
-    <div className="verified-card verified-card-key">
+    <div className="verified-card verified-card-key animate-reveal-card">
       {/* Identity header */}
       <div className="verified-identity">
         <span className="verified-email">{identity.email}</span>

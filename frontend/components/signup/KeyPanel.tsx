@@ -111,7 +111,7 @@ export default function KeyPanel({ identity, initialKey }: Props) {
   const maskedKey = "sk-llmr-••••••••••••••••••••••••••••••"
 
   return (
-    <div className="key-panel">
+    <div className="key-panel animate-reveal-card">
       <div className="key-panel-header">
         <div className="key-panel-identity">
           <span className="key-panel-email">{identity.email}</span>

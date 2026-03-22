@@ -117,7 +117,7 @@ export default function SignupFlow() {
 
   if (step === "verifying") {
     return (
-      <div className="signup-flow-center" role="status" aria-label="Verifying">
+      <div className="signup-flow-center animate-reveal-card" role="status" aria-label="Verifying">
         <span className="signup-spinner signup-spinner-lg" aria-hidden="true" />
         <p className="signup-flow-status">Verifying your link…</p>
       </div>
@@ -126,7 +126,7 @@ export default function SignupFlow() {
 
   if (step === "error") {
     return (
-      <div className="signup-flow-center">
+      <div className="signup-flow-center animate-reveal-card">
         <p className="signup-error" role="alert">
           {verifyError ?? "Something went wrong."}
         </p>
