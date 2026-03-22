@@ -1,0 +1,191 @@
+{
+  "data": [
+    {
+      "context_window": 48000,
+      "id": 6,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "text",
+      "name": "Claude 3 Haiku",
+      "price_input": 2.5e-7,
+      "price_output": 0.00000125,
+      "provider": "anthropic",
+      "slug": "anthropic/claude-3-haiku",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 48000,
+      "id": 7,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "multimodal",
+      "name": "Claude 3.5 Haiku",
+      "price_input": 8e-7,
+      "price_output": 0.000004,
+      "provider": "anthropic",
+      "slug": "anthropic/claude-3-5-haiku",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 200000,
+      "id": 5,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0.06666666666666667,
+        "confidence": "high",
+        "confirmed_at": "<timestamp>",
+        "source": "openrouter"
+      },
+      "modality": "text",
+      "name": "Claude 3.5 Sonnet",
+      "price_input": 0.000003,
+      "price_output": 0.000015,
+      "provider": "anthropic",
+      "slug": "anthropic/claude-3-5-sonnet",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 16384,
+      "id": 9,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "text",
+      "name": "Gemini 1.5 Flash",
+      "price_input": 7.5e-8,
+      "price_output": 3e-7,
+      "provider": "google",
+      "slug": "google/gemini-1-5-flash",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 131072,
+      "id": 8,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0.06666666666666667,
+        "confidence": "high",
+        "confirmed_at": "<timestamp>",
+        "source": "openrouter"
+      },
+      "modality": "text",
+      "name": "Gemini 1.5 Pro",
+      "price_input": 0.0000035,
+      "price_output": 0.0000105,
+      "provider": "google",
+      "slug": "google/gemini-1-5-pro",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 2048,
+      "id": 10,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "embedding",
+      "name": "text-embedding-004",
+      "price_input": 0,
+      "price_output": 0,
+      "provider": "google",
+      "slug": "google/text-embedding-004",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 128000,
+      "id": 3,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "text",
+      "name": "GPT-4 Turbo",
+      "price_input": 0.00001,
+      "price_output": 0.00003,
+      "provider": "openai",
+      "slug": "openai/gpt-4-turbo",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 128000,
+      "id": 1,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0.06666666666666667,
+        "confidence": "high",
+        "confirmed_at": "<timestamp>",
+        "source": "openrouter"
+      },
+      "modality": "multimodal",
+      "name": "GPT-4o",
+      "price_input": 0.0000025,
+      "price_output": 0.00001,
+      "provider": "openai",
+      "slug": "openai/gpt-4o",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 16384,
+      "id": 2,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "text",
+      "name": "GPT-4o Mini",
+      "price_input": 1.5e-7,
+      "price_output": 6e-7,
+      "provider": "openai",
+      "slug": "openai/gpt-4o-mini",
+      "underlying_provider": null
+    },
+    {
+      "context_window": 8192,
+      "id": 4,
+      "meta": {
+        "age_hours": 0,
+        "change_velocity": 0,
+        "confidence": "low",
+        "confirmed_at": "<timestamp>",
+        "source": ""
+      },
+      "modality": "embedding",
+      "name": "text-embedding-3-large",
+      "price_input": 1.3e-7,
+      "price_output": 0,
+      "provider": "openai",
+      "slug": "openai/text-embedding-3-large",
+      "underlying_provider": null
+    }
+  ],
+  "meta": {
+    "age_hours": 0,
+    "change_velocity": 0.06666666666666667,
+    "confidence": "high",
+    "confirmed_at": "<timestamp>",
+    "source": "openrouter"
+  }
+}

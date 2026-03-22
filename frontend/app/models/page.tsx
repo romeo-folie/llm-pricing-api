@@ -268,7 +268,6 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           } as React.CSSProperties}
         >
           <div className="animate-wireframe-fade" style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", color: "var(--dim)", textTransform: "uppercase", letterSpacing: "0.08em", animationDelay: "1.4s" }}>
-            <span style={{ width: "8px" }} />
             <span style={{ flex: 1 }}>Model</span>
             <span>Status</span>
             <span style={{ minWidth: "36px", textAlign: "right" }}>Ctx</span>

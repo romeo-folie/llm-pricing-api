@@ -91,10 +91,18 @@ function envelope<T>(data: T) {
   }
 }
 
-function mockOk(body: unknown) {
+function mockOk(body: unknown, headers: Record<string, string> = {}) {
+  // First call returns the provided body
   mockFetch.mockResolvedValueOnce({
     ok: true,
     json: () => Promise.resolve(body),
+    headers: new Headers(headers),
+  })
+  // Subsequent calls return an empty envelope to break pagination loops
+  mockFetch.mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve(envelope([])),
+    headers: new Headers({ "X-Total-Count": "0" }),
   })
 }
 

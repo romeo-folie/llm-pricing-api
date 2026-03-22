@@ -19,11 +19,18 @@ package handlers_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -36,8 +43,73 @@ import (
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
 	"llm-pricing-api/internal/cache"
+	"llm-pricing-api/internal/diff"
 	"llm-pricing-api/internal/middleware"
+	"llm-pricing-api/internal/models"
+	"llm-pricing-api/internal/reconciler"
+	"llm-pricing-api/internal/webhooks"
+	"llm-pricing-api/internal/worker"
+
+	"github.com/hibiken/asynq"
 )
+
+var update = flag.Bool("update", false, "update goldfile snapshots")
+
+// assertGoldfile compares the given body against a file in testdata/goldfiles.
+// If -update is passed, the file is overwritten with the current body.
+// Dynamic fields (timestamps, query times) are sanitized before comparison.
+func assertGoldfile(t *testing.T, body []byte, filename string) {
+	t.Helper()
+	path := filepath.Join("testdata", "goldfiles", filename)
+
+	processed := sanitizeJSON(body)
+
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatalf("mkdir goldfiles: %v", err)
+		}
+		if err := os.WriteFile(path, processed, 0644); err != nil {
+			t.Fatalf("write goldfile: %v", err)
+		}
+		t.Logf("updated goldfile: %s", path)
+		return
+	}
+
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read goldfile %s: %v (run with -update to create?)", filename, err)
+	}
+
+	if string(processed) != string(want) {
+		t.Errorf("goldfile mismatch: %s\nGOT:\n%s\nWANT:\n%s", filename, processed, want)
+	}
+}
+
+var (
+	// Matches ISO8601/RFC3339 timestamps like "2026-03-21T19:27:22.123456Z"
+	timestampRegex = regexp.MustCompile(`"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?"`)
+	// Matches query_time_ms: 123
+	queryTimeRegex = regexp.MustCompile(`"query_time_ms":\s*\d+`)
+	// Matches age_hours: 1.23456
+	ageHoursRegex = regexp.MustCompile(`"age_hours":\s*\d+(\.\d+)?`)
+)
+
+func sanitizeJSON(b []byte) []byte {
+	// 1. Prettify for stable comparison
+	var obj any
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return b // return raw if not JSON
+	}
+	pretty, _ := json.MarshalIndent(obj, "", "  ")
+
+	// 2. Mask dynamic fields
+	res := timestampRegex.ReplaceAll(pretty, []byte(`"<timestamp>"`))
+	res = queryTimeRegex.ReplaceAll(res, []byte(`"query_time_ms": 0`))
+	res = ageHoursRegex.ReplaceAll(res, []byte(`"age_hours": 0`))
+	return res
+}
+
+const stableWebhookKeyHex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 
 // -----------------------------------------------------------------------
 // Mock UnkeyVerifier — no real Unkey API calls
@@ -48,6 +120,9 @@ type mockUnkeyVerifier struct{}
 // VerifyKey returns deterministic results for three test API keys.
 // Any other key is treated as invalid.
 func (m *mockUnkeyVerifier) VerifyKey(_ context.Context, key, _ string) (bool, string, error) {
+	if strings.HasPrefix(key, "test-concurrency-") {
+		return true, middleware.TierDeveloper, nil
+	}
 	switch key {
 	case "test-free-key":
 		return true, middleware.TierFree, nil
@@ -107,7 +182,7 @@ func applySeed(t *testing.T, db *pgxpool.Pool) {
 func flushTestRedisKeys(t *testing.T, ctx context.Context, rdb *redis.Client) {
 	t.Helper()
 
-	for _, pattern := range []string{"ratelimit:*", "cache:*", "unkey:*"} {
+	for _, pattern := range []string{"ratelimit:*", "cache:*", "unkey:*", "asynq:*"} {
 		var cursor uint64
 		for {
 			keys, next, err := rdb.Scan(ctx, cursor, pattern, 500).Result()
@@ -129,8 +204,8 @@ func flushTestRedisKeys(t *testing.T, ctx context.Context, rdb *redis.Client) {
 
 // setupTestApp connects to the real DB and Redis, applies the seed, flushes
 // test Redis keys, registers all route groups (Free, Dev, Pro, Webhooks, SSE,
-// Discovery), and returns the configured Fiber app.
-func setupTestApp(t *testing.T) *fiber.App {
+// Discovery), and returns the configured Fiber app along with its DB and Redis handles.
+func setupTestApp(t *testing.T) (*fiber.App, *pgxpool.Pool, *redis.Client) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -172,27 +247,29 @@ func setupTestApp(t *testing.T) *fiber.App {
 	})
 
 	verifier := &mockUnkeyVerifier{}
-	v1 := app.Group("/v1",
+	v1Opts := []fiber.Handler{
 		middleware.Auth(verifier, rdb, "test-api-id"),
-		middleware.RateLimit(rdb),
-		middleware.Cache(rdb),
-	)
+	}
+	if os.Getenv("SKIP_RATE_LIMIT") == "" {
+		v1Opts = append(v1Opts, middleware.RateLimit(rdb))
+	}
+	v1Opts = append(v1Opts, middleware.Cache(rdb))
+
+	v1 := app.Group("/v1", v1Opts...)
 
 	handlers.RegisterFree(v1, db, rdb)
 	if err := handlers.RegisterDev(v1, db, rdb); err != nil {
 		t.Fatalf("register dev handlers: %v", err)
 	}
 	log := zerolog.Nop()
-	// Pass "" as webhookSecretKey: the handler skips AES-256-GCM when no
-	// 32-byte key is configured and stores secrets as plaintext. Intentional
-	// for tests — never use an empty key in production.
-	handlers.RegisterPro(v1, db, rdb, "", log)
+	// Use a stable key for tests so the worker can decrypt what the API encrypted.
+	handlers.RegisterPro(v1, db, rdb, stableWebhookKeyHex, log)
 	if err := handlers.RegisterSSE(v1, rdb); err != nil {
 		t.Fatalf("register SSE: %v", err)
 	}
 	handlers.RegisterDiscovery(app, db, rdb)
 
-	return app
+	return app, db, rdb
 }
 
 // -----------------------------------------------------------------------
@@ -265,7 +342,7 @@ const (
 // -----------------------------------------------------------------------
 
 func TestIntegrationAuth_MissingHeader_Returns401(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models", "")
 
@@ -277,7 +354,7 @@ func TestIntegrationAuth_MissingHeader_Returns401(t *testing.T) {
 }
 
 func TestIntegrationAuth_InvalidKey_Returns401(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models", "Bearer totally-invalid-key")
 
@@ -289,7 +366,7 @@ func TestIntegrationAuth_InvalidKey_Returns401(t *testing.T) {
 }
 
 func TestIntegrationAuth_ValidFreeKey_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// A single request with the free key must succeed (well within the 100/day limit).
 	status, body := apiGet(t, app, "/v1/models", freeAuth)
@@ -297,6 +374,8 @@ func TestIntegrationAuth_ValidFreeKey_Returns200(t *testing.T) {
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200 with valid free key, got %d; body: %s", status, body)
 	}
+
+	assertGoldfile(t, body, "models_list_free.json")
 }
 
 // -----------------------------------------------------------------------
@@ -304,7 +383,7 @@ func TestIntegrationAuth_ValidFreeKey_Returns200(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationFreeKey_HistoryEndpoint_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models/1/history", freeAuth)
 
@@ -314,7 +393,7 @@ func TestIntegrationFreeKey_HistoryEndpoint_Returns200(t *testing.T) {
 }
 
 func TestIntegrationFreeKey_RecommendEndpoint_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/recommend", freeAuth)
 
@@ -324,7 +403,7 @@ func TestIntegrationFreeKey_RecommendEndpoint_Returns200(t *testing.T) {
 }
 
 func TestIntegrationFreeKey_ContextEndpoint_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/context", freeAuth)
 
@@ -334,7 +413,7 @@ func TestIntegrationFreeKey_ContextEndpoint_Returns200(t *testing.T) {
 }
 
 func TestIntegrationTierGating_FreeKey_WebhooksEndpoint_Returns403(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/webhooks", freeAuth, map[string]string{"url": "https://example.com/hook"})
 
@@ -392,7 +471,7 @@ func assertTierGating403(t *testing.T, status int, body []byte, expectedTier str
 // TestIntegrationRateLimit_FreeKey_101RequestsStillAllowed verifies free keys
 // are no longer capped at 100/day (limit raised to 1M/day).
 func TestIntegrationRateLimit_FreeKey_101RequestsStillAllowed(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// Make 100 requests; all should succeed well below 1M/day.
 	for i := 0; i < 100; i++ {
@@ -423,7 +502,7 @@ func TestIntegrationRateLimit_FreeKey_101RequestsStillAllowed(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationFilters_ProviderFilter_ReturnsOnlyMatchingProvider(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models?provider=openai", devAuth)
 
@@ -450,7 +529,7 @@ func TestIntegrationFilters_ProviderFilter_ReturnsOnlyMatchingProvider(t *testin
 }
 
 func TestIntegrationFilters_ModalityFilter_ReturnsOnlyTextModels(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models?modality=text", devAuth)
 
@@ -477,7 +556,7 @@ func TestIntegrationFilters_ModalityFilter_ReturnsOnlyTextModels(t *testing.T) {
 }
 
 func TestIntegrationFilters_MinContextFilter_ReturnsOnlyLargeContextModels(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models?min_context=100000", devAuth)
 
@@ -512,7 +591,7 @@ func TestIntegrationFilters_MinContextFilter_ReturnsOnlyLargeContextModels(t *te
 // -----------------------------------------------------------------------
 
 func TestIntegrationCompare_FiveValidIDs_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/compare?models=1,2,3,4,5", devAuth)
 
@@ -532,7 +611,7 @@ func TestIntegrationCompare_FiveValidIDs_Returns200(t *testing.T) {
 }
 
 func TestIntegrationCompare_SixIDs_Returns400(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/compare?models=1,2,3,4,5,6", devAuth)
 
@@ -544,7 +623,7 @@ func TestIntegrationCompare_SixIDs_Returns400(t *testing.T) {
 }
 
 func TestIntegrationCompare_UnknownModelID_Returns404(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// Model 99999 does not exist in the seed data.
 	status, body := apiGet(t, app, "/v1/compare?models=1,99999", devAuth)
@@ -561,7 +640,7 @@ func TestIntegrationCompare_UnknownModelID_Returns404(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationPagination_SecondPage_ReturnsCorrectSlice(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// Page 1 with per_page=5.
 	status1, body1 := apiGet(t, app, "/v1/models?page=1&per_page=5", devAuth)
@@ -618,7 +697,7 @@ func TestIntegrationPagination_SecondPage_ReturnsCorrectSlice(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationTrustMetadata_ModelResponse_IncludesAllTrustFields(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// Model 1 has price_history rows with two sources — should yield high confidence.
 	status, body := apiGet(t, app, "/v1/models/1", devAuth)
@@ -679,7 +758,7 @@ func TestIntegrationTrustMetadata_ModelResponse_IncludesAllTrustFields(t *testin
 }
 
 func TestIntegrationTrustMetadata_ListResponse_MetaPresent(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models", devAuth)
 
@@ -717,7 +796,7 @@ func TestIntegrationTrustMetadata_ListResponse_MetaPresent(t *testing.T) {
 // TestIntegrationGetModel_BySlug_Returns200 verifies that the handler accepts
 // a URL slug (e.g. "openai/gpt-4o") in place of an integer ID.
 func TestIntegrationGetModel_BySlug_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// openai/gpt-4o is model ID 1 in the seed data.
 	status, body := apiGet(t, app, "/v1/models/openai%2Fgpt-4o", devAuth)
@@ -741,12 +820,14 @@ func TestIntegrationGetModel_BySlug_Returns200(t *testing.T) {
 	if envelope.Data.Name == "" {
 		t.Error("model name must not be empty")
 	}
+
+	assertGoldfile(t, body, "model_detail_slug.json")
 }
 
 // TestIntegrationGetModel_BySlug_NotFound_Returns404 verifies that an unknown
 // slug returns 404 with an RFC 7807 body.
 func TestIntegrationGetModel_BySlug_NotFound_Returns404(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/models/unknown%2Fslug", devAuth)
 
@@ -761,7 +842,7 @@ func TestIntegrationGetModel_BySlug_NotFound_Returns404(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationRFC7807_AllErrorResponsesHaveProblemContentType(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	cases := []struct {
 		name       string
@@ -834,7 +915,7 @@ func assertProblemJSON(t *testing.T, body []byte, expectedStatus int) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationWebhooks_ProKey_Create_Returns201(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/webhooks", proAuth, map[string]string{
 		"url": "https://example.com/webhook",
@@ -866,7 +947,7 @@ func TestIntegrationWebhooks_ProKey_Create_Returns201(t *testing.T) {
 }
 
 func TestIntegrationWebhooks_ProKey_Delete_Returns204(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	// First create a webhook.
 	createStatus, createBody := apiPost(t, app, "/v1/webhooks", proAuth, map[string]string{
@@ -894,7 +975,7 @@ func TestIntegrationWebhooks_ProKey_Delete_Returns204(t *testing.T) {
 }
 
 func TestIntegrationWebhooks_FreeKey_Create_Returns403(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/webhooks", freeAuth, map[string]string{
 		"url": "https://example.com/webhook",
@@ -908,7 +989,7 @@ func TestIntegrationWebhooks_FreeKey_Create_Returns403(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestIntegrationContextTokenBudget_ResponseWithin2100Tokens(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiGet(t, app, "/v1/context", devAuth)
 
@@ -932,7 +1013,7 @@ func TestIntegrationContextTokenBudget_ResponseWithin2100Tokens(t *testing.T) {
 // TestIntegrationAsk_PriceIntent_Returns200WithIntent verifies that a price-intent
 // NL query returns 200 with the correct intent field.
 func TestIntegrationAsk_PriceIntent_Returns200WithIntent(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/ask", devAuth, map[string]string{
 		"query": "What is the price of gpt-4o?",
@@ -965,12 +1046,14 @@ func TestIntegrationAsk_PriceIntent_Returns200WithIntent(t *testing.T) {
 	if envelope.Data.Meta.Parser == "" {
 		t.Error("meta.parser must not be empty")
 	}
+
+	assertGoldfile(t, body, "ask_price_intent.json")
 }
 
 // TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels verifies that a
 // recommend-intent query returns ranked_models from the DB.
 func TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/ask", devAuth, map[string]string{
 		"query": "Recommend the cheapest model for text summarization",
@@ -1003,7 +1086,7 @@ func TestIntegrationAsk_RecommendIntent_Returns200WithRankedModels(t *testing.T)
 
 // TestIntegrationAsk_FreeKey_Returns200 verifies that /v1/ask is accessible to free-tier keys.
 func TestIntegrationAsk_FreeKey_Returns200(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/ask", freeAuth, map[string]string{
 		"query": "What is the price of gpt-4o?",
@@ -1016,7 +1099,7 @@ func TestIntegrationAsk_FreeKey_Returns200(t *testing.T) {
 
 // TestIntegrationAsk_EmptyQuery_Returns400 verifies validation for empty query.
 func TestIntegrationAsk_EmptyQuery_Returns400(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/ask", devAuth, map[string]string{
 		"query": "",
@@ -1035,7 +1118,7 @@ func TestIntegrationAsk_EmptyQuery_Returns400(t *testing.T) {
 // TestIntegrationContextMarkdown_Returns200WithMarkdownContentType verifies
 // that ?format=markdown returns text/markdown content.
 func TestIntegrationContextMarkdown_Returns200WithMarkdownContentType(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	req := httptest.NewRequest("GET", "/v1/context?format=markdown", nil)
 	req.Header.Set("Authorization", devAuth)
@@ -1059,7 +1142,7 @@ func TestIntegrationContextMarkdown_Returns200WithMarkdownContentType(t *testing
 // TestIntegrationContextMarkdown_ContainsMarkdownTable verifies that the
 // markdown response contains the expected table structure and header.
 func TestIntegrationContextMarkdown_ContainsMarkdownTable(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	req := httptest.NewRequest("GET", "/v1/context?format=markdown", nil)
 	req.Header.Set("Authorization", devAuth)
@@ -1088,7 +1171,7 @@ func TestIntegrationContextMarkdown_ContainsMarkdownTable(t *testing.T) {
 // TestIntegrationDiscovery_OpenAPI_Returns200WithCorrectContentType verifies
 // that /openapi.json is accessible without auth and has correct content type.
 func TestIntegrationDiscovery_OpenAPI_Returns200WithCorrectContentType(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	req := httptest.NewRequest("GET", "/openapi.json", nil)
 	resp, err := app.Test(req, 10_000)
@@ -1118,7 +1201,7 @@ func TestIntegrationDiscovery_OpenAPI_Returns200WithCorrectContentType(t *testin
 // TestIntegrationDiscovery_AIPlugin_Returns200WithRequiredFields verifies
 // that /.well-known/ai-plugin.json is accessible without auth and has required fields.
 func TestIntegrationDiscovery_AIPlugin_Returns200WithRequiredFields(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	req := httptest.NewRequest("GET", "/.well-known/ai-plugin.json", nil)
 	resp, err := app.Test(req, 10_000)
@@ -1160,7 +1243,7 @@ func TestIntegrationDiscovery_AIPlugin_Returns200WithRequiredFields(t *testing.T
 // TestIntegrationDiscovery_LLMsTxt_Returns200WithAuthInstructions verifies
 // that /llms.txt is accessible without auth and contains auth instructions.
 func TestIntegrationDiscovery_LLMsTxt_Returns200WithAuthInstructions(t *testing.T) {
-	app := setupTestApp(t)
+	app, _, _ := setupTestApp(t)
 
 	req := httptest.NewRequest("GET", "/llms.txt", nil)
 	resp, err := app.Test(req, 10_000)
@@ -1191,6 +1274,127 @@ func TestIntegrationDiscovery_LLMsTxt_Returns200WithAuthInstructions(t *testing.
 	// Must contain curl example.
 	if !strings.Contains(text, "curl") {
 		t.Error("llms.txt must contain curl example commands")
+	}
+}
+
+// TestIntegrationWebhook_RoundTrip verifies the full lifecycle:
+// 1. Register a webhook via API
+// 2. Reconcile a price change (triggers fan-out)
+// 3. Process the asynq task via Worker handler
+// 4. Client receives the HTTP POST with correct payload/signature
+func TestIntegrationWebhook_RoundTrip(t *testing.T) {
+	app, testDB, testRedis := setupTestApp(t)
+	ctx := context.Background()
+
+	// Clear redis to avoid picking up stale tasks from previous failed runs
+	if err := testRedis.FlushAll(ctx).Err(); err != nil {
+		t.Logf("Warning: flush redis failed: %v", err)
+	}
+
+	// --- 1. Register Webhook ---
+	var gotPayload []byte
+	var gotSig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSig = r.Header.Get("X-LLMPricing-Signature")
+		gotPayload, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Register with a valid HTTPS placeholder to pass initial validation
+	status, body := apiPost(t, app, "/v1/webhooks", proAuth, map[string]string{
+		"url": "https://example.com/webhook",
+	})
+	if status != fiber.StatusCreated {
+		t.Fatalf("register webhook failed: %d %s", status, body)
+	}
+	var whResp struct {
+		Data struct {
+			ID     string `json:"id"`
+			Secret string `json:"secret"`
+		} `json:"data"`
+	}
+	json.Unmarshal(body, &whResp)
+
+	// Manually override the URL in the DB to point to our local HTTP test server
+	// (bypassing the production HTTPS-only and SSRF/IP-safety checks).
+	_, err := testDB.Exec(ctx, "UPDATE webhooks SET url = $1 WHERE id = $2", srv.URL, whResp.Data.ID)
+	if err != nil {
+		t.Fatalf("failed to override webhook URL in DB: %v (ID: %q)", err, whResp.Data.ID)
+	}
+
+	// --- 2. Trigger Price Change ---
+	// We need a Reconciler that points to the same DB/Redis/Asynq
+	r := reconciler.New(testDB)
+	r.SetRedisClient(testRedis)
+	rURL := redisURL()
+	// Use the same address for everything to avoid hitting wrong Redis instances
+	asynqOpt := asynq.RedisClientOpt{Addr: strings.TrimPrefix(rURL, "redis://")}
+
+	r.SetAsynqClient(asynq.NewClient(asynqOpt))
+	r.SetAsynqClient(asynq.NewClient(asynqOpt))
+
+	// Reconcile a single-source change twice to trigger auto-publish
+	diffs := []diff.PriceDiff{{
+		ModelSlug: "openai/gpt-4o",
+		Field:     models.PriceFieldInput,
+		NewValue:  0.000009,
+		Source:    "openrouter",
+	}}
+
+	// Cycle 1: track in pending
+	_ = r.Reconcile(ctx, diffs)
+	// Cycle 2: publish
+	_ = r.Reconcile(ctx, diffs)
+
+	// --- 3. Process Asynq Task ---
+	// We don't want to spin up a full worker, just handle the enqueued task manually.
+	inspect := asynq.NewInspector(asynqOpt)
+	tasks, err := inspect.ListPendingTasks("default")
+	if err != nil || len(tasks) == 0 {
+		t.Fatalf("expected enqueued webhook task, found 0 (err: %v)", err)
+	}
+
+	// Find our task
+	var targetTask *asynq.Task
+	for _, info := range tasks {
+		if info.Type == webhooks.TypeWebhookDeliver {
+			targetTask = asynq.NewTask(info.Type, info.Payload)
+			break
+		}
+	}
+	if targetTask == nil {
+		t.Fatal("webhook:deliver task not found in queue")
+	}
+
+	// Handle it using the real worker handler
+	wh := worker.NewWebhookDeliveryHandler(stableWebhookKeyHex) // Use same stable key
+	if err := wh.Handle(ctx, targetTask); err != nil {
+		t.Fatalf("worker handle failed: %v", err)
+	}
+
+	// --- 4. Verify Delivery ---
+	if len(gotPayload) == 0 {
+		t.Fatal("webhook recipient never called")
+	}
+	if gotSig == "" {
+		t.Error("missing X-LLMPricing-Signature header")
+	}
+
+	var delivered webhooks.Payload
+	if err := json.Unmarshal(gotPayload, &delivered); err != nil {
+		t.Fatalf("unmarshal delivered payload: %v", err)
+	}
+	if delivered.NewPriceInput != 0.000009 {
+		t.Errorf("expected new_price_input=0.000009, got %f", delivered.NewPriceInput)
+	}
+
+	// Verify HMAC
+	mac := hmac.New(sha256.New, []byte(whResp.Data.Secret))
+	mac.Write(gotPayload)
+	expectedSig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if gotSig != expectedSig {
+		t.Errorf("HMAC mismatch\n got: %s\n want: %s", gotSig, expectedSig)
 	}
 }
 

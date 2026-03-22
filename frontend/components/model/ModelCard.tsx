@@ -10,28 +10,6 @@ interface ModelCardProps {
   index?: number
 }
 
-function ConfidenceDot({ confidence }: { confidence: "high" | "medium" | "low" }) {
-  const color =
-    confidence === "high"   ? "var(--green)"  :
-    confidence === "medium" ? "var(--accent)" : "var(--red)"
-  const label =
-    confidence === "high"   ? "High confidence"   :
-    confidence === "medium" ? "Medium confidence" : "Low confidence"
-  return (
-    <span
-      aria-label={label}
-      title={label}
-      style={{
-        display: "inline-block",
-        width: "8px",
-        height: "8px",
-        borderRadius: "50%",
-        backgroundColor: color,
-        flexShrink: 0,
-      }}
-    />
-  )
-}
 
 export default function ModelCard({ model, index = 0 }: ModelCardProps) {
   const router      = useRouter()
@@ -96,8 +74,6 @@ export default function ModelCard({ model, index = 0 }: ModelCardProps) {
           animationDelay: `${fadeDelay}s`
         }}
       >
-        {/* Confidence dot */}
-        <ConfidenceDot confidence={model.trust.confidence} />
 
         {/* Model name + provider */}
         <div style={{ flex: 1, minWidth: 0 }}>

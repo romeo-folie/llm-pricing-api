@@ -1,0 +1,27 @@
+{
+  "data": {
+    "context_window": 128000,
+    "id": 1,
+    "meta": {
+      "age_hours": 0,
+      "change_velocity": 0.06666666666666667,
+      "confidence": "high",
+      "confirmed_at": "<timestamp>",
+      "source": "openrouter"
+    },
+    "modality": "multimodal",
+    "name": "GPT-4o",
+    "price_input": 0.0000025,
+    "price_output": 0.00001,
+    "provider": "openai",
+    "slug": "openai/gpt-4o",
+    "underlying_provider": null
+  },
+  "meta": {
+    "age_hours": 0,
+    "change_velocity": 0.06666666666666667,
+    "confidence": "high",
+    "confirmed_at": "<timestamp>",
+    "source": "openrouter"
+  }
+}

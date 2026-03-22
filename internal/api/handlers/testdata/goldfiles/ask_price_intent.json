@@ -1,0 +1,20 @@
+{
+  "data": {
+    "inferred_params": {
+      "model": "openai/gpt-4o"
+    },
+    "intent": "price",
+    "meta": {
+      "parser": "rule-v1",
+      "query_time_ms": 0
+    },
+    "plain_english_summary": "Check the current pricing for openai/gpt-4o via GET /v1/models with a provider filter."
+  },
+  "meta": {
+    "age_hours": 0,
+    "change_velocity": 0,
+    "confidence": "",
+    "confirmed_at": "<timestamp>",
+    "source": ""
+  }
+}

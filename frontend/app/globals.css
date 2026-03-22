@@ -151,6 +151,7 @@ select:focus {
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
@@ -159,6 +160,8 @@ body {
   font-family: var(--font-geist-sans), sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* ─── Flash animation for price change feed ─────────────────────────────── */
@@ -256,6 +259,7 @@ body {
   animation: planetPulse var(--planet-pulse-dur, 3.5s) ease-in-out infinite;
   animation-delay: var(--planet-pulse-delay, 0s);
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .hero-breathe { animation: none; opacity: 0.5; }
