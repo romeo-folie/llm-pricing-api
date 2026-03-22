@@ -224,7 +224,7 @@ export default function ChangesFeed({
               className="font-outfit text-xs"
               style={{ color: "var(--muted)" }}
             >
-              {total} tracked
+              {total} {total === 1 ? "change" : "changes"}
             </span>
           )}
           <SiteBadge
