@@ -10,6 +10,7 @@ import PriceHeatmap from "./PriceHeatmap"
 import BiggestMovers from "./BiggestMovers"
 import { DatePicker } from "@/components/ui/date-picker"
 import EmptyState from "@/components/ui/EmptyState"
+import { SiteBadge } from "@/components/ui/SiteBadge"
 
 interface ChangesFeedProps {
   initialChanges: PriceChange[]
@@ -226,33 +227,13 @@ export default function ChangesFeed({
               {total} tracked
             </span>
           )}
-          <span
-            className="font-orbitron text-xs"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-              padding: "1px 6px",
-              border: "none",
-              color: "#ffffff",
-              backgroundColor: polling && !pollFailed ? "#10B981" : "var(--muted)",
-              letterSpacing: "0.12em",
-              fontSize: "0.65rem",
-              lineHeight: 1.4,
-            }}
-          >
-            <span
-              className={polling && !pollFailed ? "animate-live" : ""}
-              style={{
-                width: "5px",
-                height: "5px",
-                borderRadius: "50%",
-                backgroundColor: "rgba(255,255,255,0.7)",
-                display: "inline-block",
-              }}
-            />
-            {pollFailed ? "PAUSED" : "LIVE"}
-          </span>
+          <SiteBadge
+            label={pollFailed ? "Paused" : "Live"}
+            color={polling && !pollFailed ? "#10B981" : "var(--muted)"}
+            bg={polling && !pollFailed ? "#e8f5e9" : "#f5f5f5"}
+            dot
+            dotClassName={polling && !pollFailed ? "animate-live" : ""}
+          />
           <span className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
             polling every 60s
           </span>

@@ -3,6 +3,7 @@
 import type { PriceChange } from "@/lib/api"
 import { formatPrice, formatDelta, formatRelative, formatSourceName } from "@/lib/format"
 import { providerStyle } from "@/lib/provider-colors"
+import { SiteBadge } from "@/components/ui/SiteBadge"
 
 interface ChangeRowProps {
   change: PriceChange
@@ -55,19 +56,10 @@ export default function ChangeRow({ change, isNew, index = 0 }: ChangeRowProps) 
           {change.model_name}
         </a>
         <div style={{ marginTop: "4px" }}>
-          <span
-            className="font-outfit text-xs"
-            style={{
-              padding: "1px 6px",
-              border: `1px solid ${pvColor}`,
-  
-
-              color: pvColor,
-              backgroundColor: pvBg,
-            }}
-          >
-            {change.provider}
-          </span>
+          <SiteBadge
+            label={change.provider}
+            {...providerStyle(change.provider)}
+          />
         </div>
       </div>
 
@@ -112,19 +104,11 @@ export default function ChangeRow({ change, isNew, index = 0 }: ChangeRowProps) 
 
       {/* Source + time */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", minWidth: "72px" }}>
-        <span
-          className="font-outfit text-xs"
-          style={{
-            padding: "1px 6px",
-            border: "1px solid var(--border)",
-
-
-            color: "var(--blue)",
-            backgroundColor: "var(--blueLt)",
-          }}
-        >
-          {formatSourceName(change.source)}
-        </span>
+        <SiteBadge
+          label={formatSourceName(change.source)}
+          color="var(--blue)"
+          bg="var(--blueLt)"
+        />
         <span className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
           {formatRelative(change.changed_at)}
         </span>

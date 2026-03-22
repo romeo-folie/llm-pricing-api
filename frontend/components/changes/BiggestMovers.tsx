@@ -5,6 +5,7 @@ import { deltaToColor } from "@/lib/changes-aggregation"
 import { formatDelta } from "@/lib/format"
 import { providerStyle } from "@/lib/provider-colors"
 import EmptyState from "@/components/ui/EmptyState"
+import { SiteBadge } from "@/components/ui/SiteBadge"
 
 interface BiggestMoversProps {
   topMovers: TopMover[] | null
@@ -85,20 +86,11 @@ export default function BiggestMovers({ topMovers }: BiggestMoversProps) {
                     >
                       {mover.model_slug}
                     </a>
-                    <span
-                      className="font-outfit"
-                      style={{
-                        fontSize: "10px",
-                        padding: "0px 4px",
-                        border: `1px solid ${pvColor}`,
-                        color: pvColor,
-                        backgroundColor: pvBg,
-                        display: "inline-block",
-                        marginTop: "2px",
-                      }}
-                    >
-                      {mover.provider}
-                    </span>
+                    <SiteBadge
+                      label={mover.provider}
+                      {...providerStyle(mover.provider)}
+                      className="mt-0.5"
+                    />
                   </div>
 
                   {/* Delta */}

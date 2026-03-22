@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { providerStyle } from "@/lib/provider-colors";
+import { SiteBadge } from "@/components/ui/SiteBadge";
 import styles from "./PricingTicker.module.css";
 
 interface TickerModel {
@@ -27,16 +29,6 @@ const MODELS: TickerModel[] = [
   { provider: "DeepSeek",  name: "deepseek-r1",           input: 0.55,  output: 2.19  },
   { provider: "Meta",      name: "llama-3.3-70b",         input: 0.20,  output: 0.60  },
 ];
-
-const BADGE_CLASS: Record<string, string> = {
-  OpenAI:    styles.badgeOpenAI,
-  Anthropic: styles.badgeAnthropic,
-  Google:    styles.badgeGoogle,
-  Mistral:   styles.badgeMistral,
-  Cohere:    styles.badgeCohere,
-  DeepSeek:  styles.badgeDeepSeek,
-  Meta:      styles.badgeMeta,
-};
 
 function fmt(n: number): string {
   return `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`;
@@ -66,9 +58,11 @@ export function PricingTicker() {
       <div className={styles.track} ref={trackRef}>
         {items.map((m, i) => (
           <div className={styles.item} key={`${m.name}-${i}`}>
-            <span className={`${styles.badge} ${BADGE_CLASS[m.provider] ?? ""}`}>
-              {m.provider}
-            </span>
+            <SiteBadge
+              label={m.provider}
+              {...providerStyle(m.provider)}
+              className="mr-2.5"
+            />
             <span className={styles.modelName}>{m.name}</span>
             <span className={styles.price} data-price>
               in {fmt(m.input)}/M · out {fmt(m.output)}/M

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react"
 import type { Model } from "@/lib/api"
+import { providerStyle } from "@/lib/provider-colors"
+import { SiteBadge } from "@/components/ui/SiteBadge"
 import styles from "./ModelPicker.module.css"
 
 interface ModelPickerProps {
@@ -93,7 +95,10 @@ export default function ModelPicker({
                 className={`font-outfit ${styles.option}`}
               >
                 <span>{m.name}</span>
-                <span className={styles.providerBadge}>{m.provider}</span>
+                <SiteBadge
+                  label={m.provider}
+                  {...providerStyle(m.provider)}
+                />
               </button>
             </li>
           ))}

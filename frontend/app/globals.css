@@ -454,3 +454,9 @@ body {
   border-left: none !important;
   border-right: none !important;
 }
+
+/* Ensure sticky positioning works for the docs sidebar */
+[data-page="docs"],
+[data-page="docs"] body {
+  overflow-x: visible !important;
+}

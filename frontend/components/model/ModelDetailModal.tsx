@@ -13,34 +13,18 @@ import PriceHistoryChart from "./PriceHistoryChart"
 import { trackViewModelDetail, trackAddToCompare } from "@/lib/analytics"
 import type { Model, PriceHistoryEntry } from "@/lib/api"
 import { formatPrice, formatContext, formatAge, formatSourceName } from "@/lib/format"
+import { SiteBadge } from "@/components/ui/SiteBadge"
+import { providerStyle } from "@/lib/provider-colors"
 
 interface ModalData {
   model: Model
   history: PriceHistoryEntry[]
 }
 
-function Badge({ label, color, bg }: { label: string; color: string; bg: string }) {
-  return (
-    <span
-      className="font-orbitron text-xs"
-      style={{
-        padding: "2px 8px",
-        border: `1px solid ${color}`,
-
-
-        color,
-        backgroundColor: bg,
-      }}
-    >
-      {label}
-    </span>
-  )
-}
-
-function ConfidenceBadge({ confidence }: { confidence: "high" | "medium" | "low" }) {
-  if (confidence === "high")   return <Badge label="HIGH"   color="var(--green)"  bg="var(--greenLt)"  />
-  if (confidence === "medium") return <Badge label="MEDIUM" color="var(--accent)" bg="var(--accentLt)" />
-  return                                <Badge label="LOW"   color="var(--red)"    bg="var(--redLt)"    />
+function ModelConfidenceBadge({ confidence }: { confidence: "high" | "medium" | "low" }) {
+  if (confidence === "high")   return <SiteBadge label="HIGH"   color="var(--green)"  bg="var(--greenLt)"  />
+  if (confidence === "medium") return <SiteBadge label="MEDIUM" color="var(--accent)" bg="var(--accentLt)" />
+  return                                <SiteBadge label="LOW"   color="var(--red)"    bg="var(--redLt)"    />
 }
 
 export default function ModelDetailModal() {
@@ -134,9 +118,9 @@ export default function ModelDetailModal() {
                 Pricing details for {data.model.name} by {data.model.provider}
               </DialogDescription>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
-                <Badge label={data.model.provider} color="var(--blue)"   bg="var(--blueLt)"   />
-                <Badge label={data.model.modality} color="var(--purple)" bg="var(--purpleLt)" />
-                <ConfidenceBadge confidence={data.model.trust.confidence} />
+                <SiteBadge label={data.model.provider} {...providerStyle(data.model.provider)} />
+                <SiteBadge label={data.model.modality} color="var(--purple)" bg="var(--purpleLt)" />
+                <ModelConfidenceBadge confidence={data.model.trust.confidence} />
               </div>
             </DialogHeader>
 

@@ -83,6 +83,18 @@ const customCss = `
   .scalar-app [aria-label*="Light mode"] {
     display: none !important;
   }
+
+  /* Fix sidebar border height and stickiness */
+  .scalar-app aside {
+    position: sticky !important;
+    top: 56px !important; /* matches nav header height */
+    height: calc(100vh - 56px) !important;
+    min-height: calc(100vh - 56px) !important;
+    max-height: calc(100vh - 56px) !important;
+    align-self: flex-start !important;
+    overflow-y: auto !important;
+    border-right: 1px solid var(--scalar-border-color) !important;
+  }
 `
 
 interface ApiReferenceProps {
