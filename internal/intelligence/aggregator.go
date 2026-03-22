@@ -101,31 +101,51 @@ type benchmarkInfo struct {
 
 // ComputeCapabilityScores reads all benchmark scores for a model, applies
 // per-dimension weight formula, and upserts model_capability_scores.
+// For batch recomputation across many models, prefer ComputeAllCapabilityScores
+// which fetches the benchmarks table only once.
 func ComputeCapabilityScores(ctx context.Context, db *pgxpool.Pool, modelID int) error {
+	benchmarksByID, err := fetchBenchmarksByID(ctx, db)
+	if err != nil {
+		return err
+	}
+	return computeCapabilityScoresWithBenchmarks(ctx, db, modelID, benchmarksByID)
+}
+
+// fetchBenchmarksByID fetches the id→name mapping from the benchmarks table.
+// The benchmarks table is static during a scoring run; callers should fetch
+// it once and pass the result to computeCapabilityScoresWithBenchmarks.
+func fetchBenchmarksByID(ctx context.Context, db *pgxpool.Pool) (map[string]benchmarkInfo, error) {
+	rows, err := db.Query(ctx, `SELECT id::text, name FROM benchmarks`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	m := map[string]benchmarkInfo{}
+	for rows.Next() {
+		var b benchmarkInfo
+		if err := rows.Scan(&b.id, &b.name); err != nil {
+			return nil, err
+		}
+		m[b.id] = b
+	}
+	return m, rows.Err()
+}
+
+// computeCapabilityScoresWithBenchmarks is the internal variant of
+// ComputeCapabilityScores that accepts a pre-fetched benchmarksByID map,
+// avoiding repeated DB round-trips in batch operations.
+func computeCapabilityScoresWithBenchmarks(
+	ctx context.Context,
+	db *pgxpool.Pool,
+	modelID int,
+	benchmarksByID map[string]benchmarkInfo,
+) error {
 	scores, err := GetBenchmarkScores(ctx, db, modelID)
 	if err != nil {
 		return err
 	}
 
-	rows, err := db.Query(ctx, `SELECT id::text, name FROM benchmarks`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	benchmarksByID := map[string]benchmarkInfo{}
-	for rows.Next() {
-		var b benchmarkInfo
-		if err := rows.Scan(&b.id, &b.name); err != nil {
-			return err
-		}
-		benchmarksByID[b.id] = b
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	// Build benchmark_name → scoreEntry.
 	scoreByName := map[string]scoreEntry{}
 	for _, s := range scores {
 		if s.NormalizedScore == nil {
@@ -147,7 +167,6 @@ func ComputeCapabilityScores(ctx context.Context, db *pgxpool.Pool, modelID int)
 		if result == nil {
 			continue
 		}
-
 		if err := UpsertCapabilityScore(ctx, db, CapabilityScore{
 			ModelID:        modelID,
 			Dimension:      result.Dimension,
@@ -159,13 +178,19 @@ func ComputeCapabilityScores(ctx context.Context, db *pgxpool.Pool, modelID int)
 			return err
 		}
 	}
-
 	return nil
 }
 
 // ComputeAllCapabilityScores iterates all models with benchmark data and
-// recomputes their capability scores.
+// recomputes their capability scores. The benchmarks table is fetched once
+// and reused across all models to avoid N+1 DB round-trips.
 func ComputeAllCapabilityScores(ctx context.Context, db *pgxpool.Pool) error {
+	// Hoist the static benchmarks lookup out of the per-model loop.
+	benchmarksByID, err := fetchBenchmarksByID(ctx, db)
+	if err != nil {
+		return fmt.Errorf("fetch benchmarks: %w", err)
+	}
+
 	rows, err := db.Query(ctx, `SELECT DISTINCT model_id FROM model_benchmark_scores`)
 	if err != nil {
 		return err
@@ -185,7 +210,10 @@ func ComputeAllCapabilityScores(ctx context.Context, db *pgxpool.Pool) error {
 	}
 
 	for _, id := range modelIDs {
-		if err := ComputeCapabilityScores(ctx, db, id); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := computeCapabilityScoresWithBenchmarks(ctx, db, id, benchmarksByID); err != nil {
 			return fmt.Errorf("model %d: %w", id, err)
 		}
 	}

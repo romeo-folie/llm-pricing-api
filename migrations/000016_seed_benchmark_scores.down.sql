@@ -1,3 +1,4 @@
--- Remove all seeded benchmark scores. Rows inserted by the application
--- (without a source_url matching the seed pattern) are left intact.
-DELETE FROM model_benchmark_scores WHERE source_url IS NOT NULL;
+-- Remove only the seeded benchmark scores inserted by this migration.
+-- Rows inserted by the application have a different benchmark_version
+-- and are left intact.
+DELETE FROM model_benchmark_scores WHERE benchmark_version = 'seed-2024';
