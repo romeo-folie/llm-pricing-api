@@ -57,14 +57,14 @@ const FEATURES = [
 ]
 
 const AGENT_ENDPOINTS = [
-  { method: "GET",  path: "/v1/context",        desc: "~2k token pricing snapshot for agent system prompts" },
-  { method: "POST", path: "/v1/ask",             desc: "Natural language → structured pricing response" },
-  { method: "GET",  path: "/v1/stream/changes",  desc: "SSE stream with Last-Event-ID reconnection" },
-  { method: "GET",  path: "/v1/recommend",        desc: "Ranked model recommendations by task, context, and price" },
+  { method: "GET", path: "/v1/context", desc: "~2k token pricing snapshot for agent system prompts" },
+  { method: "POST", path: "/v1/ask", desc: "Natural language → structured pricing response" },
+  { method: "GET", path: "/v1/stream/changes", desc: "SSE stream with Last-Event-ID reconnection" },
+  { method: "GET", path: "/v1/recommend", desc: "Ranked model recommendations by task, context, and price" },
 ]
 
 const METHOD_STYLES: Record<string, { bg: string; color: string }> = {
-  GET:  { bg: "var(--greenLt)", color: "var(--green)" },
+  GET: { bg: "var(--greenLt)", color: "var(--green)" },
   POST: { bg: "var(--blueLt)", color: "var(--blue)" },
 }
 
@@ -105,11 +105,11 @@ const TESTIMONIALS = [
 ]
 
 const DATA_SOURCES = [
-  { name: "OpenAI",       logo: "/provider-logos/openai.svg",       logoDark: "/provider-logos/openai-color.svg" },
-  { name: "Anthropic",    logo: "/provider-logos/anthropic.svg",    logoDark: "/provider-logos/anthropic-color.svg" },
-  { name: "Google",       logo: "/provider-logos/google-color.svg" },
-  { name: "OpenRouter",   logo: "/provider-logos/openrouter.svg",   logoDark: "/provider-logos/openrouter-color.svg" },
-  { name: "LiteLLM",      logo: "/provider-logos/litellm.png" },
+  { name: "OpenAI", logo: "/provider-logos/openai.svg", logoDark: "/provider-logos/openai-color.svg" },
+  { name: "Anthropic", logo: "/provider-logos/anthropic.svg", logoDark: "/provider-logos/anthropic-color.svg" },
+  { name: "Google", logo: "/provider-logos/google-color.svg" },
+  { name: "OpenRouter", logo: "/provider-logos/openrouter.svg", logoDark: "/provider-logos/openrouter-color.svg" },
+  { name: "LiteLLM", logo: "/provider-logos/litellm.png" },
   { name: "Hugging Face", logo: "/provider-logos/huggingface.svg" },
 ]
 
@@ -143,13 +143,13 @@ export default async function Home() {
   const lastChangeLabel =
     parsedDate && !isNaN(parsedDate.getTime())
       ? new Intl.DateTimeFormat("en-US", {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: "UTC",
-        }).format(parsedDate)
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "UTC",
+      }).format(parsedDate)
       : null
 
   return (
@@ -157,283 +157,283 @@ export default async function Home() {
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section aria-labelledby="hero-heading">
         <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.6s' } as React.CSSProperties}>
-        <div className="max-w-6xl mx-auto px-6 py-20 lg:py-32">
-          <div className="grid lg:grid-cols-2 gap-12 items-center animate-wireframe-fade" style={{ animationDelay: "1.5s" }}>
-            {/* Left: copy */}
-            <div className="flex flex-col gap-6">
-              <h1
-                id="hero-heading"
-                className="font-outfit text-4xl lg:text-5xl font-extrabold leading-tight"
-                style={{ color: "var(--ink)" }}
-              >
-                Reconciled LLM Pricing.{" "}
-                <span style={{ color: "var(--accent)" }}>For Agents</span>{" "}
-                &amp; Humans.
-              </h1>
-
-              <p
-                className="font-outfit text-lg leading-relaxed"
-                style={{ color: "var(--muted)" }}
-              >
-                Multi-source verified token pricing with full history, real-time change
-                feed, and agent-native endpoints. Replace manual spreadsheets with a
-                single trusted API.
-              </p>
-
-              {/* CTAs — sharp corners */}
-              <div className="flex gap-3 flex-wrap">
-                <a
-                  href="/models"
-                  className="font-outfit text-sm font-semibold px-6 py-3"
-                  style={{
-                    backgroundColor: "var(--accent)",
-                    color: "var(--surfaceHi)",
-                    border: "1px solid var(--accentDk)",
-                  }}
+          <div className="max-w-6xl mx-auto px-6 py-20 lg:py-32">
+            <div className="grid lg:grid-cols-2 gap-12 items-center animate-wireframe-fade" style={{ animationDelay: "1.5s" }}>
+              {/* Left: copy */}
+              <div className="flex flex-col gap-6">
+                <h1
+                  id="hero-heading"
+                  className="font-outfit text-4xl lg:text-5xl font-extrabold leading-tight"
+                  style={{ color: "var(--ink)" }}
                 >
-                  Browse Models
-                </a>
-                <a
-                  href="/pricing"
-                  className="font-outfit text-sm font-semibold px-6 py-3"
-                  style={{
-                    color: "var(--text)",
-                    border: "1px solid var(--border)",
-                  }}
+                  Reconciled LLM Pricing.{" "}
+                  <span style={{ color: "var(--accent)" }}>For Agents</span>{" "}
+                  &amp; Humans.
+                </h1>
+
+                <p
+                  className="font-outfit text-lg leading-relaxed"
+                  style={{ color: "var(--muted)" }}
                 >
-                  View Features
-                </a>
+                  Multi-source verified token pricing with full history, real-time change
+                  feed, and agent-native endpoints. Replace manual spreadsheets with a
+                  single trusted API.
+                </p>
+
+                {/* CTAs — sharp corners */}
+                <div className="flex gap-3 flex-wrap">
+                  <a
+                    href="/models"
+                    className="font-outfit text-sm font-semibold px-6 py-3"
+                    style={{
+                      backgroundColor: "var(--accent)",
+                      color: "var(--surfaceHi)",
+                      border: "1px solid var(--accentDk)",
+                    }}
+                  >
+                    Browse Models
+                  </a>
+                  <a
+                    href="/pricing"
+                    className="font-outfit text-sm font-semibold px-6 py-3"
+                    style={{
+                      color: "var(--text)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    View Features
+                  </a>
+                </div>
+
+                {/* Stat strip */}
+                <div
+                  className="flex flex-wrap items-start gap-6 animate-wireframe-fade"
+                  style={{ '--draw-delay': '0.65s', animationDelay: "1.55s" } as React.CSSProperties}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span
+                      className="font-orbitron text-2xl font-bold"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {(modelCount ?? 340).toLocaleString()}
+                    </span>
+                    <span
+                      className="font-outfit text-xs"
+                      style={{ color: "var(--dim)" }}
+                    >
+                      models tracked
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span
+                      className="font-orbitron text-2xl font-bold"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {(providerCount ?? 7).toLocaleString()}
+                    </span>
+                    <span
+                      className="font-outfit text-xs"
+                      style={{ color: "var(--dim)" }}
+                    >
+                      providers
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span
+                      className="font-orbitron text-2xl font-bold"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {lastChangeLabel ?? "<60s ago"}
+                    </span>
+                    <span
+                      className="font-outfit text-xs"
+                      style={{ color: "var(--dim)" }}
+                    >
+                      last price change
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {/* Stat strip */}
-              <div
-                className="flex flex-wrap items-start gap-6 pt-4 animate-draw-border-t animate-wireframe-fade"
-                style={{ '--draw-delay': '0.65s', animationDelay: "1.55s" } as React.CSSProperties}
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span
-                    className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--ink)" }}
-                  >
-                    {(modelCount ?? 340).toLocaleString()}
-                  </span>
-                  <span
-                    className="font-outfit text-xs"
-                    style={{ color: "var(--dim)" }}
-                  >
-                    models tracked
-                  </span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span
-                    className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--ink)" }}
-                  >
-                    {(providerCount ?? 7).toLocaleString()}
-                  </span>
-                  <span
-                    className="font-outfit text-xs"
-                    style={{ color: "var(--dim)" }}
-                  >
-                    providers
-                  </span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span
-                    className="font-orbitron text-2xl font-bold"
-                    style={{ color: "var(--ink)" }}
-                  >
-                    {lastChangeLabel ?? "<60s ago"}
-                  </span>
-                  <span
-                    className="font-outfit text-xs"
-                    style={{ color: "var(--dim)" }}
-                  >
-                    last price change
-                  </span>
-                </div>
+              {/* Right: hero scene */}
+              <div className="w-full animate-wireframe-fade" style={{ animationDelay: "1.5s" }}>
+                <HeroScene />
               </div>
-            </div>
-
-            {/* Right: hero scene */}
-            <div className="w-full animate-wireframe-fade" style={{ animationDelay: "1.5s" }}>
-              <HeroScene />
             </div>
           </div>
-        </div>
         </div>
       </section>
 
       {/* ── Data Sources Bar ───────────────────────────────────────────── */}
       <section aria-label="Data sources">
         <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.7s' } as React.CSSProperties}>
-        {/* Live pricing ticker — full-bleed inside bordered container */}
-        <div className="animate-wireframe-fade" style={{ animationDelay: "1.6s" }}>
-          <PricingTicker />
-        </div>
-        <div className="max-w-7xl mx-auto animate-draw-border-t" style={{ '--draw-delay': '0.75s' } as React.CSSProperties}>
-          <div className="max-w-6xl mx-auto px-6 py-6 animate-wireframe-fade" style={{ animationDelay: "1.65s" }}>
-            <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
-              {DATA_SOURCES.map((source) => (
-              <div key={source.name} className="flex flex-col items-center gap-1.5">
-                {source.logoDark ? (
-                  <picture>
-                    <source srcSet={source.logoDark} media="(prefers-color-scheme: dark)" />
-                    <img
-                      src={source.logo}
-                      alt={source.name}
-                      title={source.name}
-                      className="h-6 w-auto"
-                    />
-                  </picture>
-                ) : (
-                  <img
-                    src={source.logo}
-                    alt={source.name}
-                    title={source.name}
-                    className="h-6 w-auto"
-                  />
-                )}
-                <span className="font-outfit text-xs font-medium" style={{ color: "var(--muted)" }}>
-                  {source.name}
-                </span>
+          {/* Live pricing ticker — full-bleed inside bordered container */}
+          <div className="animate-wireframe-fade" style={{ animationDelay: "1.6s" }}>
+            <PricingTicker />
+          </div>
+          <div className="max-w-7xl mx-auto animate-draw-border-t" style={{ '--draw-delay': '0.75s' } as React.CSSProperties}>
+            <div className="max-w-6xl mx-auto px-6 py-6 animate-wireframe-fade" style={{ animationDelay: "1.65s" }}>
+              <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
+                {DATA_SOURCES.map((source) => (
+                  <div key={source.name} className="flex flex-col items-center gap-1.5">
+                    {source.logoDark ? (
+                      <picture>
+                        <source srcSet={source.logoDark} media="(prefers-color-scheme: dark)" />
+                        <img
+                          src={source.logo}
+                          alt={source.name}
+                          title={source.name}
+                          className="h-6 w-auto"
+                        />
+                      </picture>
+                    ) : (
+                      <img
+                        src={source.logo}
+                        alt={source.name}
+                        title={source.name}
+                        className="h-6 w-auto"
+                      />
+                    )}
+                    <span className="font-outfit text-xs font-medium" style={{ color: "var(--muted)" }}>
+                      {source.name}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
             </div>
           </div>
-        </div>
         </div>
       </section>
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
       <section aria-labelledby="features-heading">
         <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.8s' } as React.CSSProperties}>
-        <div className="max-w-6xl mx-auto px-6 py-16">
-          <div className="mb-10 animate-wireframe-fade" style={{ animationDelay: "1.7s" }}>
-            <h2
-              id="features-heading"
-              className="font-outfit text-2xl font-bold mt-3 mb-2"
-              style={{ color: "var(--ink)" }}
-            >
-              Full history. Multiple sources. Zero guesswork.
-            </h2>
-            <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
-              Most pricing tools give you a snapshot. We give you the full timeline with source attribution.
-            </p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {FEATURES.map((f) => (
-              <div
-                key={f.title}
-                className="relative transition-colors animate-draw-border-box"
-                style={{ '--draw-delay': '0.85s', padding: "20px" } as React.CSSProperties}
+          <div className="max-w-6xl mx-auto px-6 py-16">
+            <div className="mb-10 animate-wireframe-fade" style={{ animationDelay: "1.7s" }}>
+              <h2
+                id="features-heading"
+                className="font-outfit text-2xl font-bold mt-3 mb-2"
+                style={{ color: "var(--ink)" }}
               >
-                {/* Arrow icon — top right */}
-                <span
-                  className="absolute top-3 right-3 animate-wireframe-fade"
-                  style={{ color: "var(--dim)", animationDelay: "1.75s" }}
-                  aria-hidden="true"
-                >
-                  <ArrowUpRight size={16} />
-                </span>
+                Full history. Multiple sources. Zero guesswork.
+              </h2>
+              <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
+                Most pricing tools give you a snapshot. We give you the full timeline with source attribution.
+              </p>
+            </div>
 
-                <div className="flex flex-col gap-3 animate-wireframe-fade" style={{ animationDelay: "1.75s" }}>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {FEATURES.map((f) => (
+                <div
+                  key={f.title}
+                  className="relative transition-colors animate-draw-border-box"
+                  style={{ '--draw-delay': '0.85s', padding: "20px" } as React.CSSProperties}
+                >
+                  {/* Arrow icon — top right */}
                   <span
-                    className="font-orbitron text-2xl"
-                    style={{ color: "var(--accent)" }}
+                    className="absolute top-3 right-3 animate-wireframe-fade"
+                    style={{ color: "var(--dim)", animationDelay: "1.75s" }}
                     aria-hidden="true"
                   >
-                    {f.icon}
+                    <ArrowUpRight size={16} />
                   </span>
-                  <h3
-                    className="font-orbitron text-sm font-bold"
-                    style={{ color: "var(--ink)" }}
-                  >
-                    {f.title}
-                  </h3>
-                  <p
-                    className="font-outfit text-sm leading-relaxed"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    {f.description}
-                  </p>
+
+                  <div className="flex flex-col gap-3 animate-wireframe-fade" style={{ animationDelay: "1.75s" }}>
+                    <span
+                      className="font-orbitron text-2xl"
+                      style={{ color: "var(--accent)" }}
+                      aria-hidden="true"
+                    >
+                      {f.icon}
+                    </span>
+                    <h3
+                      className="font-orbitron text-sm font-bold"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {f.title}
+                    </h3>
+                    <p
+                      className="font-outfit text-sm leading-relaxed"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      {f.description}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
         </div>
       </section>
 
       {/* ── Agent callout ────────────────────────────────────────────────── */}
       <section aria-labelledby="agent-heading">
         <div className="max-w-7xl mx-auto animate-draw-border-b" style={{ '--draw-delay': '0.9s' } as React.CSSProperties}>
-        <div className="max-w-6xl mx-auto px-6 py-16">
-          <div className="flex flex-col lg:flex-row gap-12 items-start">
-            {/* Left copy */}
-            <div className="flex flex-col gap-4 lg:max-w-sm animate-wireframe-fade" style={{ animationDelay: "1.8s" }}>
-              <h2
-                id="agent-heading"
-                className="font-outfit text-2xl font-bold"
-                style={{ color: "var(--ink)" }}
-              >
-                Built for LLM agents
-              </h2>
-              <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
-                Dedicated endpoints designed to fit in agent system prompts, handle
-                natural language queries, and stream price deltas in real time — without
-                blowing your token budget.
-              </p>
-              <a
-                href="/pricing"
-                className="font-outfit text-sm font-semibold px-5 py-2.5 w-fit"
-                style={{
-                  backgroundColor: "var(--accent)",
-                  color: "var(--surfaceHi)",
-                  border: "1px solid var(--accentDk)",
-                }}
-              >
-                Explore Features
-              </a>
-            </div>
+          <div className="max-w-6xl mx-auto px-6 py-16">
+            <div className="flex flex-col lg:flex-row gap-12 items-start">
+              {/* Left copy */}
+              <div className="flex flex-col gap-4 lg:max-w-sm animate-wireframe-fade" style={{ animationDelay: "1.8s" }}>
+                <h2
+                  id="agent-heading"
+                  className="font-outfit text-2xl font-bold"
+                  style={{ color: "var(--ink)" }}
+                >
+                  Built for LLM agents
+                </h2>
+                <p className="font-outfit text-base" style={{ color: "var(--muted)" }}>
+                  Dedicated endpoints designed to fit in agent system prompts, handle
+                  natural language queries, and stream price deltas in real time — without
+                  blowing your token budget.
+                </p>
+                <a
+                  href="/pricing"
+                  className="font-outfit text-sm font-semibold px-5 py-2.5 w-fit"
+                  style={{
+                    backgroundColor: "var(--accent)",
+                    color: "var(--surfaceHi)",
+                    border: "1px solid var(--accentDk)",
+                  }}
+                >
+                  Explore Features
+                </a>
+              </div>
 
-            {/* Mobile-friendly endpoint list */}
-            <div className="flex-1 w-full animate-draw-border-box-dashed" role="list" aria-label="Agent-optimized API endpoints" style={{ '--draw-delay': '0.95s' } as React.CSSProperties}>
-              {AGENT_ENDPOINTS.map((ep, i) => {
-                const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
-                return (
-                  <div
-                    key={ep.path}
-                    role="listitem"
-                    className={i !== 0 ? "animate-draw-border-t" : ""}
-                    style={{
-                      padding: "14px 20px",
-                      "--draw-delay": `1.0s`
-                    } as React.CSSProperties}
-                  >
-                    <div className="animate-wireframe-fade flex flex-col gap-[6px]" style={{ animationDelay: "1.85s" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                        <span
-                          className="font-orbitron text-xs font-semibold"
-                          style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
-                        >
-                          {ep.method}
+              {/* Mobile-friendly endpoint list */}
+              <div className="flex-1 w-full animate-draw-border-box-dashed" role="list" aria-label="Agent-optimized API endpoints" style={{ '--draw-delay': '0.95s' } as React.CSSProperties}>
+                {AGENT_ENDPOINTS.map((ep, i) => {
+                  const ms = METHOD_STYLES[ep.method] ?? { bg: "var(--surfaceLo)", color: "var(--muted)" }
+                  return (
+                    <div
+                      key={ep.path}
+                      role="listitem"
+                      className={i !== 0 ? "animate-draw-border-t" : ""}
+                      style={{
+                        padding: "14px 20px",
+                        "--draw-delay": `1.0s`
+                      } as React.CSSProperties}
+                    >
+                      <div className="animate-wireframe-fade flex flex-col gap-[6px]" style={{ animationDelay: "1.85s" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                          <span
+                            className="font-orbitron text-xs font-semibold"
+                            style={{ padding: "2px 6px", backgroundColor: ms.bg, color: ms.color, flexShrink: 0 }}
+                          >
+                            {ep.method}
+                          </span>
+                          <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
+                            {ep.path}
+                          </code>
+                        </div>
+                        <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
+                          {ep.desc}
                         </span>
-                        <code className="font-orbitron text-sm" style={{ color: "var(--ink)", wordBreak: "break-all" }}>
-                          {ep.path}
-                        </code>
                       </div>
-                      <span className="font-outfit text-sm" style={{ color: "var(--muted)" }}>
-                        {ep.desc}
-                      </span>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
         </div>
       </section>
 
