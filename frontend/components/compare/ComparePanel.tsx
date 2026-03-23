@@ -19,8 +19,9 @@ export interface CompareModel {
 }
 
 interface ComparePanelProps {
-  modelA: CompareModel
-  modelB: CompareModel
+  /** modelA and modelB may be undefined when loading=true. */
+  modelA: CompareModel | undefined
+  modelB: CompareModel | undefined
   useCase: string | null
   availableModels: RecommendedModel[]
   onSwap: (position: "a" | "b", newSlug: string) => void
@@ -74,8 +75,10 @@ function SwapPicker({
         .map((m) => (
           <button
             key={m.slug}
-            className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors"
+            className="block w-full text-left px-3 py-2 text-sm transition-colors"
             style={{ color: "var(--ink)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--surface)" }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "" }}
             onClick={() => { onSelect(m.slug); onClose() }}
           >
             <span className="text-xs" style={{ color: "var(--muted)" }}>{m.provider}</span>
@@ -276,8 +279,9 @@ export default function ComparePanel({
         <>
           {/* Desktop: side by side / Mobile: stacked */}
           <div className="flex flex-col md:flex-row gap-6">
+            {/* modelA and modelB are guaranteed non-null when loading=false */}
             <ModelColumn
-              model={modelA}
+              model={modelA!}
               position="a"
               availableModels={availableModels}
               onSwap={onSwap}
@@ -288,7 +292,7 @@ export default function ComparePanel({
             />
             <hr className="md:hidden" style={{ borderColor: "var(--border)" }} />
             <ModelColumn
-              model={modelB}
+              model={modelB!}
               position="b"
               availableModels={availableModels}
               onSwap={onSwap}
@@ -296,16 +300,16 @@ export default function ComparePanel({
           </div>
 
           {/* Rationale section */}
-          {(modelA.rationale || modelB.rationale) && useCase && (
+          {(modelA?.rationale || modelB?.rationale) && useCase && (
             <div className="mt-6 pt-4 border-t" style={{ borderColor: "var(--border)" }}>
               <div className="text-xs uppercase tracking-wide mb-2 font-semibold" style={{ color: "var(--muted)" }}>
                 Analysis
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {modelA.rationale && (
+                {modelA?.rationale && (
                   <p className="text-sm" style={{ color: "var(--ink)" }}>{modelA.rationale}</p>
                 )}
-                {modelB.rationale && (
+                {modelB?.rationale && (
                   <p className="text-sm" style={{ color: "var(--ink)" }}>{modelB.rationale}</p>
                 )}
               </div>

@@ -31,8 +31,8 @@ type compareEnvelope struct {
 
 // Compare handles GET /v1/compare?models=slug1,slug2[&use_case=X]
 // Returns side-by-side pricing + capability scores for up to 5 model slugs.
-// Accepts model slugs (strings). Falls back to integer ID lookup for
-// backward compatibility.
+// Accepts model slugs only (e.g. "openai/gpt-4o"). Integer IDs are not
+// supported — callers using the old integer-based API must migrate to slugs.
 // Returns 400 if more than 5 slugs are supplied.
 // Returns 404 if any model slug is not found.
 func (h *Handlers) Compare(c *fiber.Ctx) error {

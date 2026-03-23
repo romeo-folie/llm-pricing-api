@@ -1,22 +1,7 @@
 "use client"
 
 import { useCallback, useRef } from "react"
-
-interface UseCaseOption {
-  slug: string
-  label: string
-  icon: string
-  description: string
-}
-
-const USE_CASES: UseCaseOption[] = [
-  { slug: "finance", label: "Finance", icon: "\u{1F4B0}", description: "Financial analysis and investment research" },
-  { slug: "coding", label: "Coding", icon: "\u{1F4BB}", description: "Code generation, debugging, and engineering" },
-  { slug: "writing", label: "Writing", icon: "\u{270D}\uFE0F", description: "Copywriting, content, and instruction following" },
-  { slug: "agentic", label: "Agentic", icon: "\u{1F916}", description: "Autonomous agents and tool use workflows" },
-  { slug: "video", label: "Video", icon: "\u{1F3AC}", description: "Video understanding and multimodal analysis" },
-  { slug: "reasoning", label: "Reasoning", icon: "\u{1F9E0}", description: "Math, logic, and complex multi-step reasoning" },
-]
+import { USE_CASES } from "@/lib/use-cases"
 
 interface UseCasePickerProps {
   selected: string | null

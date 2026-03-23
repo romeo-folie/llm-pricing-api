@@ -56,14 +56,17 @@ export default function CompareClient() {
   const [recommendations, setRecommendations] = useState<RecommendedModel[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
   const [compareData, setCompareData] = useState<CompareModel[] | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const comparePanelRef = useRef<HTMLDivElement>(null)
 
   // Fetch recommendations when useCase or filters change.
   const fetchRecommendations = useCallback(async (uc: string, f: CompareFilters) => {
     setLoading(true)
+    setApiError(null)
     try {
       const res = await fetch(buildRecommendUrl(uc, f), { headers: buildHeaders() })
       if (!res.ok) throw new Error(`API error ${res.status}`)
@@ -71,9 +74,10 @@ export default function CompareClient() {
       const envelope = json.data as { items?: RecommendedModel[]; warnings?: string[] } | null
       setRecommendations(envelope?.items ?? [])
       setWarnings(envelope?.warnings ?? [])
-    } catch {
+    } catch (err) {
       setRecommendations([])
       setWarnings([])
+      setApiError(err instanceof Error ? err.message : "Failed to load recommendations")
     } finally {
       setLoading(false)
     }
@@ -82,14 +86,16 @@ export default function CompareClient() {
   // Fetch compare data when 2 models are selected.
   const fetchCompareData = useCallback(async (slugs: string[], uc: string | null) => {
     setCompareLoading(true)
+    setCompareError(null)
     try {
       const res = await fetch(buildCompareUrl(slugs, uc), { headers: buildHeaders() })
       if (!res.ok) throw new Error(`API error ${res.status}`)
       const json = await res.json()
       const envelope = json.data as { items?: CompareModel[] } | null
       setCompareData(envelope?.items ?? null)
-    } catch {
+    } catch (err) {
       setCompareData(null)
+      setCompareError(err instanceof Error ? err.message : "Failed to load comparison data")
     } finally {
       setCompareLoading(false)
     }
@@ -187,6 +193,17 @@ export default function CompareClient() {
         </div>
       )}
 
+      {/* API error banner — shown when recommendations fetch fails */}
+      {apiError && !loading && (
+        <div
+          className="mb-4 text-sm px-4 py-3 border"
+          style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+          role="alert"
+        >
+          ⚠ Unable to load recommendations: {apiError}
+        </div>
+      )}
+
       {/* 3. ResultsPanel — visible when useCase selected */}
       {useCase && (
         <div className="animate-wireframe-fade">
@@ -204,10 +221,19 @@ export default function CompareClient() {
       {/* 4. ComparePanel — visible when 2 models selected */}
       {selectedModels.length === 2 && (
         <div ref={comparePanelRef}>
+          {compareError && !compareLoading && (
+            <div
+              className="mb-4 text-sm px-4 py-3 border"
+              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+              role="alert"
+            >
+              ⚠ Unable to load comparison: {compareError}
+            </div>
+          )}
           {compareLoading || !compareData || compareData.length < 2 ? (
             <ComparePanel
-              modelA={{} as CompareModel}
-              modelB={{} as CompareModel}
+              modelA={undefined}
+              modelB={undefined}
               useCase={useCase}
               availableModels={recommendations}
               onSwap={handleSwap}

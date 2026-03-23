@@ -195,7 +195,7 @@ function TopPickCard({
             <span
               key={i}
               className="text-xs px-2 py-0.5 border"
-              style={{ borderColor: "#B45309", color: "#B45309", backgroundColor: "#FEF3C7" }}
+              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
             >
               {w}
             </span>
@@ -291,14 +291,15 @@ export default function ResultsPanel({
   const [topPick, ...alternatives] = models
 
   return (
-    <div>
+    /* pb-20 compensates for the sticky CTA bar height on mobile so content isn't hidden beneath it */
+    <div className={selectedModels.length >= 1 ? "pb-20" : undefined}>
       {warnings.length > 0 && (
         <div className="mb-4 flex flex-col gap-1">
           {warnings.map((w, i) => (
             <div
               key={i}
               className="text-xs px-3 py-2 border"
-              style={{ borderColor: "#B45309", color: "#B45309", backgroundColor: "#FEF3C7" }}
+              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
             >
               {w}
             </div>
