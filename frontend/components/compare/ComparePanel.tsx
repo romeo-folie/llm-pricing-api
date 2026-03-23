@@ -163,7 +163,7 @@ function ModelColumn({
             <span
               key={i}
               className="text-xs px-2 py-0.5 border"
-              style={{ borderColor: "#B45309", color: "#B45309", backgroundColor: "#FEF3C7" }}
+              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
             >
               {w}
             </span>

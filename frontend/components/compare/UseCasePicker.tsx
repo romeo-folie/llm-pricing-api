@@ -42,20 +42,8 @@ export default function UseCasePicker({ selected, onChange }: UseCasePickerProps
       role="radiogroup"
       aria-label="Select a use case"
       onKeyDown={handleKeyDown}
-      data-uc-grid=""
-      className="grid gap-3"
-      style={{
-        gridTemplateColumns: "repeat(3, 1fr)",
-      }}
+      className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"
     >
-      <style>{`
-        @media (max-width: 768px) {
-          [data-uc-grid] { grid-template-columns: repeat(2, 1fr) !important; }
-        }
-        @media (max-width: 480px) {
-          [data-uc-grid] { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
       {USE_CASES.map((uc) => {
         const isSelected = selected === uc.slug
         return (
@@ -69,7 +57,7 @@ export default function UseCasePicker({ selected, onChange }: UseCasePickerProps
             style={{
               borderColor: isSelected ? "var(--accent)" : "var(--border)",
               borderWidth: isSelected ? "2px" : "1px",
-              backgroundColor: isSelected ? "#E1F5EE" : "var(--bg)",
+              backgroundColor: isSelected ? "var(--accent-tint, #E1F5EE)" : "var(--bg)",
               cursor: "pointer",
               padding: isSelected ? "15px" : "16px", // compensate for 2px border
               transitionProperty: "border-color, background-color",

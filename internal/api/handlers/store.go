@@ -634,18 +634,9 @@ func (s *pgxStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]
 		unique = append(unique, sl)
 	}
 
-	// Build $1, $2, ... placeholder list.
-	placeholders := ""
-	args := make([]any, len(unique))
-	for i, sl := range unique {
-		if i > 0 {
-			placeholders += ", "
-		}
-		placeholders += fmt.Sprintf("$%d", i+1)
-		args[i] = sl
-	}
-
-	sql := fmt.Sprintf(`
+	// pgx natively encodes []string as a PostgreSQL text array — no need to
+	// build N individual placeholders. ANY($1) is simpler and has no parameter limit.
+	rows, err := s.db.Query(ctx, `
 		SELECT
 			m.id,
 			m.provider,
@@ -666,10 +657,8 @@ func (s *pgxStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]
 			LIMIT 1
 		) p ON true
 		LEFT JOIN sources src ON src.id = p.source_id
-		WHERE m.slug IN (%s)
-	`, placeholders)
-
-	rows, err := s.db.Query(ctx, sql, args...)
+		WHERE m.slug = ANY($1)
+	`, unique)
 	if err != nil {
 		return nil, fmt.Errorf("compare models by slug query: %w", err)
 	}
