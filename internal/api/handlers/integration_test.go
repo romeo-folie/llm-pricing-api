@@ -268,6 +268,7 @@ func setupTestApp(t *testing.T) (*fiber.App, *pgxpool.Pool, *redis.Client) {
 		t.Fatalf("register SSE: %v", err)
 	}
 	handlers.RegisterDiscovery(app, db, rdb)
+	handlers.RegisterPublic(app, db, rdb)
 
 	return app, db, rdb
 }
