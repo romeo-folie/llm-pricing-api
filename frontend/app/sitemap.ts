@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next"
 import { getModelsPaginated, getProviders } from "@/lib/api"
 import type { Model } from "@/lib/api"
+import { USE_CASE_SLUGS } from "@/lib/use-cases"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 
@@ -56,6 +57,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.8,
     },
+    {
+      url: `${SITE_URL}/best-for`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.8,
+    },
+    ...USE_CASE_SLUGS.map((slug) => ({
+      url: `${SITE_URL}/best-for/${slug}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.7,
+    })),
   ]
 
   let modelRoutes: MetadataRoute.Sitemap = []
