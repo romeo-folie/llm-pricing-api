@@ -25,8 +25,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${SITE_URL}/compare`,
       lastModified: now,
       changeFrequency: "weekly",
-      priority: 0.7,
+      priority: 0.85,
     },
+    ...USE_CASE_SLUGS.map((slug) => ({
+      url: `${SITE_URL}/compare?use-case=${slug}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.75,
+    })),
     {
       url: `${SITE_URL}/calculator`,
       lastModified: now,
@@ -57,18 +63,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.8,
     },
-    {
-      url: `${SITE_URL}/best-for`,
-      lastModified: now,
-      changeFrequency: "weekly",
-      priority: 0.8,
-    },
-    ...USE_CASE_SLUGS.map((slug) => ({
-      url: `${SITE_URL}/best-for/${slug}`,
-      lastModified: now,
-      changeFrequency: "daily" as const,
-      priority: 0.7,
-    })),
   ]
 
   let modelRoutes: MetadataRoute.Sitemap = []

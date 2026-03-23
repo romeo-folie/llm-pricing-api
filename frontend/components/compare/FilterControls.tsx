@@ -1,16 +1,10 @@
 "use client"
 
-export interface FilterState {
-  priority: "quality" | "cost" | "speed" | "balanced"
-  maxPriceInput: number | null // $/1M tokens
-  contextMin: number | null   // tokens
-  requiresTools: boolean
-  requiresStructuredOutput: boolean
-}
+import type { CompareFilters } from "@/hooks/useCompareState"
 
 interface FilterControlsProps {
-  value: FilterState
-  onChange: (f: FilterState) => void
+  value: CompareFilters
+  onChange: (f: CompareFilters) => void
 }
 
 const PRIORITIES = [
@@ -28,7 +22,6 @@ const CONTEXT_OPTIONS = [
   { value: 200000,  label: "200k+" },
 ]
 
-// Log-scale slider: maps 0–100 range to $0.01–$100/1M
 function sliderToPrice(v: number): number {
   return Math.exp((v / 100) * Math.log(10000)) / 100
 }
@@ -47,7 +40,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
   return (
     <div
       className="border p-4 mb-6 flex flex-col gap-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--bg)" }}
     >
       {/* Priority toggle */}
       <div>
@@ -101,7 +94,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
               maxPriceInput: v >= 100 ? null : sliderToPrice(v),
             })
           }}
-          className="w-full accent-current"
+          className="w-full"
           style={{ accentColor: "var(--ink)" }}
           aria-label="Maximum price per 1M input tokens"
         />
@@ -120,8 +113,16 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
           id="context-select"
           value={value.contextMin ?? ""}
           onChange={(e) => onChange({ ...value, contextMin: e.target.value ? Number(e.target.value) : null })}
-          className="border px-3 py-1.5 text-sm w-full"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--ink)" }}
+          className="border px-3 py-1.5 text-sm w-full appearance-none"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--bg)",
+            color: "var(--ink)",
+            paddingRight: "32px",
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2378716C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 10px center",
+          }}
         >
           {CONTEXT_OPTIONS.map((opt) => (
             <option key={String(opt.value)} value={opt.value ?? ""}>

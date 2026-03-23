@@ -10,7 +10,7 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `register.go` | `Handlers` struct, `RegisterFree()`, `RegisterDev()`, `RegisterDiscovery()`, `RegisterSSE()`, and `RegisterPro()` route registration helpers |
 | `models.go` | `GET /v1/models` (paginated list) and `GET /v1/models/:id` (single model) |
 | `providers.go` | `GET /v1/providers` (providers with model counts) |
-| `compare.go` | `GET /v1/compare?models=id1,id2,...` (side-by-side pricing, max 5 models) |
+| `compare.go` | `GET /v1/compare?models=slug1,slug2[&use_case=X]` (side-by-side pricing + capability scores, max 5 models by slug) |
 | `changes.go` | `GET /v1/changes` (recent price changes, 24h default window) |
 | `history.go` | `GET /v1/models/:id/history` (price history with date filters; Developer+ only) |
 | `recommend.go` | `GET /v1/recommend` (ranked model suggestions by task/context/price; Developer+ only) |
@@ -39,7 +39,7 @@ store := handlers.NewPgxStore(db)   // production
 h := handlers.New(store)            // create Handlers
 ```
 
-The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProviders`, `CompareModels`, `ListChanges`, `GetPriceHistory`) as well as Developer+ methods (`GetModelHistory`, `ListModelsForContext`, `RecommendModels`) used by the history, context, and recommend handlers.
+The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProviders`, `CompareModels`, `CompareModelsBySlugs`, `ListChanges`, `GetPriceHistory`) as well as Developer+ methods (`GetModelHistory`, `ListModelsForContext`, `RecommendModels`) used by the history, context, and recommend handlers.
 
 ### Handlers struct
 

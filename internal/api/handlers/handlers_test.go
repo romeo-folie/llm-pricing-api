@@ -29,6 +29,7 @@ type mockStore struct {
 	getModelBySlug        func(ctx context.Context, slug string) (handlers.ModelRow, error)
 	listProviders         func(ctx context.Context) ([]handlers.ProviderRow, error)
 	compareModels         func(ctx context.Context, ids []int) ([]handlers.ModelRow, error)
+	compareModelsBySlugs  func(ctx context.Context, slugs []string) ([]handlers.ModelRow, error)
 	listChanges           func(ctx context.Context, filter handlers.ChangesFilter) ([]handlers.ChangeRow, int, error)
 	getChangesSummary     func(ctx context.Context, filter handlers.SummaryFilter) (handlers.ChangesSummary, error)
 	getPriceHistory       func(ctx context.Context, modelID int) ([]api.PriceHistoryRow, error)
@@ -71,6 +72,13 @@ func (m *mockStore) ListProviders(ctx context.Context) ([]handlers.ProviderRow, 
 func (m *mockStore) CompareModels(ctx context.Context, ids []int) ([]handlers.ModelRow, error) {
 	if m.compareModels != nil {
 		return m.compareModels(ctx, ids)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]handlers.ModelRow, error) {
+	if m.compareModelsBySlugs != nil {
+		return m.compareModelsBySlugs(ctx, slugs)
 	}
 	return nil, nil
 }
@@ -663,51 +671,64 @@ func TestListProviders_OK(t *testing.T) {
 
 // --- Compare tests ------------------------------------------------------
 
-func TestCompare_OK(t *testing.T) {
+func TestCompare_SlugLookup_Returns200WithScores(t *testing.T) {
+	score := 85.5
 	store := &mockStore{
-		compareModels: func(_ context.Context, ids []int) ([]handlers.ModelRow, error) {
-			rows := make([]handlers.ModelRow, len(ids))
-			for i, id := range ids {
-				rows[i] = sampleModel(id)
+		compareModelsBySlugs: func(_ context.Context, slugs []string) ([]handlers.ModelRow, error) {
+			rows := make([]handlers.ModelRow, len(slugs))
+			for i, slug := range slugs {
+				m := sampleModel(i + 1)
+				m.Slug = slug
+				rows[i] = m
 			}
 			return rows, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{
+				1: {{Dimension: "coding", Score: &score, Confidence: "high", BenchmarkCount: 3, Freshness: "fresh"}},
+				2: {{Dimension: "coding", Score: &score, Confidence: "high", BenchmarkCount: 3, Freshness: "fresh"}},
+			}, nil
 		},
 	}
 	app := newApp(store)
 
-	status, body := get(t, app, "/v1/compare?models=1,2,3")
+	status, body := get(t, app, "/v1/compare?models=openai/gpt-4,anthropic/claude-3")
 
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 
 	var envelope struct {
-		Data []json.RawMessage `json:"data"`
+		Data struct {
+			Items []json.RawMessage `json:"items"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal response: %v; body: %s", err, body)
 	}
-	if len(envelope.Data) != 3 {
-		t.Errorf("expected 3 items, got %d", len(envelope.Data))
+	if len(envelope.Data.Items) != 2 {
+		t.Errorf("expected 2 items, got %d", len(envelope.Data.Items))
+	}
+
+	// Verify scores are present in the response.
+	var item struct {
+		Scores map[string]float64 `json:"scores"`
+	}
+	if err := json.Unmarshal(envelope.Data.Items[0], &item); err != nil {
+		t.Fatalf("unmarshal item: %v", err)
+	}
+	if item.Scores["coding"] != 85.5 {
+		t.Errorf("expected coding score 85.5, got %v", item.Scores["coding"])
 	}
 }
 
-func TestCompare_TooManyIDs_Returns400(t *testing.T) {
+func TestCompare_TooManySlugs_Returns400(t *testing.T) {
 	app := newApp(&mockStore{})
 
-	status, body := get(t, app, "/v1/compare?models=1,2,3,4,5,6")
+	status, body := get(t, app, "/v1/compare?models=a,b,c,d,e,f")
 
 	if status != fiber.StatusBadRequest {
 		t.Fatalf("expected 400, got %d; body: %s", status, body)
-	}
-}
-
-func TestCompare_InvalidID_Returns400(t *testing.T) {
-	app := newApp(&mockStore{})
-
-	status, _ := get(t, app, "/v1/compare?models=1,abc,3")
-	if status != fiber.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", status)
 	}
 }
 
@@ -720,38 +741,104 @@ func TestCompare_MissingModelsParam_Returns400(t *testing.T) {
 	}
 }
 
-func TestCompare_NotFound_Returns404(t *testing.T) {
+func TestCompare_UnknownSlug_Returns404(t *testing.T) {
 	store := &mockStore{
-		compareModels: func(_ context.Context, _ []int) ([]handlers.ModelRow, error) {
+		compareModelsBySlugs: func(_ context.Context, _ []string) ([]handlers.ModelRow, error) {
 			return nil, handlers.ErrNotFound
 		},
 	}
 	app := newApp(store)
 
-	status, _ := get(t, app, "/v1/compare?models=1,999")
+	status, _ := get(t, app, "/v1/compare?models=openai/gpt-4,nonexistent/model")
 	if status != fiber.StatusNotFound {
 		t.Fatalf("expected 404, got %d", status)
 	}
 }
 
-func TestCompare_DeduplicatesIDs(t *testing.T) {
-	var capturedIDs []int
+func TestCompare_UseCaseProducesRationale(t *testing.T) {
+	score := 90.0
 	store := &mockStore{
-		compareModels: func(_ context.Context, ids []int) ([]handlers.ModelRow, error) {
-			capturedIDs = ids
-			rows := make([]handlers.ModelRow, len(ids))
-			for i, id := range ids {
-				rows[i] = sampleModel(id)
+		compareModelsBySlugs: func(_ context.Context, slugs []string) ([]handlers.ModelRow, error) {
+			rows := make([]handlers.ModelRow, len(slugs))
+			for i, slug := range slugs {
+				m := sampleModel(i + 1)
+				m.Slug = slug
+				rows[i] = m
+			}
+			return rows, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{
+				1: {{Dimension: "coding", Score: &score, Confidence: "high", BenchmarkCount: 3, Freshness: "fresh"}},
+			}, nil
+		},
+	}
+	app := newApp(store)
+
+	status, body := get(t, app, "/v1/compare?models=openai/gpt-4&use_case=coding")
+
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Items []struct {
+				Rationale string `json:"rationale"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(envelope.Data.Items) == 0 {
+		t.Fatal("expected at least 1 item")
+	}
+	if envelope.Data.Items[0].Rationale == "" {
+		t.Error("expected non-empty rationale when use_case is provided")
+	}
+}
+
+func TestCompare_InvalidUseCase_Returns400(t *testing.T) {
+	store := &mockStore{
+		compareModelsBySlugs: func(_ context.Context, slugs []string) ([]handlers.ModelRow, error) {
+			rows := make([]handlers.ModelRow, len(slugs))
+			for i, slug := range slugs {
+				m := sampleModel(i + 1)
+				m.Slug = slug
+				rows[i] = m
 			}
 			return rows, nil
 		},
 	}
 	app := newApp(store)
 
-	get(t, app, "/v1/compare?models=1,1,2")
+	status, _ := get(t, app, "/v1/compare?models=openai/gpt-4&use_case=invalid")
+	if status != fiber.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", status)
+	}
+}
 
-	if len(capturedIDs) != 2 {
-		t.Errorf("expected 2 unique IDs, got %d: %v", len(capturedIDs), capturedIDs)
+func TestCompare_DeduplicatesSlugs(t *testing.T) {
+	var capturedSlugs []string
+	store := &mockStore{
+		compareModelsBySlugs: func(_ context.Context, slugs []string) ([]handlers.ModelRow, error) {
+			capturedSlugs = slugs
+			rows := make([]handlers.ModelRow, len(slugs))
+			for i, slug := range slugs {
+				m := sampleModel(i + 1)
+				m.Slug = slug
+				rows[i] = m
+			}
+			return rows, nil
+		},
+	}
+	app := newApp(store)
+
+	get(t, app, "/v1/compare?models=openai/gpt-4,openai/gpt-4,anthropic/claude")
+
+	if len(capturedSlugs) != 2 {
+		t.Errorf("expected 2 unique slugs, got %d: %v", len(capturedSlugs), capturedSlugs)
 	}
 }
 

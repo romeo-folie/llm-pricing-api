@@ -1,145 +1,231 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import type { Model } from "@/lib/api"
-import { trackCompareModels, trackShareComparison } from "@/lib/analytics"
-import ModelPicker from "./ModelPicker"
-import CompareTable from "./CompareTable"
-import EmptyState from "@/components/ui/EmptyState"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { useCompareState } from "@/hooks/useCompareState"
+import type { CompareFilters } from "@/hooks/useCompareState"
+import UseCasePicker from "./UseCasePicker"
+import FilterControls from "./FilterControls"
+import ResultsPanel from "./ResultsPanel"
+import type { RecommendedModel } from "./ResultsPanel"
+import ComparePanel from "./ComparePanel"
+import type { CompareModel } from "./ComparePanel"
 
-interface CompareClientProps {
-  allModels:      Model[]
-  initialCompare: Model[]
-  initialIds:     string[]
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.llmrates.live"
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY
+
+function buildRecommendUrl(useCase: string, filters: CompareFilters): string {
+  const params = new URLSearchParams({
+    use_case: useCase,
+    priority: filters.priority,
+    top_k: "5",
+  })
+  if (filters.maxPriceInput != null) {
+    params.set("max_price_input", String(filters.maxPriceInput / 1_000_000))
+  }
+  if (filters.contextMin != null) {
+    params.set("context", String(filters.contextMin))
+  }
+  if (filters.requiresTools) params.set("requires_tools", "true")
+  if (filters.requiresStructuredOutput) params.set("requires_structured_output", "true")
+  return `${API_BASE}/v1/recommend?${params.toString()}`
 }
 
-export default function CompareClient({
-  allModels,
-  initialCompare,
-  initialIds,
-}: CompareClientProps) {
-  const router       = useRouter()
-  const searchParams = useSearchParams()
-  const [selectedIds,    setSelectedIds]    = useState<string[]>(initialIds)
-  const [compareModels,  setCompareModels]  = useState<Model[]>(initialCompare)
-  const [copied,         setCopied]         = useState(false)
+function buildCompareUrl(slugs: string[], useCase: string | null): string {
+  const params = new URLSearchParams({ models: slugs.join(",") })
+  if (useCase) params.set("use_case", useCase)
+  return `${API_BASE}/v1/compare?${params.toString()}`
+}
 
-  const updateUrl = useCallback((ids: string[]) => {
-    const params = new URLSearchParams(searchParams.toString())
-    if (ids.length > 0) {
-      params.set("models", ids.join(","))
-    } else {
-      params.delete("models")
+function buildHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`
+  return headers
+}
+
+export default function CompareClient() {
+  const {
+    useCase,
+    filters,
+    selectedModels,
+    setUseCase,
+    setFilters,
+    toggleModel,
+    setSelectedModels,
+  } = useCompareState()
+
+  const [recommendations, setRecommendations] = useState<RecommendedModel[]>([])
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [compareData, setCompareData] = useState<CompareModel[] | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const comparePanelRef = useRef<HTMLDivElement>(null)
+
+  // Fetch recommendations when useCase or filters change.
+  const fetchRecommendations = useCallback(async (uc: string, f: CompareFilters) => {
+    setLoading(true)
+    try {
+      const res = await fetch(buildRecommendUrl(uc, f), { headers: buildHeaders() })
+      if (!res.ok) throw new Error(`API error ${res.status}`)
+      const json = await res.json()
+      const envelope = json.data as { items?: RecommendedModel[]; warnings?: string[] } | null
+      setRecommendations(envelope?.items ?? [])
+      setWarnings(envelope?.warnings ?? [])
+    } catch {
+      setRecommendations([])
+      setWarnings([])
+    } finally {
+      setLoading(false)
     }
-    router.push(`?${params.toString()}`, { scroll: false })
-  }, [router, searchParams])
+  }, [])
 
-  function handleSelect(id: string) {
-    let next = [...selectedIds]
-    if (next.includes(id)) return
-    if (next.length >= 5) next = next.slice(1) // replace oldest
-    next = [...next, id]
-    setSelectedIds(next)
-    const picked = next.map((i) => allModels.find((m) => m.id === i)).filter(Boolean) as Model[]
-    setCompareModels(picked)
-    updateUrl(next)
-    if (next.length >= 2) trackCompareModels(next)
-  }
+  // Fetch compare data when 2 models are selected.
+  const fetchCompareData = useCallback(async (slugs: string[], uc: string | null) => {
+    setCompareLoading(true)
+    try {
+      const res = await fetch(buildCompareUrl(slugs, uc), { headers: buildHeaders() })
+      if (!res.ok) throw new Error(`API error ${res.status}`)
+      const json = await res.json()
+      const envelope = json.data as { items?: CompareModel[] } | null
+      setCompareData(envelope?.items ?? null)
+    } catch {
+      setCompareData(null)
+    } finally {
+      setCompareLoading(false)
+    }
+  }, [])
 
-  function handleRemove(id: string) {
-    const next = selectedIds.filter((i) => i !== id)
-    setSelectedIds(next)
-    setCompareModels(compareModels.filter((m) => m.id !== id))
-    updateUrl(next)
-  }
+  // Initial fetch and refetch on use-case change.
+  useEffect(() => {
+    if (useCase) {
+      fetchRecommendations(useCase, filters)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useCase])
 
-  function handleShare() {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      setCopied(true)
-      trackShareComparison(selectedIds)
-      setTimeout(() => setCopied(false), 2000)
-    }).catch(() => {})
-  }
+  // Debounced filter changes.
+  const handleFilterChange = useCallback(
+    (f: CompareFilters) => {
+      setFilters(f)
+      if (!useCase) return
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        fetchRecommendations(useCase, f)
+      }, 250)
+    },
+    [useCase, fetchRecommendations, setFilters],
+  )
+
+  // Clear debounce on unmount.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  // Fetch compare data when 2 models are selected.
+  useEffect(() => {
+    if (selectedModels.length === 2) {
+      fetchCompareData(selectedModels, useCase)
+    } else {
+      setCompareData(null)
+    }
+  }, [selectedModels, useCase, fetchCompareData])
+
+  // Auto-scroll to compare panel when data arrives.
+  useEffect(() => {
+    if (compareData && compareData.length === 2 && comparePanelRef.current) {
+      comparePanelRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }, [compareData])
+
+  const handleSwap = useCallback(
+    (position: "a" | "b", newSlug: string) => {
+      const next = [...selectedModels]
+      if (position === "a") next[0] = newSlug
+      else next[1] = newSlug
+      setSelectedModels(next)
+    },
+    [selectedModels, setSelectedModels],
+  )
+
+  const handleClear = useCallback(() => {
+    setSelectedModels([])
+    setCompareData(null)
+  }, [setSelectedModels])
 
   return (
     <div>
-      {/* Header */}
-      <div
-        className="animate-wireframe-fade"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "12px",
-          marginBottom: "24px",
-          animationDelay: "1.2s",
-        }}
-      >
-        <div>
-          <span
-            className="font-orbitron text-xs tracking-widest"
-            style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-          >
-            COMPARE
-          </span>
-          <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
-            Compare Models
-          </h1>
-          <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
-            Select up to 5 models for side-by-side comparison
-          </p>
-        </div>
-
-        {compareModels.length >= 2 && (
-          <button
-            onClick={handleShare}
-            className="font-outfit text-sm"
-            style={{
-              padding: "8px 16px",
-              border: "1px solid var(--border)",
-              backgroundColor: "var(--surface)",
-              color: copied ? "var(--green)" : "var(--muted)",
-              cursor: "pointer",
-              transition: "color 0.2s",
-            }}
-          >
-            {copied ? "✓ Copied!" : "Share ↗"}
-          </button>
-        )}
+      {/* Page header */}
+      <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.2s" }}>
+        <span
+          className="font-orbitron text-xs tracking-widest"
+          style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
+        >
+          COMPARE
+        </span>
+        <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
+          Compare AI Models
+        </h1>
+        <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
+          Choose a use case, explore top-ranked models, then select two to compare side by side.
+        </p>
       </div>
 
-      {/* Picker */}
-      <div
-        className="animate-draw-border-box"
-        style={{
-          padding: "16px",
-          backgroundColor: "var(--surfaceLo)",
-          marginBottom: "24px",
-          "--draw-delay": "0.6s"
-        } as React.CSSProperties}
-      >
-        <div className="animate-wireframe-fade" style={{ animationDelay: "1.3s" }}>
-          <ModelPicker
-            models={allModels}
-            selected={selectedIds}
-            onSelect={handleSelect}
-            onRemove={handleRemove}
-            max={5}
-            placeholder="Search and add models to compare…"
+      {/* 1. UseCasePicker — always visible */}
+      <div className="mb-6 animate-wireframe-fade" style={{ animationDelay: "1.4s" }}>
+        <div className="text-xs uppercase tracking-wide mb-3 font-semibold" style={{ color: "var(--muted)" }}>
+          What are you building?
+        </div>
+        <UseCasePicker selected={useCase} onChange={setUseCase} />
+      </div>
+
+      {/* 2. FilterControls — visible when useCase selected */}
+      {useCase && (
+        <div className="animate-wireframe-fade">
+          <FilterControls value={filters} onChange={handleFilterChange} />
+        </div>
+      )}
+
+      {/* 3. ResultsPanel — visible when useCase selected */}
+      {useCase && (
+        <div className="animate-wireframe-fade">
+          <ResultsPanel
+            useCase={useCase}
+            models={recommendations}
+            loading={loading}
+            warnings={warnings}
+            selectedModels={selectedModels}
+            onSelect={toggleModel}
           />
         </div>
-      </div>
+      )}
 
-      {/* Table or empty state */}
-      <div>
-        {compareModels.length < 2 ? (
-          <EmptyState padding="80px 24px">Select at least 2 models to compare.</EmptyState>
-        ) : (
-          <CompareTable models={compareModels} onRemove={handleRemove} />
-        )}
-      </div>
+      {/* 4. ComparePanel — visible when 2 models selected */}
+      {selectedModels.length === 2 && (
+        <div ref={comparePanelRef}>
+          {compareLoading || !compareData || compareData.length < 2 ? (
+            <ComparePanel
+              modelA={{} as CompareModel}
+              modelB={{} as CompareModel}
+              useCase={useCase}
+              availableModels={recommendations}
+              onSwap={handleSwap}
+              onClear={handleClear}
+              loading={true}
+            />
+          ) : (
+            <ComparePanel
+              modelA={compareData[0]}
+              modelB={compareData[1]}
+              useCase={useCase}
+              availableModels={recommendations}
+              onSwap={handleSwap}
+              onClear={handleClear}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }
