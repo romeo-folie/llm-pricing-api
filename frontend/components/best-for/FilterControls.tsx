@@ -54,7 +54,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
         <label className="block text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: "var(--muted)" }}>
           Priority
         </label>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap" role="group" aria-label="Priority selection">
           {PRIORITIES.map((p) => (
             <button
               key={p.key}

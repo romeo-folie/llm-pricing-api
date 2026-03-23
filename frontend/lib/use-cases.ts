@@ -12,6 +12,7 @@ export const USE_CASES: UseCase[] = [
   { slug: "writing", label: "Writing", icon: "✍️", description: "Copywriting, content creation, and instruction following." },
   { slug: "video", label: "Video", icon: "🎬", description: "Video understanding, transcription, and multimodal analysis." },
   { slug: "agentic", label: "Agentic", icon: "🤖", description: "Autonomous agents, tool use, and function calling workflows." },
+  { slug: "general", label: "General", icon: "💬", description: "General-purpose chat, Q&A, and everyday tasks." },
 ]
 
 export const USE_CASE_SLUGS = USE_CASES.map((uc) => uc.slug)

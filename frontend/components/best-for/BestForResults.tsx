@@ -17,6 +17,8 @@ interface BestForResultsProps {
   useCase: string
   models: RecommendedModel[]
   loading: boolean
+  /** Result-level warnings from the API envelope (e.g. limited benchmark coverage). */
+  warnings?: string[]
 }
 
 function formatPricePerM(p: number): string {
@@ -133,7 +135,7 @@ function TopPickCard({ model }: { model: RecommendedModel }) {
             <span
               key={i}
               className="text-xs px-2 py-0.5 border"
-              style={{ borderColor: "#B45309", color: "#B45309", backgroundColor: "#FEF3C7" }}
+              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
             >
               ⚠ {w}
             </span>
@@ -171,7 +173,7 @@ function AlternativeCard({ model }: { model: RecommendedModel }) {
   )
 }
 
-export default function BestForResults({ useCase, models, loading }: BestForResultsProps) {
+export default function BestForResults({ useCase, models, loading, warnings = [] }: BestForResultsProps) {
   if (loading) {
     return (
       <div>
@@ -200,6 +202,21 @@ export default function BestForResults({ useCase, models, loading }: BestForResu
 
   return (
     <div>
+      {/* Result-level warnings from the API envelope (e.g. limited benchmark coverage).
+          Shown once at the top rather than duplicated inside every model card. */}
+      {warnings.length > 0 && (
+        <div className="mb-4 flex flex-col gap-1">
+          {warnings.map((w, i) => (
+            <div
+              key={i}
+              className="text-xs px-3 py-2 border"
+              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+            >
+              ⚠ {w}
+            </div>
+          ))}
+        </div>
+      )}
       <TopPickCard model={topPick} />
       {alternatives.length > 0 && (
         <div>
