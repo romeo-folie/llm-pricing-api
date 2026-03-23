@@ -15,14 +15,14 @@ var DimensionBenchmarks = map[string]map[string]float64{
 	"quality":           {"MMLU-Pro": 1.0, "GPQA Diamond": 1.0},
 	"reasoning":         {"GPQA Diamond": 1.0, "MATH-500": 1.0, "AIME 2025": 1.0},
 	"coding":            {"SWE-bench Verified": 1.0, "LiveCodeBench": 1.0},
-	"tool_use":          {"BFCL V4": 1.0},
-	"agentic":           {"SWE-bench Verified": 0.5, "BFCL V4": 0.5},
+	"tool_use":          {"BFCL V3": 1.0},
+	"agentic":           {"SWE-bench Verified": 0.5, "BFCL V3": 0.5},
 	"finance":           {"CFA": 1.0},
 	"writing":           {"WritingBench": 1.0},
 	"video":             {"Video-MME": 1.0},
 	"instruction":       {"IFEval": 1.0},
 	"preference":        {"Chatbot Arena": 1.0},
-	"structured_output": {"BFCL V4": 0.5, "IFEval": 0.5},
+	"structured_output": {"BFCL V3": 0.5, "IFEval": 0.5},
 }
 
 // StalenessThresholdDays is the number of days after which a benchmark score

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS benchmarks (
 INSERT INTO benchmarks (name, dimension, source_url, description) VALUES
   ('MMLU-Pro',           'quality',           'https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro',       'Massive Multitask Language Understanding Pro — harder MMLU variant'),
   ('GPQA Diamond',       'reasoning',         'https://arxiv.org/abs/2311.12022',                         'Graduate-level science questions from domain experts'),
-  ('BFCL V4',            'tool_use',          'https://gorilla.cs.berkeley.edu/leaderboard.html',         'Berkeley Function Calling Leaderboard v4'),
+  ('BFCL V3',            'tool_use',          'https://gorilla.cs.berkeley.edu/leaderboard.html',         'Berkeley Function Calling Leaderboard v3'),
   ('SWE-bench Verified', 'coding',            'https://www.swebench.com/',                                'Real GitHub issue resolution benchmark'),
   ('LiveCodeBench',      'coding',            'https://livecodebench.github.io/',                         'Contamination-free coding benchmark from live contests'),
   ('CFA',                'finance',           'https://www.cfainstitute.org/',                             'CFA exam questions assessing financial reasoning'),

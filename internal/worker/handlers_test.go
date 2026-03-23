@@ -81,9 +81,11 @@ func (s *mockReconcilerStore) ListActiveWebhooks(_ context.Context) ([]reconcile
 }
 
 // newTestHandlers builds a Handlers backed by mock dependencies.
+// The db parameter is nil because pricing pipeline tests do not need it;
+// benchmark handler tests provide their own pool.
 func newTestHandlers(store WorkerStore) *Handlers {
 	rec := reconciler.NewWithStore(&mockReconcilerStore{})
-	return NewHandlers(store, rec)
+	return NewHandlers(store, rec, nil)
 }
 
 // TestRunPipeline_HappyPath verifies a handler completes successfully when the

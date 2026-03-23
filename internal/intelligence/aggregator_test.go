@@ -32,10 +32,10 @@ func TestAggregate_SingleBenchmark_LowConfidence(t *testing.T) {
 	now := time.Now()
 	recent := now.Add(-24 * time.Hour)
 
-	// tool_use only has one benchmark (BFCL V4), so even with it present
+	// tool_use only has one benchmark (BFCL V3), so even with it present
 	// confidence should be "high" since count == len(weights).
 	scores := map[string]scoreEntry{
-		"BFCL V4": {Normalized: 90, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 90, EvaluatedAt: recent},
 	}
 
 	result := Aggregate("tool_use", DimensionBenchmarks["tool_use"], scores, now)
@@ -49,7 +49,7 @@ func TestAggregate_SingleBenchmark_LowConfidence(t *testing.T) {
 	// For reasoning (3 benchmarks), providing only 1 → confidence = "low".
 	result = Aggregate("reasoning", DimensionBenchmarks["reasoning"], scores, now)
 	if result != nil {
-		t.Error("expected nil result for reasoning with only BFCL V4 data")
+		t.Error("expected nil result for reasoning with only BFCL V3 data")
 	}
 
 	// Provide one reasoning benchmark.
@@ -161,9 +161,9 @@ func TestAggregate_UnequalWeights(t *testing.T) {
 	now := time.Now()
 	recent := now.Add(-24 * time.Hour)
 
-	// structured_output: BFCL V4 (0.5) + IFEval (0.5)
+	// structured_output: BFCL V3 (0.5) + IFEval (0.5)
 	scores := map[string]scoreEntry{
-		"BFCL V4": {Normalized: 80, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 80, EvaluatedAt: recent},
 		"IFEval":  {Normalized: 60, EvaluatedAt: recent},
 	}
 
@@ -181,10 +181,10 @@ func TestAggregate_AsymmetricWeights(t *testing.T) {
 	now := time.Now()
 	recent := now.Add(-24 * time.Hour)
 
-	// agentic: SWE-bench Verified (0.5) + BFCL V4 (0.5)
+	// agentic: SWE-bench Verified (0.5) + BFCL V3 (0.5)
 	// Only one present → score = that benchmark's value.
 	scores := map[string]scoreEntry{
-		"BFCL V4": {Normalized: 90, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 90, EvaluatedAt: recent},
 	}
 
 	result := Aggregate("agentic", DimensionBenchmarks["agentic"], scores, now)

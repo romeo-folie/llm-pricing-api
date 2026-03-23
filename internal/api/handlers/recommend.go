@@ -40,6 +40,7 @@ var taskModalityMap = map[string]string{
 type recommendModelResponse struct {
 	modelResponse
 	Scores          map[string]float64               `json:"scores,omitempty"`
+	Freshness       map[string]string                `json:"freshness,omitempty"`
 	Rationale       string                           `json:"rationale,omitempty"`
 	BenchmarksCited []intelligence.BenchmarkCitation `json:"benchmarks_cited,omitempty"`
 	Fallback        bool                             `json:"fallback,omitempty"`
@@ -152,22 +153,32 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 	}
 
 	type sm struct {
-		row    ModelRow
-		cs     float64
-		scores map[string]float64
-		caps   []intelligence.CapabilityScore
+		row       ModelRow
+		cs        float64
+		scores    map[string]float64
+		freshness map[string]string
+		caps      []intelligence.CapabilityScore
 	}
 	scored := make([]sm, len(models))
 	for i, m := range models {
 		caps := capMap[m.ID]
 		cs := intelligence.ScoreModel(m.ID, uc, pri, caps)
 		ds := make(map[string]float64)
+		// Use nil instead of empty map so omitempty correctly omits the field when
+		// no capability scores have freshness data (empty map serializes as {}).
+		var fs map[string]string
 		for _, cap := range caps {
 			if cap.Score != nil {
 				ds[cap.Dimension] = *cap.Score
 			}
+			if cap.Freshness != "" {
+				if fs == nil {
+					fs = make(map[string]string)
+				}
+				fs[cap.Dimension] = cap.Freshness
+			}
 		}
-		scored[i] = sm{row: m, cs: cs, scores: ds, caps: caps}
+		scored[i] = sm{row: m, cs: cs, scores: ds, freshness: fs, caps: caps}
 	}
 
 	const epsilon = 1e-9
@@ -239,6 +250,7 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 		items[i] = recommendModelResponse{
 			modelResponse: modelToResponse(s.row),
 			Scores:        s.scores,
+			Freshness:     s.freshness,
 			Rationale:     rat,
 			Fallback:      s.cs == 0,
 		}
