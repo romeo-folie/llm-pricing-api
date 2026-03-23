@@ -56,30 +56,42 @@ export default function UseCasePicker({ selected, onChange }: UseCasePickerProps
             className="text-left p-4 border transition-colors"
             style={{
               borderColor: isSelected ? "var(--accent)" : "var(--border)",
-              borderWidth: isSelected ? "2px" : "1px",
-              backgroundColor: isSelected ? "var(--accent-tint, #E1F5EE)" : "var(--bg)",
+              borderWidth: "1px",
+              borderRadius: 0,
+              backgroundColor: isSelected ? "var(--accentLt)" : "var(--bg)",
               cursor: "pointer",
-              padding: isSelected ? "15px" : "16px", // compensate for 2px border
               transitionProperty: "border-color, background-color",
               transitionDuration: "150ms",
               transitionTimingFunction: "ease",
             }}
+            onMouseEnter={(e) => {
+              if (!isSelected) {
+                e.currentTarget.style.backgroundColor = "var(--surface)"
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = isSelected
+                ? "var(--accentLt)"
+                : "var(--bg)"
+            }}
           >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-lg" aria-hidden="true">{uc.icon}</span>
-              <span
-                className="font-orbitron text-sm font-semibold tracking-wide"
-                style={{ color: "var(--ink)" }}
-              >
-                {uc.label}
-              </span>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span
+                  className="font-outfit text-sm font-semibold tracking-wide block mb-1"
+                  style={{ color: "var(--ink)" }}
+                >
+                  {uc.label}
+                </span>
+                <p
+                  className="font-outfit text-xs"
+                  style={{ color: "var(--muted)", lineHeight: "1.4" }}
+                >
+                  {uc.description}
+                </p>
+              </div>
+              <span className="text-lg flex-shrink-0" aria-hidden="true">{uc.icon}</span>
             </div>
-            <p
-              className="font-outfit text-xs"
-              style={{ color: "var(--muted)", lineHeight: "1.4" }}
-            >
-              {uc.description}
-            </p>
           </button>
         )
       })}

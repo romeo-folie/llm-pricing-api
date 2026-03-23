@@ -44,7 +44,7 @@ function ScoreBar({ label, value }: { label: string; value: number | undefined }
           <div className="flex-1 h-2 border overflow-hidden" style={{ borderColor: "var(--border)", backgroundColor: "var(--surfaceLo)" }}>
             <div
               className="h-full transition-all duration-500"
-              style={{ width: `${value}%`, backgroundColor: "var(--ink)", opacity: 0.7 }}
+              style={{ width: `${value}%`, backgroundColor: "var(--accent)" }}
             />
           </div>
           <span className="w-10 text-right tabular-nums" style={{ color: "var(--ink)" }}>
@@ -62,10 +62,10 @@ function SkeletonCard({ compact = false }: { compact?: boolean }) {
       className={`border p-5 animate-pulse ${compact ? "" : "mb-6"}`}
       style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
     >
-      <div className="h-4 w-24 mb-3 rounded" style={{ backgroundColor: "var(--border)" }} />
-      <div className="h-6 w-48 mb-2 rounded" style={{ backgroundColor: "var(--border)" }} />
-      <div className="h-3 w-full mb-1 rounded" style={{ backgroundColor: "var(--surfaceLo)" }} />
-      <div className="h-3 w-3/4 rounded" style={{ backgroundColor: "var(--surfaceLo)" }} />
+      <div className="h-4 w-24 mb-3" style={{ backgroundColor: "var(--border)" }} />
+      <div className="h-6 w-48 mb-2" style={{ backgroundColor: "var(--border)" }} />
+      <div className="h-3 w-full mb-1" style={{ backgroundColor: "var(--surfaceLo)" }} />
+      <div className="h-3 w-3/4" style={{ backgroundColor: "var(--surfaceLo)" }} />
     </div>
   )
 }
@@ -89,13 +89,14 @@ function SelectionCheckbox({
       aria-checked={checked}
       aria-label={`Select ${name} for comparison`}
       onClick={onClick}
-      className="w-5 h-5 border-2 flex items-center justify-center transition-opacity"
+      className="w-5 h-5 border flex items-center justify-center transition-opacity"
       style={{
         opacity: checked || parentHovered ? 1 : 0,
         borderColor: checked ? "var(--accent)" : "var(--border)",
         backgroundColor: checked ? "var(--accent)" : "transparent",
         cursor: "pointer",
         flexShrink: 0,
+        borderRadius: 0,
       }}
     >
       {checked && (
@@ -104,6 +105,21 @@ function SelectionCheckbox({
         </svg>
       )}
     </button>
+  )
+}
+
+function WarningBadge({ text }: { text: string }) {
+  return (
+    <span
+      className="text-xs px-2 py-0.5 border"
+      style={{
+        borderColor: "var(--warningBorder)",
+        color: "var(--warningText)",
+        backgroundColor: "var(--warningBg)",
+      }}
+    >
+      {text}
+    </span>
   )
 }
 
@@ -123,10 +139,10 @@ function TopPickCard({
 
   return (
     <div
-      className="border-2 p-6 mb-6 group relative"
+      className="border p-6 mb-6 group relative"
       style={{
-        borderColor: isSelected ? "var(--accent)" : "var(--ink)",
-        borderLeftWidth: isSelected ? "4px" : "2px",
+        borderColor: isSelected ? "var(--accent)" : "var(--border)",
+        borderLeftWidth: isSelected ? "3px" : "1px",
         backgroundColor: "var(--surface)",
       }}
     >
@@ -144,27 +160,27 @@ function TopPickCard({
 
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2 pr-8">
         <span
-          className="text-xs font-semibold px-2 py-0.5 border"
-          style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+          className="font-orbitron text-xs font-semibold px-2 py-0.5 border"
+          style={{ borderColor: "var(--accent)", color: "var(--accent)", letterSpacing: "0.06em" }}
         >
           Top Pick
         </span>
-        <span className="text-xs" style={{ color: "var(--muted)" }}>
+        <span className="font-orbitron text-xs" style={{ color: "var(--muted)" }}>
           {formatPricePerM(model.price_input)} input
         </span>
       </div>
 
       <div className="mb-1">
-        <span className="text-xs uppercase tracking-wide mr-2" style={{ color: "var(--muted)" }}>
+        <span className="font-outfit text-xs uppercase tracking-wide mr-2" style={{ color: "var(--muted)" }}>
           {model.provider}
         </span>
-        <h2 className="font-orbitron text-lg font-bold inline" style={{ color: "var(--ink)" }}>
+        <h2 className="font-outfit text-lg font-bold inline" style={{ color: "var(--ink)" }}>
           {model.name}
         </h2>
       </div>
 
       {composite !== null ? (
-        <div className="text-2xl font-mono font-bold mb-3" style={{ color: "var(--ink)" }}>
+        <div className="font-orbitron text-2xl font-bold mb-3" style={{ color: "var(--ink)" }}>
           {composite.toFixed(1)}
           <span className="text-sm font-normal ml-1" style={{ color: "var(--muted)" }}>/ 100</span>
         </div>
@@ -173,7 +189,7 @@ function TopPickCard({
       )}
 
       {model.rationale && (
-        <p className="text-sm mb-4" style={{ color: "var(--ink)" }}>
+        <p className="font-outfit text-sm mb-4" style={{ color: "var(--ink)" }}>
           {model.rationale}
         </p>
       )}
@@ -192,13 +208,7 @@ function TopPickCard({
       {model.warnings && model.warnings.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {model.warnings.map((w, i) => (
-            <span
-              key={i}
-              className="text-xs px-2 py-0.5 border"
-              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
-            >
-              {w}
-            </span>
+            <WarningBadge key={i} text={w} />
           ))}
         </div>
       )}
@@ -221,13 +231,19 @@ function AlternativeCard({
 
   return (
     <div
-      className="border p-4 flex flex-col gap-1 group relative cursor-pointer"
+      className="border p-4 flex flex-col gap-1 group relative cursor-pointer transition-colors"
       style={{
         borderColor: isSelected ? "var(--accent)" : "var(--border)",
         borderLeftWidth: isSelected ? "3px" : "1px",
         backgroundColor: "var(--surface)",
       }}
       onClick={() => onSelect(model.slug)}
+      onMouseEnter={(e) => {
+        if (!isSelected) e.currentTarget.style.backgroundColor = "var(--surfaceHi)"
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface)"
+      }}
     >
       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"
         style={{ opacity: isSelected ? 1 : undefined }}
@@ -241,8 +257,8 @@ function AlternativeCard({
         />
       </div>
 
-      <div className="text-xs pr-6" style={{ color: "var(--muted)" }}>{model.provider}</div>
-      <div className="font-semibold text-sm" style={{ color: "var(--ink)" }}>{model.name}</div>
+      <div className="font-outfit text-xs pr-6" style={{ color: "var(--muted)" }}>{model.provider}</div>
+      <div className="font-outfit font-semibold text-sm" style={{ color: "var(--ink)" }}>{model.name}</div>
       {topDim ? (
         <div className="text-xs" style={{ color: "var(--muted)" }}>
           {topDim[0].replace(/_/g, " ")}: <span style={{ color: "var(--ink)" }}>{topDim[1].toFixed(1)}</span>
@@ -250,7 +266,7 @@ function AlternativeCard({
       ) : (
         <div className="text-xs italic" style={{ color: "var(--muted)" }}>No capability data</div>
       )}
-      <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+      <div className="font-orbitron text-xs mt-1" style={{ color: "var(--muted)" }}>
         {formatPricePerM(model.price_input)} input
       </div>
     </div>
@@ -299,7 +315,11 @@ export default function ResultsPanel({
             <div
               key={i}
               className="text-xs px-3 py-2 border"
-              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+              style={{
+                borderColor: "var(--warningBorder)",
+                color: "var(--warningText)",
+                backgroundColor: "var(--warningBg)",
+              }}
             >
               {w}
             </div>
@@ -338,10 +358,11 @@ export default function ResultsPanel({
           style={{
             backgroundColor: "var(--surface)",
             borderColor: "var(--border)",
+            boxShadow: "0 -2px 8px rgba(0, 0, 0, 0.08)",
           }}
         >
           <div className="mx-auto max-w-7xl flex items-center justify-between">
-            <span className="text-sm" style={{ color: "var(--ink)" }}>
+            <span className="font-outfit text-sm" style={{ color: "var(--ink)" }}>
               {selectedModels.length} of 2 selected
             </span>
             <button
@@ -352,6 +373,7 @@ export default function ResultsPanel({
                 color: selectedModels.length >= 2 ? "white" : "var(--muted)",
                 cursor: selectedModels.length >= 2 ? "pointer" : "not-allowed",
                 opacity: selectedModels.length >= 2 ? 1 : 0.6,
+                borderRadius: 0,
               }}
               onClick={() => {
                 const panel = document.getElementById("compare-panel")

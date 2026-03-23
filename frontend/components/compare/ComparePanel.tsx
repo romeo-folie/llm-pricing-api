@@ -67,17 +67,17 @@ function SwapPicker({
   return (
     <div
       ref={ref}
-      className="absolute z-50 border shadow-lg max-h-48 overflow-y-auto w-56"
-      style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      className="absolute z-50 border max-h-48 overflow-y-auto w-56"
+      style={{ backgroundColor: "var(--bg)", borderColor: "var(--borderDk)" }}
     >
       {availableModels
         .filter((m) => m.slug !== currentSlug)
         .map((m) => (
           <button
             key={m.slug}
-            className="block w-full text-left px-3 py-2 text-sm transition-colors"
-            style={{ color: "var(--ink)" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--surface)" }}
+            className="block w-full text-left px-3 py-2 text-sm font-outfit transition-colors"
+            style={{ color: "var(--ink)", borderBottom: "1px solid var(--border)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--surfaceHi)" }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "" }}
             onClick={() => { onSelect(m.slug); onClose() }}
           >
@@ -111,10 +111,10 @@ function ModelColumn({
     <div className="flex-1 min-w-0">
       {/* Model header */}
       <div className="mb-4">
-        <div className="text-xs uppercase tracking-wide mb-1" style={{ color: "var(--muted)" }}>
+        <div className="font-outfit text-xs uppercase tracking-wide mb-1" style={{ color: "var(--muted)" }}>
           {model.provider}
         </div>
-        <div className="font-orbitron text-base font-bold mb-1 truncate" style={{ color: "var(--ink)" }}>
+        <div className="font-outfit text-base font-bold mb-1 truncate" style={{ color: "var(--ink)" }}>
           {model.name}
         </div>
         {composite !== null && (
@@ -129,19 +129,19 @@ function ModelColumn({
       <div className="space-y-2 mb-4">
         <div>
           <div className="text-xs uppercase tracking-wide" style={{ color: "var(--muted)" }}>Input</div>
-          <div className="text-sm font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
+          <div className="font-orbitron text-sm font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
             {formatPricePerM(model.price_input)}
           </div>
         </div>
         <div>
           <div className="text-xs uppercase tracking-wide" style={{ color: "var(--muted)" }}>Output</div>
-          <div className="text-sm font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
+          <div className="font-orbitron text-sm font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
             {formatPricePerM(model.price_output)}
           </div>
         </div>
         <div>
           <div className="text-xs uppercase tracking-wide" style={{ color: "var(--muted)" }}>Context</div>
-          <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+          <div className="font-orbitron text-sm font-semibold" style={{ color: "var(--ink)" }}>
             {formatContext(model.context_window)}
           </div>
         </div>
@@ -163,7 +163,11 @@ function ModelColumn({
             <span
               key={i}
               className="text-xs px-2 py-0.5 border"
-              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+              style={{
+                borderColor: "var(--warningBorder)",
+                color: "var(--warningText)",
+                backgroundColor: "var(--warningBg)",
+              }}
             >
               {w}
             </span>
@@ -198,14 +202,14 @@ function CompareSkeleton() {
     <div className="grid grid-cols-2 gap-6 animate-pulse">
       {[0, 1].map((i) => (
         <div key={i}>
-          <div className="h-4 w-20 mb-2 rounded" style={{ backgroundColor: "var(--border)" }} />
-          <div className="h-6 w-40 mb-2 rounded" style={{ backgroundColor: "var(--border)" }} />
-          <div className="h-8 w-16 mb-4 rounded" style={{ backgroundColor: "var(--border)" }} />
+          <div className="h-4 w-20 mb-2" style={{ backgroundColor: "var(--border)" }} />
+          <div className="h-6 w-40 mb-2" style={{ backgroundColor: "var(--border)" }} />
+          <div className="h-8 w-16 mb-4" style={{ backgroundColor: "var(--border)" }} />
           <div className="space-y-3">
             {[0, 1, 2].map((j) => (
               <div key={j}>
-                <div className="h-3 w-12 mb-1 rounded" style={{ backgroundColor: "var(--surfaceLo)" }} />
-                <div className="h-4 w-24 rounded" style={{ backgroundColor: "var(--border)" }} />
+                <div className="h-3 w-12 mb-1" style={{ backgroundColor: "var(--surfaceLo)" }} />
+                <div className="h-4 w-24" style={{ backgroundColor: "var(--border)" }} />
               </div>
             ))}
           </div>
@@ -236,18 +240,17 @@ export default function ComparePanel({
   return (
     <div
       id="compare-panel"
-      className="border-t-2 mt-8 pt-6 animate-wireframe-fade"
+      className="border-t mt-8 pt-6 animate-wireframe-fade"
       style={{
         borderColor: "var(--accent)",
+        borderTopWidth: "2px",
         backgroundColor: "var(--surface)",
         padding: "24px",
-        marginLeft: "-16px",
-        marginRight: "-16px",
       }}
     >
       {/* Panel header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
-        <h3 className="font-orbitron text-sm font-semibold tracking-wide" style={{ color: "var(--ink)" }}>
+        <h3 className="font-orbitron text-sm font-semibold tracking-wide" style={{ color: "var(--ink)", letterSpacing: "0.06em" }}>
           COMPARING
         </h3>
         <div className="flex items-center gap-3">
@@ -264,8 +267,8 @@ export default function ComparePanel({
           </button>
           <button
             onClick={onClear}
-            className="text-xs px-2 py-1 transition-colors"
-            style={{ color: "var(--muted)", cursor: "pointer" }}
+            className="text-xs border px-2 py-1 transition-colors"
+            style={{ borderColor: "var(--border)", color: "var(--muted)", cursor: "pointer" }}
             aria-label="Clear comparison"
           >
             Clear &#x2715;
@@ -307,10 +310,10 @@ export default function ComparePanel({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {modelA?.rationale && (
-                  <p className="text-sm" style={{ color: "var(--ink)" }}>{modelA.rationale}</p>
+                  <p className="font-outfit text-sm" style={{ color: "var(--ink)" }}>{modelA.rationale}</p>
                 )}
                 {modelB?.rationale && (
-                  <p className="text-sm" style={{ color: "var(--ink)" }}>{modelB.rationale}</p>
+                  <p className="font-outfit text-sm" style={{ color: "var(--ink)" }}>{modelB.rationale}</p>
                 )}
               </div>
             </div>

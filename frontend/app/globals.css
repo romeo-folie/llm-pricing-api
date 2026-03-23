@@ -77,6 +77,11 @@
   --blueLt:      #DBEAFE;
   --purple:      #7C3AED;
   --purpleLt:    #EDE9FE;
+
+  /* Warning (used by compare/results badges) */
+  --warningBorder: #D97706;
+  --warningText:   #92400E;
+  --warningBg:     #FEF3C7;
 }
 
 /* ─── Dark Mode — system preference only ─────────────────────────────────── */
@@ -130,6 +135,11 @@
 
     /* Hero diagram labels — match provider name text (--ink) for consistency */
     --hero-label:            #F0EDE9;
+
+    /* Warning — dark-mode-aware */
+    --warningBorder: #FBBF24;
+    --warningText:   #FDE68A;
+    --warningBg:     rgba(251, 191, 36, 0.12);
   }
 
 

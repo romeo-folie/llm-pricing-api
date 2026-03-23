@@ -40,7 +40,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
   return (
     <div
       className="border p-4 mb-6 flex flex-col gap-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--bg)" }}
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
     >
       {/* Priority toggle */}
       <div>
@@ -52,12 +52,15 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
             <button
               key={p.key}
               onClick={() => onChange({ ...value, priority: p.key })}
-              className="px-3 py-1.5 text-sm border transition-colors"
-              style={
-                value.priority === p.key
-                  ? { borderColor: "var(--ink)", backgroundColor: "var(--ink)", color: "var(--bg)" }
-                  : { borderColor: "var(--border)", color: "var(--muted)" }
-              }
+              className="font-orbitron px-3 py-1.5 text-xs border transition-colors"
+              style={{
+                borderColor: value.priority === p.key ? "var(--accent)" : "var(--border)",
+                backgroundColor: value.priority === p.key ? "var(--accent)" : "var(--bg)",
+                color: value.priority === p.key ? "white" : "var(--muted)",
+                cursor: "pointer",
+                letterSpacing: "0.05em",
+                borderRadius: 0,
+              }}
               aria-pressed={value.priority === p.key}
             >
               {p.label}
@@ -95,7 +98,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
             })
           }}
           className="w-full"
-          style={{ accentColor: "var(--ink)" }}
+          style={{ accentColor: "var(--accent)" }}
           aria-label="Maximum price per 1M input tokens"
         />
         <div className="flex justify-between text-xs mt-1" style={{ color: "var(--muted)" }}>
@@ -118,8 +121,9 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
             borderColor: "var(--border)",
             backgroundColor: "var(--bg)",
             color: "var(--ink)",
+            borderRadius: 0,
             paddingRight: "32px",
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2378716C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
             backgroundRepeat: "no-repeat",
             backgroundPosition: "right 10px center",
           }}
@@ -140,7 +144,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
             checked={value.requiresTools}
             onChange={(e) => onChange({ ...value, requiresTools: e.target.checked })}
             className="w-4 h-4"
-            style={{ accentColor: "var(--ink)" }}
+            style={{ accentColor: "var(--accent)" }}
           />
           Tool calling
         </label>
@@ -150,7 +154,7 @@ export default function FilterControls({ value, onChange }: FilterControlsProps)
             checked={value.requiresStructuredOutput}
             onChange={(e) => onChange({ ...value, requiresStructuredOutput: e.target.checked })}
             className="w-4 h-4"
-            style={{ accentColor: "var(--ink)" }}
+            style={{ accentColor: "var(--accent)" }}
           />
           Structured output
         </label>
