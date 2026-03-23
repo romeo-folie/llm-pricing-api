@@ -12,6 +12,11 @@ import (
 	"llm-pricing-api/internal/intelligence"
 )
 
+// minCapabilityScore is the minimum capability score (0–100) a model must have
+// for a capability dimension to be considered "supported". Used for tool_use
+// and structured_output filter gates.
+const minCapabilityScore = 50
+
 // taskModalityMap maps ?task= hint values to modality filter values.
 var taskModalityMap = map[string]string{
 	"summarisation":  "text",
@@ -167,7 +172,7 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 	if filter.RequiresTools {
 		var f []sm
 		for _, s := range scored {
-			if s.scores["tool_use"] >= 50 {
+			if s.scores["tool_use"] >= minCapabilityScore {
 				f = append(f, s)
 			}
 		}
@@ -180,7 +185,7 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 	if filter.RequiresStructuredOutput {
 		var f []sm
 		for _, s := range scored {
-			if s.scores["structured_output"] >= 50 {
+			if s.scores["structured_output"] >= minCapabilityScore {
 				f = append(f, s)
 			}
 		}

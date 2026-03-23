@@ -157,3 +157,66 @@ func TestPrimaryDimensions(t *testing.T) {
 		t.Errorf("unknown use case should fall back to general dims")
 	}
 }
+
+func TestDimensionWeights_PrimaryHigherThanSecondary(t *testing.T) {
+	// For any use case + priority, primary dimension weights must be higher
+	// than secondary dimension weights.
+	cases := []struct {
+		uc  UseCase
+		pri Priority
+	}{
+		{UseCaseCoding, PriorityQuality},
+		{UseCaseFinance, PriorityCost},
+		{UseCaseAgentic, PriorityBalanced},
+		{UseCaseWriting, PrioritySpeed},
+		{UseCaseReasoning, PriorityQuality},
+	}
+	for _, tc := range cases {
+		w := dimensionWeights(tc.uc, tc.pri)
+		primaryDims := PrimaryDimensions(tc.uc)
+		primarySet := map[string]bool{}
+		for _, d := range primaryDims {
+			primarySet[d] = true
+		}
+
+		var minPrimary, maxSecondary float64
+		minPrimary = 1e9
+		for dim, weight := range w {
+			if primarySet[dim] {
+				if weight < minPrimary {
+					minPrimary = weight
+				}
+			} else {
+				if weight > maxSecondary {
+					maxSecondary = weight
+				}
+			}
+		}
+		if maxSecondary > 0 && minPrimary <= maxSecondary {
+			t.Errorf("use_case=%s priority=%s: min primary weight (%.3f) should exceed max secondary (%.3f)",
+				tc.uc, tc.pri, minPrimary, maxSecondary)
+		}
+	}
+}
+
+func TestDimensionWeights_AllDimensionsCovered(t *testing.T) {
+	// dimensionWeights must return an entry for every DimensionBenchmarks key.
+	w := dimensionWeights(UseCaseCoding, PriorityBalanced)
+	for dim := range DimensionBenchmarks {
+		if _, ok := w[dim]; !ok {
+			t.Errorf("dimensionWeights missing entry for dimension %q", dim)
+		}
+	}
+}
+
+func TestDimensionWeights_QualityPriorityDoublesWeights(t *testing.T) {
+	// PriorityQuality should double primary weights relative to PriorityBalanced.
+	wBalanced := dimensionWeights(UseCaseCoding, PriorityBalanced)
+	wQuality := dimensionWeights(UseCaseCoding, PriorityQuality)
+	primaryDims := PrimaryDimensions(UseCaseCoding)
+	for _, dim := range primaryDims {
+		if wQuality[dim] != wBalanced[dim]*2.0 {
+			t.Errorf("dim %q: quality weight %.3f != balanced*2 (%.3f)", dim, wQuality[dim], wBalanced[dim]*2.0)
+		}
+	}
+}

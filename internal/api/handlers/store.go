@@ -1182,26 +1182,19 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 
 // GetCapabilityScoresForModels returns model_capability_scores for all given
 // model IDs in a single query, avoiding N+1 DB round-trips.
+// pgx natively encodes []int as a PostgreSQL integer array, so we pass it
+// directly as $1 — no need to build N individual placeholders.
 func (s *pgxStore) GetCapabilityScoresForModels(ctx context.Context, modelIDs []int) (map[int][]intelligence.CapabilityScore, error) {
 	if len(modelIDs) == 0 {
 		return map[int][]intelligence.CapabilityScore{}, nil
 	}
 
-	args := make([]any, len(modelIDs))
-	placeholders := make([]string, len(modelIDs))
-	for i, id := range modelIDs {
-		args[i] = id
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-	}
-
-	sql := fmt.Sprintf(`
+	rows, err := s.db.Query(ctx, `
 		SELECT model_id, dimension, score, confidence, benchmark_count, freshness, computed_at
 		FROM model_capability_scores
-		WHERE model_id = ANY(ARRAY[%s]::int[])
+		WHERE model_id = ANY($1)
 		ORDER BY model_id, dimension
-	`, joinStrings(placeholders))
-
-	rows, err := s.db.Query(ctx, sql, args...)
+	`, modelIDs)
 	if err != nil {
 		return nil, fmt.Errorf("get capability scores for models: %w", err)
 	}
