@@ -593,27 +593,38 @@ func TestIntegrationFilters_MinContextFilter_ReturnsOnlyLargeContextModels(t *te
 func TestIntegrationCompare_FiveValidIDs_Returns200(t *testing.T) {
 	app, _, _ := setupTestApp(t)
 
-	status, body := apiGet(t, app, "/v1/compare?models=1,2,3,4,5", devAuth)
+	// Use slugs (seed IDs 1–5): gpt-4o, gpt-4o-mini, gpt-4-turbo, text-embedding-3-large, claude-3-5-sonnet
+	slugs := "openai/gpt-4o,openai/gpt-4o-mini,openai/gpt-4-turbo,openai/text-embedding-3-large,anthropic/claude-3-5-sonnet"
+	status, body := apiGet(t, app, "/v1/compare?models="+slugs, devAuth)
 
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 
 	var envelope struct {
-		Data []json.RawMessage `json:"data"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v; body: %s", err, body)
 	}
-	if len(envelope.Data) != 5 {
-		t.Errorf("expected 5 models, got %d", len(envelope.Data))
+	// The compare envelope wraps items under data.items
+	var compareEnv struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(envelope.Data, &compareEnv); err != nil {
+		t.Fatalf("unmarshal compare envelope: %v; body: %s", err, body)
+	}
+	if len(compareEnv.Items) != 5 {
+		t.Errorf("expected 5 models, got %d", len(compareEnv.Items))
 	}
 }
 
 func TestIntegrationCompare_SixIDs_Returns400(t *testing.T) {
 	app, _, _ := setupTestApp(t)
 
-	status, body := apiGet(t, app, "/v1/compare?models=1,2,3,4,5,6", devAuth)
+	// Six slugs — exceeds the max of 5.
+	slugs := "openai/gpt-4o,openai/gpt-4o-mini,openai/gpt-4-turbo,openai/text-embedding-3-large,anthropic/claude-3-5-sonnet,anthropic/claude-3-haiku"
+	status, body := apiGet(t, app, "/v1/compare?models="+slugs, devAuth)
 
 	if status != fiber.StatusBadRequest {
 		t.Fatalf("expected 400, got %d; body: %s", status, body)
@@ -625,8 +636,8 @@ func TestIntegrationCompare_SixIDs_Returns400(t *testing.T) {
 func TestIntegrationCompare_UnknownModelID_Returns404(t *testing.T) {
 	app, _, _ := setupTestApp(t)
 
-	// Model 99999 does not exist in the seed data.
-	status, body := apiGet(t, app, "/v1/compare?models=1,99999", devAuth)
+	// "nonexistent/model-slug" does not exist in the seed data.
+	status, body := apiGet(t, app, "/v1/compare?models=openai/gpt-4o,nonexistent/model-slug", devAuth)
 
 	if status != fiber.StatusNotFound {
 		t.Fatalf("expected 404, got %d; body: %s", status, body)
@@ -856,7 +867,7 @@ func TestIntegrationRFC7807_AllErrorResponsesHaveProblemContentType(t *testing.T
 		{"model id zero routes to slug not found", "GET", "/v1/models/0", devAuth, 404},
 		{"model not found by integer id", "GET", "/v1/models/99999", devAuth, 404},
 		{"model not found by slug", "GET", "/v1/models/unknown/slug", devAuth, 404},
-		{"too many compare ids", "GET", "/v1/compare?models=1,2,3,4,5,6", devAuth, 400},
+		{"too many compare ids", "GET", "/v1/compare?models=openai/gpt-4o,openai/gpt-4o-mini,openai/gpt-4-turbo,openai/text-embedding-3-large,anthropic/claude-3-5-sonnet,anthropic/claude-3-haiku", devAuth, 400},
 	}
 
 	for _, tc := range cases {
