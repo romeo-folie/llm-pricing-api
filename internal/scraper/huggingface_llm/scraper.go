@@ -21,9 +21,13 @@ import (
 )
 
 const (
-	// datasetURL is the HuggingFace Datasets Server API for the Open LLM Leaderboard results.
-	datasetURL = "https://datasets-server.huggingface.co/rows?dataset=open-llm-leaderboard%2Fresults&config=default&split=train&offset=0&length=100"
-	sourceURL  = "https://huggingface.co/open-llm-leaderboard/open_llm_leaderboard"
+	// datasetBaseURL is the HuggingFace Datasets Server API for the Open LLM Leaderboard.
+	// Pagination is handled by the offset/length query parameters.
+	datasetBaseURL = "https://datasets-server.huggingface.co/rows?dataset=open-llm-leaderboard%2Fresults&config=default&split=train"
+	pageSize       = 100
+	// maxPages caps the number of pages fetched per run to avoid runaway scrapes.
+	maxPages = 20
+	sourceURL = "https://huggingface.co/open-llm-leaderboard/open_llm_leaderboard"
 )
 
 // benchmarkDimension maps the leaderboard column names to DB benchmark names.
@@ -154,12 +158,11 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			if val == nil {
 				continue
 			}
-			// Scores may be 0–1 or 0–100 depending on the dataset version.
-			// Normalize to 0–100.
+			// The HuggingFace Open LLM Leaderboard v2 returns scores in 0–100 range.
+			// Do not apply any heuristic normalization — the <= 1.0 * 100 pattern is
+			// ambiguous (a model scoring exactly 1.0% would be inflated to 100%) and
+			// fragile across API versions. Trust the data as-is.
 			norm := *val
-			if norm <= 1.0 && norm > 0 {
-				norm *= 100
-			}
 			raw := *val
 			if err := intelligence.UpsertBenchmarkScore(ctx, s.db, intelligence.BenchmarkScore{
 				ModelID:          modelID,
@@ -183,7 +186,25 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 
 // fetchData retrieves rows from the HuggingFace Datasets Server API.
 func (s *Scraper) fetchData(ctx context.Context) ([]datasetRow, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, datasetURL, nil)
+	var all []datasetRow
+	for page := 0; page < maxPages; page++ {
+		offset := page * pageSize
+		url := fmt.Sprintf("%s&offset=%d&length=%d", datasetBaseURL, offset, pageSize)
+		rows, err := s.fetchPage(ctx, url)
+		if err != nil {
+			return nil, fmt.Errorf("page %d: %w", page, err)
+		}
+		all = append(all, rows...)
+		if len(rows) < pageSize {
+			// Last page — no more results.
+			break
+		}
+	}
+	return all, nil
+}
+
+func (s *Scraper) fetchPage(ctx context.Context, url string) ([]datasetRow, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -201,7 +222,7 @@ func (s *Scraper) fetchData(ctx context.Context) ([]datasetRow, error) {
 	}
 
 	var dr datasetResponse
-	if err := json.NewDecoder(resp.Body).Decode(&dr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10<<20)).Decode(&dr); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return dr.Rows, nil

@@ -16,6 +16,17 @@ const (
 	TaskAnthropicScrape = "scrape:anthropic"
 	// TaskGeminiScrape triggers the HTML scraper for https://ai.google.dev/gemini-api/docs/pricing
 	TaskGeminiScrape = "scrape:gemini"
+
+	// Benchmark scraper tasks — daily cron jobs that fetch scores from
+	// external leaderboards and upsert into model_benchmark_scores.
+	TaskBFCLScrape           = "benchmark:bfcl"
+	TaskHuggingFaceLLMScrape = "benchmark:huggingface_llm"
+	TaskChatbotArenaScrape   = "benchmark:chatbot_arena"
+
+	// Intelligence recomputation tasks — run after benchmark scrapes
+	// to keep capability scores and freshness indicators current.
+	TaskRecomputeCapabilityScores = "intelligence:recompute_capability_scores"
+	TaskStalenessCheck            = "intelligence:staleness_check"
 )
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks

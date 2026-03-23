@@ -35,7 +35,7 @@ func TestAggregate_SingleBenchmark_LowConfidence(t *testing.T) {
 	// tool_use only has one benchmark (BFCL V4), so even with it present
 	// confidence should be "high" since count == len(weights).
 	scores := map[string]scoreEntry{
-		"BFCL V4": {Normalized: 90, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 90, EvaluatedAt: recent},
 	}
 
 	result := Aggregate("tool_use", DimensionBenchmarks["tool_use"], scores, now)
@@ -163,7 +163,7 @@ func TestAggregate_UnequalWeights(t *testing.T) {
 
 	// structured_output: BFCL V4 (0.5) + IFEval (0.5)
 	scores := map[string]scoreEntry{
-		"BFCL V4": {Normalized: 80, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 80, EvaluatedAt: recent},
 		"IFEval":  {Normalized: 60, EvaluatedAt: recent},
 	}
 
@@ -184,7 +184,7 @@ func TestAggregate_AsymmetricWeights(t *testing.T) {
 	// agentic: SWE-bench Verified (0.5) + BFCL V4 (0.5)
 	// Only one present → score = that benchmark's value.
 	scores := map[string]scoreEntry{
-		"BFCL V4": {Normalized: 90, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 90, EvaluatedAt: recent},
 	}
 
 	result := Aggregate("agentic", DimensionBenchmarks["agentic"], scores, now)

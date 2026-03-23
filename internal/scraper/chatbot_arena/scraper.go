@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	// primaryURL is the public JSON export of Arena Hard results.
-	primaryURL = "https://raw.githubusercontent.com/lm-sys/FastChat/main/fastchat/serve/leaderboard/data/leaderboard_table_20240701.json"
+	// primaryURL is the live ELO ratings endpoint from the LM Arena leaderboard API.
+	// This replaces the static July 2024 snapshot which never received newer data.
+	primaryURL = "https://lmarena.ai/api/leaderboard"
 	sourceURL  = "https://lmarena.ai"
 	benchmarkName = "Chatbot Arena"
 )
@@ -188,7 +189,7 @@ func (s *Scraper) fetchJSON(ctx context.Context) ([]arenaEntry, error) {
 	}
 
 	var entries []arenaEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10<<20)).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return entries, nil

@@ -133,7 +133,11 @@ func run() error {
 	rec := reconciler.New(db)
 	rec.SetLogger(log)
 	rec.SetRedisClient(redisClient)
-	h := worker.NewHandlers(store, rec)
+	// asynqClient is used by Handlers to enqueue follow-up tasks (e.g. recompute
+	// capability scores after a benchmark scrape completes).
+	asynqClient := asynq.NewClient(redisOpt)
+	defer asynqClient.Close()
+	h := worker.NewHandlers(store, rec, db)
 	h.SetLogger(log)
 
 	mux.HandleFunc(worker.TaskOpenRouterScrape, h.HandleOpenRouterScrape)
@@ -142,6 +146,16 @@ func run() error {
 	mux.HandleFunc(worker.TaskOpenAIScrape, h.HandleOpenAIScrape)
 	mux.HandleFunc(worker.TaskAnthropicScrape, h.HandleAnthropicScrape)
 	mux.HandleFunc(worker.TaskGeminiScrape, h.HandleGeminiScrape)
+
+	// Benchmark scraper handlers — daily cron jobs that fetch scores from
+	// external leaderboards and upsert into model_benchmark_scores.
+	mux.HandleFunc(worker.TaskBFCLScrape, h.HandleBFCLScrape)
+	mux.HandleFunc(worker.TaskHuggingFaceLLMScrape, h.HandleHuggingFaceLLMScrape)
+	mux.HandleFunc(worker.TaskChatbotArenaScrape, h.HandleChatbotArenaScrape)
+
+	// Intelligence recomputation handlers.
+	mux.HandleFunc(worker.TaskRecomputeCapabilityScores, h.HandleRecomputeCapabilityScores)
+	mux.HandleFunc(worker.TaskStalenessCheck, h.HandleStalenessCheck)
 
 	// WebhookDeliveryHandler holds the AES key so it can decrypt secrets at
 	// task execution time — secrets are stored encrypted at rest.
@@ -185,6 +199,30 @@ func run() error {
 		return err
 	}
 
+	// Benchmark scraper cron schedules — daily.
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskBFCLScrape, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register bfcl")
+		return err
+	}
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceLLMScrape, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register huggingface_llm")
+		return err
+	}
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskChatbotArenaScrape, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register chatbot_arena")
+		return err
+	}
+
+	// Intelligence recomputation cron schedules — daily.
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskRecomputeCapabilityScores, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register recompute_capability_scores")
+		return err
+	}
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskStalenessCheck, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register staleness_check")
+		return err
+	}
+
 	if err := scheduler.Start(); err != nil {
 		log.Error().Err(err).Msg("scheduler: start")
 		return err
@@ -220,6 +258,13 @@ func run() error {
 		{worker.TaskOpenAIScrape, "openai", nil},
 		{worker.TaskAnthropicScrape, "anthropic", nil},
 		{worker.TaskGeminiScrape, "gemini", nil},
+		// Benchmark scrapers — initial run on startup.
+		{worker.TaskBFCLScrape, "bfcl", nil},
+		{worker.TaskHuggingFaceLLMScrape, "huggingface_llm", nil},
+		{worker.TaskChatbotArenaScrape, "chatbot_arena", nil},
+		// Intelligence tasks — initial run on startup.
+		{worker.TaskRecomputeCapabilityScores, "recompute_capability_scores", nil},
+		{worker.TaskStalenessCheck, "staleness_check", nil},
 	}
 	for _, t := range initialTasks {
 		opts := append([]asynq.Option{asynq.Unique(24 * time.Hour)}, t.opts...)

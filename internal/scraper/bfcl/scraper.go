@@ -1,5 +1,5 @@
 // Package bfcl implements a benchmark scraper for the Berkeley Function Calling
-// Leaderboard (BFCL V4). It fetches overall accuracy scores and upserts them
+// Leaderboard (BFCL V3). It fetches overall accuracy scores and upserts them
 // into the model_benchmark_scores table via the intelligence package.
 package bfcl
 
@@ -21,11 +21,14 @@ import (
 )
 
 const (
-	// jsonURL is the primary data source — a JSON dump of the leaderboard.
+	// jsonURL is the primary data source — a JSON dump of the V3 leaderboard.
+	// V4 data is served via the same leaderboard page but does not yet have a
+	// stable JSON export endpoint. When a v4 JSON export becomes available, update
+	// this URL and bump benchmarkName to "BFCL V4".
 	jsonURL = "https://gorilla.cs.berkeley.edu/leaderboard_bigquery_legacy_data/BFCL_v3_combined.json"
 	// sourceURL is the human-readable leaderboard page used for source attribution.
-	sourceURL    = "https://gorilla.cs.berkeley.edu/leaderboard.html"
-	benchmarkName = "BFCL V4"
+	sourceURL     = "https://gorilla.cs.berkeley.edu/leaderboard.html"
+	benchmarkName = "BFCL V3" // matches the JSON data source; rename to V4 when v4 JSON is available
 )
 
 // Scraper fetches BFCL leaderboard data and upserts benchmark scores.
@@ -138,7 +141,7 @@ func (s *Scraper) fetchJSON(ctx context.Context) ([]leaderboardEntry, error) {
 	}
 
 	var entries []leaderboardEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10<<20)).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return entries, nil
