@@ -181,7 +181,7 @@ export default function CompareClient() {
       {/* 1. UseCasePicker — always visible */}
       <div className="mb-6 animate-wireframe-fade" style={{ animationDelay: "1.4s" }}>
         <div className="text-xs uppercase tracking-wide mb-3 font-semibold" style={{ color: "var(--muted)" }}>
-          What are you building?
+          What's your use case?
         </div>
         <UseCasePicker selected={useCase} onChange={setUseCase} />
       </div>
