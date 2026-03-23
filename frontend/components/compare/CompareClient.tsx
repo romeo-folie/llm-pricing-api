@@ -197,7 +197,7 @@ export default function CompareClient() {
       {apiError && !loading && (
         <div
           className="mb-4 text-sm px-4 py-3 border"
-          style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+          style={{ borderColor: "var(--warningBorder)", color: "var(--warningText)", backgroundColor: "var(--warningBg)" }}
           role="alert"
         >
           ⚠ Unable to load recommendations: {apiError}
@@ -224,7 +224,7 @@ export default function CompareClient() {
           {compareError && !compareLoading && (
             <div
               className="mb-4 text-sm px-4 py-3 border"
-              style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
+              style={{ borderColor: "var(--warningBorder)", color: "var(--warningText)", backgroundColor: "var(--warningBg)" }}
               role="alert"
             >
               ⚠ Unable to load comparison: {compareError}
