@@ -1291,21 +1291,26 @@ func TestRecommend_WithUseCase_ReturnsCapabilityFields(t *testing.T) {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 
+	// Capability-aware responses use recommendEnvelope: {items: [...], warnings: [...]}
+	// wrapped in the standard {data: ..., meta: ...} envelope.
 	var envelope struct {
-		Data []struct {
-			Slug      string             `json:"slug"`
-			Scores    map[string]float64 `json:"scores"`
-			Rationale string             `json:"rationale"`
-			Fallback  bool               `json:"fallback"`
+		Data struct {
+			Items []struct {
+				Slug      string             `json:"slug"`
+				Scores    map[string]float64 `json:"scores"`
+				Rationale string             `json:"rationale"`
+				Fallback  bool               `json:"fallback"`
+			} `json:"items"`
+			Warnings []string `json:"warnings"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v; body: %s", err, body)
 	}
-	if len(envelope.Data) == 0 {
+	if len(envelope.Data.Items) == 0 {
 		t.Fatal("expected at least one model in response")
 	}
-	for i, item := range envelope.Data {
+	for i, item := range envelope.Data.Items {
 		if item.Rationale == "" {
 			t.Errorf("item %d: expected non-empty rationale", i)
 		}

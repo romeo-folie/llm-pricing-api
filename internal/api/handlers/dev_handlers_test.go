@@ -644,26 +644,29 @@ func TestRecommend_UseCase_RankedByCapabilityScore(t *testing.T) {
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
+	// Capability-aware responses use recommendEnvelope: data.items is the ranked list.
 	var envelope struct {
-		Data []struct {
-			ID        int                `json:"id"`
-			Scores    map[string]float64 `json:"scores"`
-			Rationale string             `json:"rationale"`
+		Data struct {
+			Items []struct {
+				ID        int                `json:"id"`
+				Scores    map[string]float64 `json:"scores"`
+				Rationale string             `json:"rationale"`
+			} `json:"items"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v; body: %s", err, body)
 	}
-	if len(envelope.Data) != 2 {
-		t.Fatalf("expected 2 models, got %d", len(envelope.Data))
+	if len(envelope.Data.Items) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(envelope.Data.Items))
 	}
-	if envelope.Data[0].ID != 1 {
-		t.Errorf("expected model 1 ranked first for finance+quality, got id=%d", envelope.Data[0].ID)
+	if envelope.Data.Items[0].ID != 1 {
+		t.Errorf("expected model 1 ranked first for finance+quality, got id=%d", envelope.Data.Items[0].ID)
 	}
-	if envelope.Data[0].Rationale == "" {
+	if envelope.Data.Items[0].Rationale == "" {
 		t.Error("expected non-empty rationale")
 	}
-	if len(envelope.Data[0].Scores) == 0 {
+	if len(envelope.Data.Items[0].Scores) == 0 {
 		t.Error("expected non-empty scores map")
 	}
 }
@@ -741,15 +744,17 @@ func TestRecommend_FallbackFlag_WhenNoScores(t *testing.T) {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 	var envelope struct {
-		Data []struct{ Fallback bool `json:"fallback"` } `json:"data"`
+		Data struct {
+			Items []struct{ Fallback bool `json:"fallback"` } `json:"items"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(envelope.Data) != 1 {
-		t.Fatalf("expected 1 model, got %d", len(envelope.Data))
+	if len(envelope.Data.Items) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(envelope.Data.Items))
 	}
-	if !envelope.Data[0].Fallback {
+	if !envelope.Data.Items[0].Fallback {
 		t.Error("expected fallback=true when no capability scores exist")
 	}
 }

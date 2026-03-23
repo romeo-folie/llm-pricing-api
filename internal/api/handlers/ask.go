@@ -566,8 +566,16 @@ func init() {
 	for kw := range useCaseKeywords {
 		useCaseKeywordOrder = append(useCaseKeywordOrder, kw)
 	}
+	// Sort by length descending (longer/more-specific phrases first), then
+	// alphabetically ascending as a stable secondary key so that same-length
+	// keywords (e.g. "finance", "banking", "agentic", "writing", "general")
+	// always resolve in the same order regardless of map iteration order.
 	sort.Slice(useCaseKeywordOrder, func(i, j int) bool {
-		return len(useCaseKeywordOrder[i]) > len(useCaseKeywordOrder[j])
+		a, b := useCaseKeywordOrder[i], useCaseKeywordOrder[j]
+		if len(a) != len(b) {
+			return len(a) > len(b)
+		}
+		return a < b
 	})
 }
 

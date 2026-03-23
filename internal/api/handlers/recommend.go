@@ -35,13 +35,23 @@ var taskModalityMap = map[string]string{
 }
 
 // recommendModelResponse extends modelResponse with capability scoring data.
+// Warnings are not per-item — they belong to the full result set and are
+// surfaced at envelope level via recommendEnvelope.
 type recommendModelResponse struct {
 	modelResponse
-	Scores          map[string]float64              `json:"scores,omitempty"`
-	Rationale       string                          `json:"rationale,omitempty"`
+	Scores          map[string]float64               `json:"scores,omitempty"`
+	Rationale       string                           `json:"rationale,omitempty"`
 	BenchmarksCited []intelligence.BenchmarkCitation `json:"benchmarks_cited,omitempty"`
-	Warnings        []string                        `json:"warnings,omitempty"`
-	Fallback        bool                            `json:"fallback,omitempty"`
+	Fallback        bool                             `json:"fallback,omitempty"`
+}
+
+// recommendEnvelope wraps the capability-aware response items together with
+// result-level warnings (e.g. limited benchmark coverage). It is passed as
+// the `data` field to api.OK so warnings appear once at the top level rather
+// than duplicated inside every model item.
+type recommendEnvelope struct {
+	Items    []recommendModelResponse `json:"items"`
+	Warnings []string                 `json:"warnings,omitempty"`
 }
 
 // Recommend handles GET /v1/recommend.
@@ -230,7 +240,6 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 			modelResponse: modelToResponse(s.row),
 			Scores:        s.scores,
 			Rationale:     rat,
-			Warnings:      warnings,
 			Fallback:      s.cs == 0,
 		}
 	}
@@ -241,5 +250,7 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 			meta = s.row.Meta
 		}
 	}
-	return api.OK(c, items, meta)
+
+	// Warnings are result-level, not per-item — surface them once in the envelope.
+	return api.OK(c, recommendEnvelope{Items: items, Warnings: warnings}, meta)
 }
