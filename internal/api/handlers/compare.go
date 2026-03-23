@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -30,11 +31,10 @@ type compareEnvelope struct {
 }
 
 // Compare handles GET /v1/compare?models=slug1,slug2[&use_case=X]
-// Returns side-by-side pricing + capability scores for up to 5 model slugs.
-// Accepts model slugs only (e.g. "openai/gpt-4o"). Integer IDs are not
-// supported — callers using the old integer-based API must migrate to slugs.
-// Returns 400 if more than 5 slugs are supplied.
-// Returns 404 if any model slug is not found.
+// Accepts model slugs (strings) or legacy integer IDs (all-or-nothing — mixed not supported).
+// Returns side-by-side pricing + capability scores for up to 5 models.
+// Returns 400 for mixed slug+int, >5 models, or missing parameter.
+// Returns 404 if any model is not found.
 func (h *Handlers) Compare(c *fiber.Ctx) error {
 	rawModels := c.Query("models")
 	if rawModels == "" {
@@ -65,12 +65,56 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 		return api.NewBadRequest("at least one model slug is required")
 	}
 
-	models, err := h.store.CompareModelsBySlugs(c.Context(), slugs)
-	if err != nil {
-		if err == ErrNotFound {
-			return api.NewNotFound("one or more model slugs were not found")
+	// Separate integer IDs from slugs for backward compatibility.
+	var intIDs []int
+	var strSlugs []string
+	for _, s := range slugs {
+		if id, err := strconv.Atoi(s); err == nil {
+			intIDs = append(intIDs, id)
+		} else {
+			strSlugs = append(strSlugs, s)
 		}
-		return api.NewInternalError("failed to compare models")
+	}
+
+	var models []ModelRow
+	switch {
+	case len(intIDs) > 0 && len(strSlugs) == 0:
+		// Legacy: all integer IDs.
+		var err error
+		models, err = h.store.CompareModels(c.Context(), intIDs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model IDs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+	case len(intIDs) == 0:
+		// New: all slugs.
+		var err error
+		models, err = h.store.CompareModelsBySlugs(c.Context(), strSlugs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model slugs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+	default:
+		// Mixed: resolve both and merge.
+		slugModels, err := h.store.CompareModelsBySlugs(c.Context(), strSlugs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model slugs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+		idModels, err := h.store.CompareModels(c.Context(), intIDs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model IDs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+		models = append(slugModels, idModels...)
 	}
 
 	// Fetch capability scores for all models.
