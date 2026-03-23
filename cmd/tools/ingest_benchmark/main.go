@@ -5,7 +5,7 @@
 //
 //	go run cmd/tools/ingest_benchmark/main.go \
 //	  --model=anthropic/claude-sonnet-4-6 \
-//	  --benchmark="BFCL V4" \
+//	  --benchmark="BFCL V3" \
 //	  --score=79.4 \
 //	  --source=https://gorilla.cs.berkeley.edu/leaderboard.html \
 //	  --confidence=medium \
