@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"math"
 	"sort"
 	"strconv"
 
@@ -154,8 +155,9 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 		scored[i] = sm{row: m, cs: cs, scores: ds, caps: caps}
 	}
 
+	const epsilon = 1e-9
 	sort.SliceStable(scored, func(i, j int) bool {
-		if scored[i].cs != scored[j].cs {
+		if math.Abs(scored[i].cs-scored[j].cs) > epsilon {
 			return scored[i].cs > scored[j].cs
 		}
 		return scored[i].row.PriceInput < scored[j].row.PriceInput

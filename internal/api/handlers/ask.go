@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -344,8 +345,9 @@ func (h *AskHandler) buildCapabilityAskResponse(
 		items[i] = scored{row: m, capScore: cs, caps: caps}
 	}
 
+	const epsilon = 1e-9
 	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].capScore != items[j].capScore {
+		if math.Abs(items[i].capScore-items[j].capScore) > epsilon {
 			return items[i].capScore > items[j].capScore
 		}
 		return items[i].row.PriceInput < items[j].row.PriceInput
@@ -538,9 +540,10 @@ var useCaseKeywords = map[string]string{
 	"programming":      "coding",
 	"developer":        "coding",
 	"agentic":          "agentic",
-	"agent":            "agentic",
+	"ai agent":         "agentic", // "agent" alone is too broad (e.g. "real estate agent")
 	"tool use":         "agentic",
 	"function calling": "agentic",
+	"writing code":     "coding",  // must appear before "writing" in longest-first order
 	"writing":          "writing",
 	"copywriting":      "writing",
 	"content creation": "writing",
