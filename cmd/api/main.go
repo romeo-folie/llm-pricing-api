@@ -239,6 +239,10 @@ func main() {
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)
 
+	// Register public /v1 routes outside the auth group (no API key required).
+	// These serve the Compare page and are safe to expose unauthenticated.
+	handlers.RegisterPublic(app, db, redisClient)
+
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
 	if err := handlers.RegisterDev(v1, db, redisClient); err != nil {

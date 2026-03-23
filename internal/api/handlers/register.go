@@ -23,6 +23,23 @@ func New(store Store) *Handlers {
 	return &Handlers{store: store}
 }
 
+// RegisterPublic registers unauthenticated /v1 endpoints on the root Fiber app.
+// These routes serve the public Compare page and require no API key — they are
+// intentionally placed outside the auth-gated v1 group.
+//
+// Routes registered:
+//
+//	GET /v1/compare   — compare two models side-by-side
+//	GET /v1/recommend — return top-ranked models for a use case
+func RegisterPublic(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
+	store := NewPgxStore(db)
+	h := New(store)
+
+	pub := app.Group("/v1")
+	pub.Get("/compare", h.Compare)
+	pub.Get("/recommend", h.Recommend)
+}
+
 // RegisterFree registers all Free-tier GET endpoint handlers on the v1 router.
 // The db pool and rdb client are used to construct the production Store and are
 // not used directly by handler functions.
@@ -32,7 +49,6 @@ func New(store Store) *Handlers {
 //	GET /v1/models
 //	GET /v1/models/:id
 //	GET /v1/providers
-//	GET /v1/compare
 //	GET /v1/changes/summary
 //	GET /v1/changes
 func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
@@ -42,7 +58,6 @@ func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 	v1.Get("/models", h.ListModels)
 	v1.Get("/models/:id", h.GetModel)
 	v1.Get("/providers", h.ListProviders)
-	v1.Get("/compare", h.Compare)
 	v1.Get("/changes/summary", h.GetChangesSummary)
 	v1.Get("/changes", h.ListChanges)
 }
@@ -54,7 +69,6 @@ func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 // Routes registered:
 //
 //	GET  /v1/models/:id/history
-//	GET  /v1/recommend
 //	GET  /v1/context
 //	POST /v1/ask
 //
@@ -64,7 +78,6 @@ func RegisterDev(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) error {
 	h := New(store)
 
 	v1.Get("/models/:id/history", h.GetModelHistory)
-	v1.Get("/recommend", h.Recommend)
 	v1.Get("/context", h.GetContext)
 
 	ask, err := NewAskHandler(store)
