@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/intelligence"
 )
 
 const (
@@ -238,6 +240,13 @@ func (h *AskHandler) buildResponse(
 				filter.Task = s
 			}
 		}
+		if v, ok := params["use_case"]; ok {
+			if s, ok := v.(string); ok {
+				filter.UseCase = s
+				filter.Priority = "balanced"
+			}
+		}
+		filter.TopK = 5
 
 		models, err := h.store.RecommendModels(c.Context(), filter)
 		if err != nil {
@@ -258,12 +267,19 @@ func (h *AskHandler) buildResponse(
 			}
 		}
 
-		ranked := make([]modelResponse, len(models))
-		for i, m := range models {
-			ranked[i] = modelToResponse(m)
+		// If use_case is set, apply capability scoring for the ask response.
+		if filter.UseCase != "" {
+			if err := h.buildCapabilityAskResponse(c, resp, models, filter); err != nil {
+				return nil, err
+			}
+		} else {
+			ranked := make([]modelResponse, len(models))
+			for i, m := range models {
+				ranked[i] = modelToResponse(m)
+			}
+			resp.RankedModels = ranked
+			resp.PlainEnglishSummary = buildRecommendSummary(models, params)
 		}
-		resp.RankedModels = ranked
-		resp.PlainEnglishSummary = buildRecommendSummary(models, params)
 
 	case IntentPrice:
 		var model string
@@ -290,6 +306,82 @@ func (h *AskHandler) buildResponse(
 	}
 
 	return resp, nil
+}
+
+// buildCapabilityAskResponse scores models by capability and populates the
+// ask response with ranked results including rationale.
+func (h *AskHandler) buildCapabilityAskResponse(
+	c *fiber.Ctx,
+	resp *askResponse,
+	models []ModelRow,
+	filter RecommendFilter,
+) error {
+	useCase := intelligence.UseCase(filter.UseCase)
+	priority := intelligence.Priority(filter.Priority)
+	if priority == "" {
+		priority = intelligence.PriorityBalanced
+	}
+
+	modelIDs := make([]int, len(models))
+	for i, m := range models {
+		modelIDs[i] = m.ID
+	}
+
+	capScoresMap, err := h.store.GetCapabilityScoresForModels(c.Context(), modelIDs)
+	if err != nil {
+		log.Error().Err(err).Msg("ask: failed to fetch capability scores")
+		return err
+	}
+
+	type scored struct {
+		row      ModelRow
+		capScore float64
+		caps     []intelligence.CapabilityScore
+	}
+	items := make([]scored, len(models))
+	for i, m := range models {
+		caps := capScoresMap[m.ID]
+		cs := intelligence.ScoreModel(m.ID, useCase, priority, caps)
+		items[i] = scored{row: m, capScore: cs, caps: caps}
+	}
+
+	const epsilon = 1e-9
+	sort.SliceStable(items, func(i, j int) bool {
+		if math.Abs(items[i].capScore-items[j].capScore) > epsilon {
+			return items[i].capScore > items[j].capScore
+		}
+		return items[i].row.PriceInput < items[j].row.PriceInput
+	})
+
+	topK := filter.TopK
+	if topK <= 0 {
+		topK = 5
+	}
+	if topK > len(items) {
+		topK = len(items)
+	}
+	items = items[:topK]
+
+	ranked := make([]modelResponse, len(items))
+	for i, s := range items {
+		ranked[i] = modelToResponse(s.row)
+	}
+	resp.RankedModels = ranked
+
+	if len(items) > 0 {
+		top := items[0]
+		rationale := intelligence.GenerateRationale(
+			top.row.Slug, top.caps, nil, useCase, priority,
+		)
+		resp.PlainEnglishSummary = fmt.Sprintf(
+			"For %s tasks, the top recommendation is %s. %s",
+			filter.UseCase, top.row.Slug, rationale,
+		)
+	} else {
+		resp.PlainEnglishSummary = "No models matched your criteria. Try relaxing constraints."
+	}
+
+	return nil
 }
 
 // --- parser -------------------------------------------------------------
@@ -420,12 +512,71 @@ func extractRecommendParams(norm string) map[string]any {
 		}
 	}
 
+	// Use-case detection (longest-match first).
+	for _, kw := range useCaseKeywordOrder {
+		if strings.Contains(norm, kw) {
+			params["use_case"] = useCaseKeywords[kw]
+			break
+		}
+	}
+
 	// Model preference (optional — for "best [model] for X" patterns).
 	if slug := resolveAlias(norm); slug != "" {
 		params["preferred_model"] = slug
 	}
 
 	return params
+}
+
+// useCaseKeywords maps natural language keywords to UseCase values for
+// the /v1/ask recommend intent.
+var useCaseKeywords = map[string]string{
+	"finance":          "finance",
+	"financial":        "finance",
+	"banking":          "finance",
+	"investment":       "finance",
+	"coding":           "coding",
+	"code":             "coding",
+	"programming":      "coding",
+	"developer":        "coding",
+	"agentic":          "agentic",
+	"ai agent":         "agentic", // "agent" alone is too broad (e.g. "real estate agent")
+	"tool use":         "agentic",
+	"function calling": "agentic",
+	"writing code":     "coding",  // must appear before "writing" in longest-first order
+	"writing":          "writing",
+	"copywriting":      "writing",
+	"content creation": "writing",
+	"video":            "video",
+	"video analysis":   "video",
+	"reasoning":        "reasoning",
+	"logic":            "reasoning",
+	"math":             "reasoning",
+	"mathematics":      "reasoning",
+	"general":          "general",
+	"general purpose":  "general",
+}
+
+// useCaseKeywordOrder is checked in order (longest first) to ensure
+// multi-word phrases match before their substrings.
+var useCaseKeywordOrder []string
+
+func init() {
+	useCaseKeywordOrder = make([]string, 0, len(useCaseKeywords))
+	for kw := range useCaseKeywords {
+		useCaseKeywordOrder = append(useCaseKeywordOrder, kw)
+	}
+	// Sort by length descending (longer/more-specific phrases first), then
+	// alphabetically ascending as a stable secondary key so that same-length
+	// keywords (e.g. "finance", "banking", "agentic", "writing", "general")
+	// always resolve in the same order regardless of map iteration order.
+	sort.Slice(useCaseKeywordOrder, func(i, j int) bool {
+		a, b := useCaseKeywordOrder[i], useCaseKeywordOrder[j]
+		if len(a) != len(b) {
+			return len(a) > len(b)
+		}
+		return a < b
+	})
 }
 
 // extractHistoryParams extracts model name and optional time reference

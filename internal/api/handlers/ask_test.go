@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
+	"llm-pricing-api/internal/intelligence"
 	"llm-pricing-api/internal/middleware"
 )
 
@@ -736,6 +738,171 @@ func TestAsk_Recommend_EmptyResults_StillOK(t *testing.T) {
 	status, body := askQuery(t, app, "cheapest model for coding")
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200 even with empty results, got %d; body: %s", status, body)
+	}
+}
+
+// ===================================================================
+// Use-case routing tests (UC Phase 1)
+// ===================================================================
+
+func TestAsk_Recommend_UseCaseDetection_Coding(t *testing.T) {
+	ctx := 8192
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{{
+				ID: 1, Provider: "openai", Name: "model-a", Slug: "openai/model-a",
+				Modality: "text", ContextWindow: &ctx,
+				PriceInput: 0.000010, PriceOutput: 0.000020,
+				ConfirmedAt: time.Now().UTC(), Source: "openrouter",
+				Meta: api.TrustMeta{},
+			}}, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			s := 85.0
+			return map[int][]intelligence.CapabilityScore{
+				1: {{ModelID: 1, Dimension: "coding", Score: &s, Confidence: "high", BenchmarkCount: 3, Freshness: "fresh"}},
+			}, nil
+		},
+	}
+	app := newAskApp(store)
+
+	status, body := askQuery(t, app, "best model for coding")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	data := getDataField(t, decodeAskResponse(t, body))
+	intent, _ := data["intent"].(string)
+	if intent != handlers.IntentRecommend {
+		t.Errorf("expected intent=recommend, got %s", intent)
+	}
+	params, ok := data["inferred_params"].(map[string]any)
+	if !ok {
+		t.Fatal("expected inferred_params to be an object")
+	}
+	uc, _ := params["use_case"].(string)
+	if uc != "coding" {
+		t.Errorf("expected inferred_params.use_case=coding, got %s", uc)
+	}
+	summary, _ := data["plain_english_summary"].(string)
+	if summary == "" {
+		t.Error("expected non-empty plain_english_summary")
+	}
+}
+
+func TestAsk_Recommend_UseCaseDetection_Finance(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return nil, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{}, nil
+		},
+	}
+	app := newAskApp(store)
+
+	status, body := askQuery(t, app, "best model for financial analysis")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	data := getDataField(t, decodeAskResponse(t, body))
+	params, ok := data["inferred_params"].(map[string]any)
+	if !ok {
+		t.Fatal("expected inferred_params to be an object")
+	}
+	uc, _ := params["use_case"].(string)
+	if uc != "finance" {
+		t.Errorf("expected inferred_params.use_case=finance, got %q", uc)
+	}
+}
+
+func TestAsk_Recommend_UseCaseDetection_Reasoning(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return nil, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{}, nil
+		},
+	}
+	app := newAskApp(store)
+
+	status, body := askQuery(t, app, "best model for reasoning and logic tasks")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	data := getDataField(t, decodeAskResponse(t, body))
+	params, ok := data["inferred_params"].(map[string]any)
+	if !ok {
+		t.Fatal("expected inferred_params to be an object")
+	}
+	uc, _ := params["use_case"].(string)
+	if uc != "reasoning" {
+		t.Errorf("expected inferred_params.use_case=reasoning, got %q", uc)
+	}
+}
+
+func TestAsk_Recommend_UseCaseDetection_Agentic(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return nil, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{}, nil
+		},
+	}
+	app := newAskApp(store)
+
+	status, body := askQuery(t, app, "best model for agentic tool use workflows")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	data := getDataField(t, decodeAskResponse(t, body))
+	params, ok := data["inferred_params"].(map[string]any)
+	if !ok {
+		t.Fatal("expected inferred_params to be an object")
+	}
+	uc, _ := params["use_case"].(string)
+	if uc != "agentic" {
+		t.Errorf("expected inferred_params.use_case=agentic, got %q", uc)
+	}
+}
+
+func TestAsk_UseCaseRouting_IncludesRationale(t *testing.T) {
+	ctx := 8192
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{{
+				ID: 1, Provider: "openai", Name: "model-a", Slug: "openai/model-a",
+				Modality: "text", ContextWindow: &ctx,
+				PriceInput: 0.000010, PriceOutput: 0.000020,
+				ConfirmedAt: time.Now().UTC(), Source: "openrouter",
+				Meta: api.TrustMeta{},
+			}}, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			s := 88.0
+			return map[int][]intelligence.CapabilityScore{
+				1: {{ModelID: 1, Dimension: "coding", Score: &s, Confidence: "high", BenchmarkCount: 3, Freshness: "fresh"}},
+			}, nil
+		},
+	}
+	app := newAskApp(store)
+
+	status, body := askQuery(t, app, "best model for coding tasks")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	data := getDataField(t, decodeAskResponse(t, body))
+
+	// plain_english_summary should contain the use case and model info.
+	summary, _ := data["plain_english_summary"].(string)
+	if summary == "" {
+		t.Error("expected non-empty plain_english_summary with rationale")
+	}
+	// Should mention the use case in the summary.
+	if !strings.Contains(strings.ToLower(summary), "coding") {
+		t.Errorf("expected summary to mention 'coding', got %q", summary)
 	}
 }
 

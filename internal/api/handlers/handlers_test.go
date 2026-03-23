@@ -15,6 +15,7 @@ import (
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
+	"llm-pricing-api/internal/intelligence"
 	"llm-pricing-api/internal/models"
 )
 
@@ -35,7 +36,8 @@ type mockStore struct {
 	modelExists           func(ctx context.Context, id int) (bool, error)
 	getModelHistory       func(ctx context.Context, modelID int, filter handlers.HistoryFilter) ([]handlers.HistoryRow, error)
 	listModelsForCtx      func(ctx context.Context, limit int) ([]handlers.ContextModelRow, error)
-	recommendModels       func(ctx context.Context, filter handlers.RecommendFilter) ([]handlers.ModelRow, error)
+	recommendModels              func(ctx context.Context, filter handlers.RecommendFilter) ([]handlers.ModelRow, error)
+	getCapabilityScoresForModels func(ctx context.Context, modelIDs []int) (map[int][]intelligence.CapabilityScore, error)
 }
 
 func (m *mockStore) ListModels(ctx context.Context, filter handlers.ListModelsFilter) ([]handlers.ModelRow, int, error) {
@@ -133,6 +135,13 @@ func (m *mockStore) RecommendModels(ctx context.Context, filter handlers.Recomme
 		return m.recommendModels(ctx, filter)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) GetCapabilityScoresForModels(ctx context.Context, modelIDs []int) (map[int][]intelligence.CapabilityScore, error) {
+	if m.getCapabilityScoresForModels != nil {
+		return m.getCapabilityScoresForModels(ctx, modelIDs)
+	}
+	return map[int][]intelligence.CapabilityScore{}, nil
 }
 
 // --- test helpers -------------------------------------------------------
@@ -1241,5 +1250,153 @@ func TestErrorShape_RFC7807(t *testing.T) {
 	}
 	if problem.Status != 400 {
 		t.Errorf("expected status=400, got %d", problem.Status)
+	}
+}
+
+// --- Recommend + Ask integration tests ----------------------------------
+
+// newDevAppWithAsk creates a Fiber app with the recommend + ask routes
+// backed by the supplied mock store.
+func newDevAppWithAsk(t *testing.T, store handlers.Store) *fiber.App {
+	t.Helper()
+	app := fiber.New(fiber.Config{
+		ErrorHandler: api.ErrorHandler,
+	})
+	h := handlers.New(store)
+	v1 := app.Group("/v1")
+	v1.Get("/recommend", h.Recommend)
+
+	ask, err := handlers.NewAskHandler(store)
+	if err != nil {
+		t.Fatalf("NewAskHandler: %v", err)
+	}
+	v1.Post("/ask", ask.Ask)
+
+	return app
+}
+
+func TestRecommend_WithUseCase_ReturnsCapabilityFields(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{sampleModel(1), sampleModel(2)}, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{}, nil
+		},
+	}
+	app := newDevAppWithAsk(t, store)
+
+	status, body := get(t, app, "/v1/recommend?use_case=coding&priority=quality")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	// Capability-aware responses use recommendEnvelope: {items: [...], warnings: [...]}
+	// wrapped in the standard {data: ..., meta: ...} envelope.
+	var envelope struct {
+		Data struct {
+			Items []struct {
+				Slug      string             `json:"slug"`
+				Scores    map[string]float64 `json:"scores"`
+				Rationale string             `json:"rationale"`
+				Fallback  bool               `json:"fallback"`
+			} `json:"items"`
+			Warnings []string `json:"warnings"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data.Items) == 0 {
+		t.Fatal("expected at least one model in response")
+	}
+	for i, item := range envelope.Data.Items {
+		if item.Rationale == "" {
+			t.Errorf("item %d: expected non-empty rationale", i)
+		}
+		if !item.Fallback {
+			t.Errorf("item %d: expected fallback=true when no capability scores", i)
+		}
+	}
+}
+
+func TestRecommend_WithoutUseCase_BackwardCompat(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{sampleModel(1)}, nil
+		},
+	}
+	app := newDevAppWithAsk(t, store)
+
+	status, body := get(t, app, "/v1/recommend")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(raw["data"], &items); err != nil {
+		t.Fatalf("unmarshal data: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected at least one model")
+	}
+	for i, item := range items {
+		if _, ok := item["scores"]; ok {
+			t.Errorf("item %d: backward-compat response must not include 'scores'", i)
+		}
+		if _, ok := item["rationale"]; ok {
+			t.Errorf("item %d: backward-compat response must not include 'rationale'", i)
+		}
+	}
+}
+
+func TestAsk_BestForCoding_DetectsUseCase(t *testing.T) {
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{sampleModel(1)}, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{}, nil
+		},
+	}
+	app := newDevAppWithAsk(t, store)
+
+	reqBody := strings.NewReader(`{"query": "best model for coding"}`)
+	req := httptest.NewRequest("POST", "/v1/ask", reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", resp.StatusCode, body)
+	}
+
+	var envelope struct {
+		Data struct {
+			Intent         string         `json:"intent"`
+			InferredParams map[string]any `json:"inferred_params"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if envelope.Data.Intent != handlers.IntentRecommend {
+		t.Errorf("expected intent %q, got %q", handlers.IntentRecommend, envelope.Data.Intent)
+	}
+	uc, ok := envelope.Data.InferredParams["use_case"]
+	if !ok {
+		t.Fatal("expected inferred_params to contain 'use_case'")
+	}
+	if uc != "coding" {
+		t.Errorf("expected use_case=coding, got %v", uc)
 	}
 }

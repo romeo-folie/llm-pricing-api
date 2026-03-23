@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/intelligence"
 )
 
 // Store is the data-access contract used by all handler functions.
@@ -79,6 +80,11 @@ type Store interface {
 	// RecommendModels returns models ranked by price for the /v1/recommend
 	// endpoint (Developer+ tier, issue #20).
 	RecommendModels(ctx context.Context, filter RecommendFilter) ([]ModelRow, error)
+
+	// GetCapabilityScoresForModels returns model_capability_scores for all
+	// given model IDs in a single query. Returns a map from model_id to
+	// []intelligence.CapabilityScore.
+	GetCapabilityScoresForModels(ctx context.Context, modelIDs []int) (map[int][]intelligence.CapabilityScore, error)
 }
 
 // ErrNotFound is returned by Store methods when a requested resource does not
@@ -178,9 +184,14 @@ type HistoryFilter struct {
 // RecommendFilter carries parameters for the GET /v1/recommend endpoint
 // (used by issue #20).
 type RecommendFilter struct {
-	Task          string
-	ContextSize   *int
-	MaxPriceInput *float64
+	Task                     string
+	ContextSize              *int
+	MaxPriceInput            *float64
+	UseCase                  string // finance|coding|agentic|writing|video|reasoning|general
+	Priority                 string // quality|cost|speed|balanced (default: balanced)
+	RequiresTools            bool
+	RequiresStructuredOutput bool
+	TopK                     int // default 5, max 20
 }
 
 // ModelRow is a denormalised view of a model joined with its latest price and
@@ -1167,4 +1178,38 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 	}
 
 	return models, nil
+}
+
+// GetCapabilityScoresForModels returns model_capability_scores for all given
+// model IDs in a single query, avoiding N+1 DB round-trips.
+// pgx natively encodes []int as a PostgreSQL integer array, so we pass it
+// directly as $1 — no need to build N individual placeholders.
+func (s *pgxStore) GetCapabilityScoresForModels(ctx context.Context, modelIDs []int) (map[int][]intelligence.CapabilityScore, error) {
+	if len(modelIDs) == 0 {
+		return map[int][]intelligence.CapabilityScore{}, nil
+	}
+
+	rows, err := s.db.Query(ctx, `
+		SELECT model_id, dimension, score, confidence, benchmark_count, freshness, computed_at
+		FROM model_capability_scores
+		WHERE model_id = ANY($1)
+		ORDER BY model_id, dimension
+	`, modelIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get capability scores for models: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int][]intelligence.CapabilityScore, len(modelIDs))
+	for rows.Next() {
+		var cs intelligence.CapabilityScore
+		if err := rows.Scan(
+			&cs.ModelID, &cs.Dimension, &cs.Score, &cs.Confidence,
+			&cs.BenchmarkCount, &cs.Freshness, &cs.ComputedAt,
+		); err != nil {
+			return nil, fmt.Errorf("get capability scores scan: %w", err)
+		}
+		result[cs.ModelID] = append(result[cs.ModelID], cs)
+	}
+	return result, rows.Err()
 }

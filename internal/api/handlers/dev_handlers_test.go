@@ -13,6 +13,7 @@ import (
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/api/handlers"
+	"llm-pricing-api/internal/intelligence"
 	"llm-pricing-api/internal/middleware"
 	"llm-pricing-api/internal/models"
 )
@@ -596,6 +597,165 @@ func TestRecommend_FreeTier_CanAccess(t *testing.T) {
 
 	if resp.StatusCode == fiber.StatusForbidden {
 		t.Fatal("free-tier should not receive 403 — tier gate has been removed")
+	}
+}
+
+// ===================================================================
+// Capability-based Recommend tests (UC Phase 1)
+// ===================================================================
+
+func capabilityRecommendStore() *mockStore {
+	ctx := 128000
+	rows := []handlers.ModelRow{
+		{ID: 1, Provider: "openai", Name: "model-a", Slug: "openai/model-a", Modality: "text", ContextWindow: &ctx, PriceInput: 0.000010, PriceOutput: 0.000020, Meta: api.TrustMeta{}},
+		{ID: 2, Provider: "anthropic", Name: "model-b", Slug: "anthropic/model-b", Modality: "text", ContextWindow: &ctx, PriceInput: 0.000005, PriceOutput: 0.000010, Meta: api.TrustMeta{}},
+	}
+	financeScore, qualityScore := 88.0, 82.0
+	codingScore, reasoningScore := 40.0, 45.0
+	financeScoreB, qualityScoreB := 55.0, 90.0
+	codingScoreB, reasoningScoreB := 92.0, 88.0
+	return &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return rows, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{
+				1: {
+					{ModelID: 1, Dimension: "finance", Score: &financeScore, Confidence: "high", BenchmarkCount: 2, Freshness: "fresh"},
+					{ModelID: 1, Dimension: "quality", Score: &qualityScore, Confidence: "high", BenchmarkCount: 2, Freshness: "fresh"},
+					{ModelID: 1, Dimension: "coding", Score: &codingScore, Confidence: "medium", BenchmarkCount: 1, Freshness: "fresh"},
+					{ModelID: 1, Dimension: "reasoning", Score: &reasoningScore, Confidence: "medium", BenchmarkCount: 1, Freshness: "fresh"},
+				},
+				2: {
+					{ModelID: 2, Dimension: "finance", Score: &financeScoreB, Confidence: "medium", BenchmarkCount: 1, Freshness: "fresh"},
+					{ModelID: 2, Dimension: "quality", Score: &qualityScoreB, Confidence: "high", BenchmarkCount: 2, Freshness: "fresh"},
+					{ModelID: 2, Dimension: "coding", Score: &codingScoreB, Confidence: "high", BenchmarkCount: 2, Freshness: "fresh"},
+					{ModelID: 2, Dimension: "reasoning", Score: &reasoningScoreB, Confidence: "high", BenchmarkCount: 2, Freshness: "fresh"},
+				},
+			}, nil
+		},
+	}
+}
+
+func TestRecommend_UseCase_RankedByCapabilityScore(t *testing.T) {
+	store := capabilityRecommendStore()
+	app := newDevApp(store)
+	status, body := get(t, app, "/v1/recommend?use_case=finance&priority=quality")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	// Capability-aware responses use recommendEnvelope: data.items is the ranked list.
+	var envelope struct {
+		Data struct {
+			Items []struct {
+				ID        int                `json:"id"`
+				Scores    map[string]float64 `json:"scores"`
+				Rationale string             `json:"rationale"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v; body: %s", err, body)
+	}
+	if len(envelope.Data.Items) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(envelope.Data.Items))
+	}
+	if envelope.Data.Items[0].ID != 1 {
+		t.Errorf("expected model 1 ranked first for finance+quality, got id=%d", envelope.Data.Items[0].ID)
+	}
+	if envelope.Data.Items[0].Rationale == "" {
+		t.Error("expected non-empty rationale")
+	}
+	if len(envelope.Data.Items[0].Scores) == 0 {
+		t.Error("expected non-empty scores map")
+	}
+}
+
+func TestRecommend_NoUseCase_BackwardCompatible(t *testing.T) {
+	ctx := 8192
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{
+				{ID: 1, Provider: "openai", Name: "cheap", Slug: "openai/cheap", Modality: "text", ContextWindow: &ctx, PriceInput: 0.000001, Meta: api.TrustMeta{Confidence: models.ConfidenceMedium}},
+			}, nil
+		},
+	}
+	app := newDevApp(store)
+	status, body := get(t, app, "/v1/recommend")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	var envelope struct{ Data []json.RawMessage `json:"data"` }
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var item map[string]any
+	if err := json.Unmarshal(envelope.Data[0], &item); err != nil {
+		t.Fatalf("unmarshal item: %v", err)
+	}
+	if _, hasScores := item["scores"]; hasScores {
+		t.Error("backward-compat response should not include 'scores' field")
+	}
+}
+
+func TestRecommend_InvalidUseCase_Returns400(t *testing.T) {
+	app := newDevApp(&mockStore{})
+	status, _ := get(t, app, "/v1/recommend?use_case=invalid")
+	if status != fiber.StatusBadRequest {
+		t.Errorf("expected 400 for invalid use_case, got %d", status)
+	}
+}
+
+func TestRecommend_InvalidPriority_Returns400(t *testing.T) {
+	app := newDevApp(&mockStore{})
+	status, _ := get(t, app, "/v1/recommend?use_case=coding&priority=invalid")
+	if status != fiber.StatusBadRequest {
+		t.Errorf("expected 400 for invalid priority, got %d", status)
+	}
+}
+
+func TestRecommend_InvalidTopK_Returns400(t *testing.T) {
+	app := newDevApp(&mockStore{})
+	status, _ := get(t, app, "/v1/recommend?use_case=coding&top_k=0")
+	if status != fiber.StatusBadRequest {
+		t.Errorf("expected 400 for top_k=0, got %d", status)
+	}
+	status, _ = get(t, app, "/v1/recommend?use_case=coding&top_k=25")
+	if status != fiber.StatusBadRequest {
+		t.Errorf("expected 400 for top_k=25, got %d", status)
+	}
+}
+
+func TestRecommend_FallbackFlag_WhenNoScores(t *testing.T) {
+	ctx := 8192
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{
+				{ID: 1, Provider: "openai", Name: "no-scores", Slug: "openai/no-scores", Modality: "text", ContextWindow: &ctx, PriceInput: 0.000001, Meta: api.TrustMeta{}},
+			}, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, _ []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{}, nil
+		},
+	}
+	app := newDevApp(store)
+	status, body := get(t, app, "/v1/recommend?use_case=coding")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	var envelope struct {
+		Data struct {
+			Items []struct{ Fallback bool `json:"fallback"` } `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(envelope.Data.Items) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(envelope.Data.Items))
+	}
+	if !envelope.Data.Items[0].Fallback {
+		t.Error("expected fallback=true when no capability scores exist")
 	}
 }
 

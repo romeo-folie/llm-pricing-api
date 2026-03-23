@@ -74,7 +74,7 @@ func dimensionWeights(uc UseCase, pri Priority) map[string]float64 {
 
 	weights := make(map[string]float64, len(DimensionBenchmarks))
 
-	// Assign base weight 1.0 for primary dimensions, 0.25 for others.
+	// Base weight: 1.0 for primary dimensions, 0.25 for others.
 	for dim := range DimensionBenchmarks {
 		if primarySet[dim] {
 			weights[dim] = 1.0
@@ -94,6 +94,7 @@ func dimensionWeights(uc UseCase, pri Priority) map[string]float64 {
 			}
 		}
 	case PriorityCost:
+		// Cost priority reduces emphasis on capability; callers apply price sorting.
 		for dim := range weights {
 			if primarySet[dim] {
 				weights[dim] *= 0.75
@@ -112,16 +113,15 @@ func dimensionWeights(uc UseCase, pri Priority) map[string]float64 {
 	return weights
 }
 
-// ScoreModel computes a composite capability score (0-100) for a model given
+// ScoreModel computes a composite capability score (0–100) for a model given
 // its pre-fetched capability scores, use case, and priority.
-// Returns 0 if no capability scores are available for the model.
-// ScoreModel does not call the DB - callers must pre-fetch scores.
+// Returns 0 if no capability scores are available.
+// ScoreModel does not call the DB — callers must pre-fetch scores.
 func ScoreModel(modelID int, useCase UseCase, priority Priority, capScores []CapabilityScore) float64 {
 	if len(capScores) == 0 {
 		return 0
 	}
 
-	// Build dimension -> score lookup.
 	scoreByDim := make(map[string]float64, len(capScores))
 	for _, cs := range capScores {
 		if cs.Score != nil {
