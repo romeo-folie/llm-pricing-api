@@ -1,51 +1,57 @@
 import { Suspense } from "react"
 import type { Metadata } from "next"
+import CompareClient from "@/components/compare/CompareClient"
+import { USE_CASES } from "@/lib/use-cases"
 
 export const dynamic = "force-dynamic"
-import { getModels, getCompare } from "@/lib/api"
-import CompareClient from "@/components/compare/CompareClient"
-import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
-
-export const metadata: Metadata = {
-  title: "Compare AI Model Pricing — Side-by-Side LLM Cost Comparison",
-  description:
-    "Compare GPT-4, Claude, Gemini, and Mistral pricing side by side. See input/output token costs, context windows, and confidence scores across AI providers.",
-  alternates: { canonical: "/compare" },
-  openGraph: {
-    title: "Compare AI Model Pricing — LLM Cost Comparison Tool",
-    description:
-      "Side-by-side AI model pricing comparison. Compare token costs, context windows, and confidence across providers.",
-  },
-}
 
 interface PageProps {
-  searchParams: Promise<{ models?: string }>
+  searchParams: Promise<{ "use-case"?: string; models?: string }>
 }
 
-export default async function ComparePage({ searchParams }: PageProps) {
-  const sp  = await searchParams
-  const ids = sp.models ? sp.models.split(",").filter(Boolean) : []
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  const sp = await searchParams
+  const ucSlug = sp["use-case"]
+  const models = sp.models
 
-  const [allModelsResult, compareResult] = await Promise.allSettled([
-    getModels(),
-    ids.length > 0 ? getCompare(ids) : Promise.resolve([]),
-  ])
-  const allModels   = allModelsResult.status  === "fulfilled" ? allModelsResult.value  : []
-  const compareData = compareResult.status === "fulfilled" ? compareResult.value : []
-  const apiUnavailable = allModelsResult.status === "rejected"
+  const uc = ucSlug ? USE_CASES.find((u) => u.slug === ucSlug) : null
+  const modelSlugs = models ? models.split(",").filter(Boolean) : []
 
+  let title = "Compare AI Models | LLMRates"
+  let description =
+    "Compare GPT-4, Claude, Gemini, and Mistral pricing side by side. See input/output token costs, context windows, and capability scores across AI providers."
+
+  if (uc && modelSlugs.length >= 2) {
+    const [a, b] = modelSlugs
+    title = `${a} vs ${b} for ${uc.label} | LLMRates`
+    description = `Side-by-side comparison of ${a} and ${b} for ${uc.label.toLowerCase()} tasks. Pricing, capability scores, and benchmarks.`
+  } else if (uc) {
+    title = `Best Models for ${uc.label} | LLMRates`
+    description = `Discover and compare the best AI models for ${uc.label.toLowerCase()}. Ranked by capability scores and pricing.`
+  }
+
+  const params = new URLSearchParams()
+  if (ucSlug) params.set("use-case", ucSlug)
+  if (models) params.set("models", models)
+  const qs = params.toString()
+  const canonical = `/compare${qs ? `?${qs}` : ""}`
+
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description },
+  }
+}
+
+export default async function ComparePage() {
   return (
     <main
       className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
       style={{ paddingTop: "32px", paddingBottom: "64px" }}
     >
-      {apiUnavailable && <ApiUnavailableBanner />}
       <Suspense fallback={null}>
-        <CompareClient
-          allModels={allModels}
-          initialCompare={compareData}
-          initialIds={ids}
-        />
+        <CompareClient />
       </Suspense>
     </main>
   )

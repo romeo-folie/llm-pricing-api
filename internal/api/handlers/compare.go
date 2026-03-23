@@ -5,16 +5,36 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 
 	"llm-pricing-api/internal/api"
+	"llm-pricing-api/internal/intelligence"
 )
 
 const maxCompareModels = 5
 
-// Compare handles GET /v1/compare?models=id1,id2,...
-// Returns side-by-side pricing for up to 5 model IDs.
-// Returns 400 if more than 5 IDs are supplied or any ID is not a valid integer.
-// Returns 404 if any model ID is not found.
+// compareModelResponse extends modelResponse with capability scoring data
+// returned by the enhanced /v1/compare endpoint.
+type compareModelResponse struct {
+	modelResponse
+	Scores    map[string]float64 `json:"scores,omitempty"`
+	Freshness map[string]string  `json:"freshness,omitempty"`
+	Rationale string             `json:"rationale,omitempty"`
+	Warnings  []string           `json:"warnings,omitempty"`
+}
+
+// compareEnvelope wraps compare response items together with result-level
+// warnings. Passed as the `data` field to api.OK.
+type compareEnvelope struct {
+	Items    []compareModelResponse `json:"items"`
+	Warnings []string               `json:"warnings,omitempty"`
+}
+
+// Compare handles GET /v1/compare?models=slug1,slug2[&use_case=X]
+// Accepts model slugs (strings) or legacy integer IDs (all-or-nothing — mixed not supported).
+// Returns side-by-side pricing + capability scores for up to 5 models.
+// Returns 400 for mixed slug+int, >5 models, or missing parameter.
+// Returns 404 if any model is not found.
 func (h *Handlers) Compare(c *fiber.Ctx) error {
 	rawModels := c.Query("models")
 	if rawModels == "" {
@@ -23,39 +43,155 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 
 	parts := strings.Split(rawModels, ",")
 	if len(parts) > maxCompareModels {
-		return api.NewBadRequest("compare supports at most 5 model IDs")
+		return api.NewBadRequest("compare supports at most 5 models")
 	}
 
-	ids := make([]int, 0, len(parts))
-	seen := make(map[int]struct{}, len(parts))
+	// De-duplicate slugs while preserving order.
+	slugs := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		id, err := strconv.Atoi(part)
-		if err != nil || id <= 0 {
-			return api.NewBadRequest("each model id must be a positive integer")
-		}
-		if _, dup := seen[id]; dup {
+		if part == "" {
 			continue
 		}
-		seen[id] = struct{}{}
-		ids = append(ids, id)
-	}
-
-	if len(ids) == 0 {
-		return api.NewBadRequest("at least one model id is required")
-	}
-
-	models, err := h.store.CompareModels(c.Context(), ids)
-	if err != nil {
-		if err == ErrNotFound {
-			return api.NewNotFound("one or more model IDs were not found")
+		if _, dup := seen[part]; dup {
+			continue
 		}
-		return api.NewInternalError("failed to compare models")
+		seen[part] = struct{}{}
+		slugs = append(slugs, part)
 	}
 
-	items := make([]modelResponse, len(models))
+	if len(slugs) == 0 {
+		return api.NewBadRequest("at least one model slug is required")
+	}
+
+	// Separate integer IDs from slugs for backward compatibility.
+	var intIDs []int
+	var strSlugs []string
+	for _, s := range slugs {
+		if id, err := strconv.Atoi(s); err == nil {
+			intIDs = append(intIDs, id)
+		} else {
+			strSlugs = append(strSlugs, s)
+		}
+	}
+
+	var models []ModelRow
+	switch {
+	case len(intIDs) > 0 && len(strSlugs) == 0:
+		// Legacy: all integer IDs.
+		var err error
+		models, err = h.store.CompareModels(c.Context(), intIDs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model IDs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+	case len(intIDs) == 0:
+		// New: all slugs.
+		var err error
+		models, err = h.store.CompareModelsBySlugs(c.Context(), strSlugs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model slugs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+	default:
+		// Mixed: resolve both and merge.
+		slugModels, err := h.store.CompareModelsBySlugs(c.Context(), strSlugs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model slugs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+		idModels, err := h.store.CompareModels(c.Context(), intIDs)
+		if err != nil {
+			if err == ErrNotFound {
+				return api.NewNotFound("one or more model IDs were not found")
+			}
+			return api.NewInternalError("failed to compare models")
+		}
+		models = append(slugModels, idModels...)
+	}
+
+	// Fetch capability scores for all models.
+	ids := make([]int, len(models))
 	for i, m := range models {
-		items[i] = modelToResponse(m)
+		ids[i] = m.ID
+	}
+	capMap, err := h.store.GetCapabilityScoresForModels(c.Context(), ids)
+	if err != nil {
+		log.Error().Err(err).Msg("compare: failed to fetch capability scores")
+		// Non-fatal: proceed without capability data.
+		capMap = make(map[int][]intelligence.CapabilityScore)
+	}
+
+	// Parse optional use_case parameter.
+	var uc intelligence.UseCase
+	ucRaw := c.Query("use_case")
+	if ucRaw != "" {
+		uc = intelligence.UseCase(ucRaw)
+		if !intelligence.ValidUseCases[uc] {
+			return api.NewBadRequest("use_case must be one of: finance, coding, agentic, writing, video, reasoning, general")
+		}
+	}
+
+	var warnings []string
+	items := make([]compareModelResponse, len(models))
+	for i, m := range models {
+		caps := capMap[m.ID]
+
+		// Build per-dimension score and freshness maps.
+		ds := make(map[string]float64)
+		var fs map[string]string
+		for _, cap := range caps {
+			if cap.Score != nil {
+				ds[cap.Dimension] = *cap.Score
+			}
+			if cap.Freshness != "" {
+				if fs == nil {
+					fs = make(map[string]string)
+				}
+				fs[cap.Dimension] = cap.Freshness
+			}
+		}
+
+		// Generate rationale only when use_case is provided.
+		var rationale string
+		if uc != "" {
+			rationale = intelligence.GenerateRationale(m.Slug, caps, nil, uc, intelligence.PriorityBalanced)
+		}
+
+		items[i] = compareModelResponse{
+			modelResponse: modelToResponse(m),
+			Scores:        ds,
+			Freshness:     fs,
+			Rationale:     rationale,
+		}
+	}
+
+	// Check benchmark coverage warnings when use_case is provided.
+	if uc != "" {
+		for _, dim := range intelligence.PrimaryDimensions(uc) {
+			allLow := true
+			for _, m := range models {
+				for _, cap := range capMap[m.ID] {
+					if cap.Dimension == dim && cap.BenchmarkCount >= 2 {
+						allLow = false
+						break
+					}
+				}
+				if !allLow {
+					break
+				}
+			}
+			if allLow {
+				warnings = append(warnings, "Limited benchmark coverage for "+dim)
+			}
+		}
 	}
 
 	// Aggregate meta: use the most recently confirmed model's meta.
@@ -66,5 +202,5 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 		}
 	}
 
-	return api.OK(c, items, meta)
+	return api.OK(c, compareEnvelope{Items: items, Warnings: warnings}, meta)
 }

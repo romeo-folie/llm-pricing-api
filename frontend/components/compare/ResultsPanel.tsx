@@ -13,17 +13,18 @@ export interface RecommendedModel {
   fallback: boolean
 }
 
-interface BestForResultsProps {
+interface ResultsPanelProps {
   useCase: string
   models: RecommendedModel[]
   loading: boolean
-  /** Result-level warnings from the API envelope (e.g. limited benchmark coverage). */
   warnings?: string[]
+  selectedModels: string[]
+  onSelect: (slug: string) => void
 }
 
 function formatPricePerM(p: number): string {
   const per1M = p * 1_000_000
-  if (per1M === 0) return "—"
+  if (per1M === 0) return "\u2014"
   if (per1M >= 10) return `$${per1M.toFixed(0)}/1M`
   if (per1M >= 1)  return `$${per1M.toFixed(2)}/1M`
   return `$${per1M.toFixed(3)}/1M`
@@ -69,7 +70,52 @@ function SkeletonCard({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function TopPickCard({ model }: { model: RecommendedModel }) {
+function SelectionCheckbox({
+  checked,
+  slug,
+  name,
+  parentHovered,
+  onClick,
+}: {
+  checked: boolean
+  slug: string
+  name: string
+  parentHovered: boolean
+  onClick: (e: React.MouseEvent) => void
+}) {
+  return (
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={`Select ${name} for comparison`}
+      onClick={onClick}
+      className="w-5 h-5 border-2 flex items-center justify-center transition-opacity"
+      style={{
+        opacity: checked || parentHovered ? 1 : 0,
+        borderColor: checked ? "var(--accent)" : "var(--border)",
+        backgroundColor: checked ? "var(--accent)" : "transparent",
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      {checked && (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+function TopPickCard({
+  model,
+  isSelected,
+  onSelect,
+}: {
+  model: RecommendedModel
+  isSelected: boolean
+  onSelect: (slug: string) => void
+}) {
   const scoreValues = Object.values(model.scores)
   const composite = model.fallback || scoreValues.length === 0
     ? null
@@ -77,15 +123,31 @@ function TopPickCard({ model }: { model: RecommendedModel }) {
 
   return (
     <div
-      className="border-2 p-6 mb-6"
-      style={{ borderColor: "var(--ink)", backgroundColor: "var(--surface)" }}
+      className="border-2 p-6 mb-6 group relative"
+      style={{
+        borderColor: isSelected ? "var(--accent)" : "var(--ink)",
+        borderLeftWidth: isSelected ? "4px" : "2px",
+        backgroundColor: "var(--surface)",
+      }}
     >
-      <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
+      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ opacity: isSelected ? 1 : undefined }}
+      >
+        <SelectionCheckbox
+          checked={isSelected}
+          slug={model.slug}
+          name={model.name}
+          parentHovered={false}
+          onClick={(e) => { e.stopPropagation(); onSelect(model.slug) }}
+        />
+      </div>
+
+      <div className="flex items-start justify-between mb-3 flex-wrap gap-2 pr-8">
         <span
           className="text-xs font-semibold px-2 py-0.5 border"
           style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
         >
-          ⭐ Top Pick
+          Top Pick
         </span>
         <span className="text-xs" style={{ color: "var(--muted)" }}>
           {formatPricePerM(model.price_input)} input
@@ -116,7 +178,6 @@ function TopPickCard({ model }: { model: RecommendedModel }) {
         </p>
       )}
 
-      {/* Score breakdown */}
       {Object.keys(model.scores).length > 0 && (
         <div className="mb-4">
           <div className="text-xs uppercase tracking-wide mb-2 font-semibold" style={{ color: "var(--muted)" }}>
@@ -128,7 +189,6 @@ function TopPickCard({ model }: { model: RecommendedModel }) {
         </div>
       )}
 
-      {/* Warnings */}
       {model.warnings && model.warnings.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {model.warnings.map((w, i) => (
@@ -137,7 +197,7 @@ function TopPickCard({ model }: { model: RecommendedModel }) {
               className="text-xs px-2 py-0.5 border"
               style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
             >
-              ⚠ {w}
+              {w}
             </span>
           ))}
         </div>
@@ -146,18 +206,42 @@ function TopPickCard({ model }: { model: RecommendedModel }) {
   )
 }
 
-function AlternativeCard({ model }: { model: RecommendedModel }) {
-  const scoreValues = Object.values(model.scores)
-  const topDim = scoreValues.length > 0
+function AlternativeCard({
+  model,
+  isSelected,
+  onSelect,
+}: {
+  model: RecommendedModel
+  isSelected: boolean
+  onSelect: (slug: string) => void
+}) {
+  const topDim = Object.values(model.scores).length > 0
     ? Object.entries(model.scores).sort((a, b) => b[1] - a[1])[0]
     : null
 
   return (
     <div
-      className="border p-4 flex flex-col gap-1"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      className="border p-4 flex flex-col gap-1 group relative cursor-pointer"
+      style={{
+        borderColor: isSelected ? "var(--accent)" : "var(--border)",
+        borderLeftWidth: isSelected ? "3px" : "1px",
+        backgroundColor: "var(--surface)",
+      }}
+      onClick={() => onSelect(model.slug)}
     >
-      <div className="text-xs" style={{ color: "var(--muted)" }}>{model.provider}</div>
+      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ opacity: isSelected ? 1 : undefined }}
+      >
+        <SelectionCheckbox
+          checked={isSelected}
+          slug={model.slug}
+          name={model.name}
+          parentHovered={false}
+          onClick={(e) => { e.stopPropagation(); onSelect(model.slug) }}
+        />
+      </div>
+
+      <div className="text-xs pr-6" style={{ color: "var(--muted)" }}>{model.provider}</div>
       <div className="font-semibold text-sm" style={{ color: "var(--ink)" }}>{model.name}</div>
       {topDim ? (
         <div className="text-xs" style={{ color: "var(--muted)" }}>
@@ -173,7 +257,13 @@ function AlternativeCard({ model }: { model: RecommendedModel }) {
   )
 }
 
-export default function BestForResults({ useCase, models, loading, warnings = [] }: BestForResultsProps) {
+export default function ResultsPanel({
+  models,
+  loading,
+  warnings = [],
+  selectedModels,
+  onSelect,
+}: ResultsPanelProps) {
   if (loading) {
     return (
       <div>
@@ -191,7 +281,7 @@ export default function BestForResults({ useCase, models, loading, warnings = []
         className="border p-8 text-center"
         style={{ borderColor: "var(--border)", color: "var(--muted)" }}
       >
-        <div className="text-2xl mb-2">🔍</div>
+        <div className="text-2xl mb-2">&#x1F50D;</div>
         <div className="font-semibold mb-1" style={{ color: "var(--ink)" }}>No models matched</div>
         <div className="text-sm">Try adjusting the filters — lower the budget or remove constraints.</div>
       </div>
@@ -201,9 +291,8 @@ export default function BestForResults({ useCase, models, loading, warnings = []
   const [topPick, ...alternatives] = models
 
   return (
-    <div>
-      {/* Result-level warnings from the API envelope (e.g. limited benchmark coverage).
-          Shown once at the top rather than duplicated inside every model card. */}
+    /* pb-20 compensates for the sticky CTA bar height on mobile so content isn't hidden beneath it */
+    <div className={selectedModels.length >= 1 ? "pb-20" : undefined}>
       {warnings.length > 0 && (
         <div className="mb-4 flex flex-col gap-1">
           {warnings.map((w, i) => (
@@ -212,12 +301,18 @@ export default function BestForResults({ useCase, models, loading, warnings = []
               className="text-xs px-3 py-2 border"
               style={{ borderColor: "var(--warning-border, #B45309)", color: "var(--warning-text, #B45309)", backgroundColor: "var(--warning-bg, #FEF3C7)" }}
             >
-              ⚠ {w}
+              {w}
             </div>
           ))}
         </div>
       )}
-      <TopPickCard model={topPick} />
+
+      <TopPickCard
+        model={topPick}
+        isSelected={selectedModels.includes(topPick.slug)}
+        onSelect={onSelect}
+      />
+
       {alternatives.length > 0 && (
         <div>
           <div className="text-xs uppercase tracking-wide mb-3 font-semibold" style={{ color: "var(--muted)" }}>
@@ -225,11 +320,51 @@ export default function BestForResults({ useCase, models, loading, warnings = []
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {alternatives.slice(0, 4).map((m) => (
-              <AlternativeCard key={m.id} model={m} />
+              <AlternativeCard
+                key={m.id}
+                model={m}
+                isSelected={selectedModels.includes(m.slug)}
+                onSelect={onSelect}
+              />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sticky CTA bar */}
+      {selectedModels.length >= 1 && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-40 border-t py-3 px-4"
+          style={{
+            backgroundColor: "var(--surface)",
+            borderColor: "var(--border)",
+          }}
+        >
+          <div className="mx-auto max-w-7xl flex items-center justify-between">
+            <span className="text-sm" style={{ color: "var(--ink)" }}>
+              {selectedModels.length} of 2 selected
+            </span>
+            <button
+              disabled={selectedModels.length < 2}
+              className="px-4 py-2 text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: selectedModels.length >= 2 ? "var(--accent)" : "var(--border)",
+                color: selectedModels.length >= 2 ? "white" : "var(--muted)",
+                cursor: selectedModels.length >= 2 ? "pointer" : "not-allowed",
+                opacity: selectedModels.length >= 2 ? 1 : 0.6,
+              }}
+              onClick={() => {
+                const panel = document.getElementById("compare-panel")
+                if (panel) panel.scrollIntoView({ behavior: "smooth" })
+              }}
+            >
+              Compare &rarr;
+            </button>
           </div>
         </div>
       )}
     </div>
   )
 }
+
+export { ScoreBar }

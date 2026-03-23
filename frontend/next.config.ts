@@ -60,6 +60,12 @@ const nextConfig: NextConfig = {
       },
     ]
   },
+  async redirects() {
+    return [
+      { source: "/best-for", destination: "/compare", permanent: true },
+      { source: "/best-for/:slug", destination: "/compare?use-case=:slug", permanent: true },
+    ]
+  },
   async rewrites() {
     return [
       { source: "/openapi.json",               destination: `${API_BASE}/openapi.json`               },

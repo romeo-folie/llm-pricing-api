@@ -182,7 +182,7 @@ Each package under `internal/` has its own `README.md` explaining its purpose, k
 | `GET /v1/models` | Free | List models; filter by `?provider=`, `?modality=`, `?min_context=` |
 | `GET /v1/models/:id` | Free | Single model with current prices and trust metadata |
 | `GET /v1/providers` | Free | List all known providers |
-| `GET /v1/compare?models=` | Free | Side-by-side comparison of up to 5 models |
+| `GET /v1/compare?models=slug1,slug2[&use_case=X]` | Free | Side-by-side pricing + capability scores for up to 5 models (by slug). Optional `use_case` param returns rationale |
 | `GET /v1/changes` | Free | Recent price changes; filter by `?since=`, `?provider=` |
 | `GET /v1/models/:id/history` | Developer+ | Full price history; filter by `?from=`, `?to=` |
 | `GET /v1/recommend` | Developer+ | Models ranked by task type, context size, and price |

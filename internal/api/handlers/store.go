@@ -45,6 +45,11 @@ type Store interface {
 	// Returns ErrNotFound if any requested ID does not exist.
 	CompareModels(ctx context.Context, ids []int) ([]ModelRow, error)
 
+	// CompareModelsBySlugs returns pricing + capability rows for the given
+	// model slugs (max 5). Returns ErrNotFound if any requested slug does
+	// not exist.
+	CompareModelsBySlugs(ctx context.Context, slugs []string) ([]ModelRow, error)
+
 	// ListChanges returns recent price changes with cursor-based pagination.
 	// The second return value is the total count of all changes matching
 	// since/provider (ignoring the cursor), used for X-Total-Count.
@@ -602,6 +607,99 @@ func (s *pgxStore) CompareModels(ctx context.Context, ids []int) ([]ModelRow, er
 		historyBatch, err := s.GetPriceHistoryBatch(ctx, ids)
 		if err != nil {
 			return nil, fmt.Errorf("compare models history batch: %w", err)
+		}
+		for i := range models {
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+		}
+	}
+
+	return models, nil
+}
+
+// CompareModelsBySlugs returns model rows for the given slugs. Returns
+// ErrNotFound if any requested slug is absent from the database.
+func (s *pgxStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]ModelRow, error) {
+	if len(slugs) == 0 {
+		return nil, nil
+	}
+
+	// De-duplicate slugs while preserving order.
+	seen := make(map[string]struct{}, len(slugs))
+	unique := make([]string, 0, len(slugs))
+	for _, sl := range slugs {
+		if _, dup := seen[sl]; dup {
+			continue
+		}
+		seen[sl] = struct{}{}
+		unique = append(unique, sl)
+	}
+
+	// pgx natively encodes []string as a PostgreSQL text array — no need to
+	// build N individual placeholders. ANY($1) is simpler and has no parameter limit.
+	rows, err := s.db.Query(ctx, `
+		SELECT
+			m.id,
+			m.provider,
+			m.name,
+			m.slug,
+			m.modality,
+			m.context_window,
+			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
+			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
+			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			COALESCE(src.name, '')                        AS source
+		FROM models m
+		LEFT JOIN LATERAL (
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id
+			FROM prices
+			WHERE model_id = m.id
+			ORDER BY confirmed_at DESC
+			LIMIT 1
+		) p ON true
+		LEFT JOIN sources src ON src.id = p.source_id
+		WHERE m.slug = ANY($1)
+	`, unique)
+	if err != nil {
+		return nil, fmt.Errorf("compare models by slug query: %w", err)
+	}
+	defer rows.Close()
+
+	var models []ModelRow
+	for rows.Next() {
+		var r ModelRow
+		if err := rows.Scan(
+			&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
+			&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
+			&r.ConfirmedAt, &r.Source,
+		); err != nil {
+			return nil, fmt.Errorf("compare models by slug scan: %w", err)
+		}
+		models = append(models, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("compare models by slug rows: %w", err)
+	}
+
+	// Verify all requested slugs were found.
+	found := make(map[string]struct{}, len(models))
+	for _, m := range models {
+		found[m.Slug] = struct{}{}
+	}
+	for _, sl := range unique {
+		if _, ok := found[sl]; !ok {
+			return nil, ErrNotFound
+		}
+	}
+
+	// Batch-load price history for TrustMeta computation.
+	if len(models) > 0 {
+		ids := make([]int, len(models))
+		for i, m := range models {
+			ids[i] = m.ID
+		}
+		historyBatch, err := s.GetPriceHistoryBatch(ctx, ids)
+		if err != nil {
+			return nil, fmt.Errorf("compare models by slug history batch: %w", err)
 		}
 		for i := range models {
 			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
