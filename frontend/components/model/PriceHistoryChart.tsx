@@ -27,12 +27,18 @@ const RANGES: { label: string; value: Range }[] = [
   { label: "All", value: "all" },
 ]
 
+/** Filter out entries with $0 prices — these are partial scrape artifacts, not real data. */
+function filterZeroPrices(entries: PriceHistoryEntry[]): PriceHistoryEntry[] {
+  return entries.filter((e) => e.input_price_per_m > 0 && e.output_price_per_m > 0)
+}
+
 function filterByRange(entries: PriceHistoryEntry[], range: Range): PriceHistoryEntry[] {
-  if (range === "all") return entries
+  const clean = filterZeroPrices(entries)
+  if (range === "all") return clean
   const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
-  return entries.filter((e) => new Date(e.timestamp) >= cutoff)
+  return clean.filter((e) => new Date(e.timestamp) >= cutoff)
 }
 
 function formatDate(ts: string): string {

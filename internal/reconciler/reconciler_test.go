@@ -121,8 +121,20 @@ func newMockStore() *mockStore {
 			"openai-docs":                     3,
 			"huggingface_inference_providers": 4,
 		},
-		modelIDs:      map[string]int{"openai/gpt-4o": 10, "anthropic/claude-3-5-sonnet": 20},
-		currentPrices: map[[2]int]struct{ input, output float64 }{},
+		modelIDs: map[string]int{"openai/gpt-4o": 10, "anthropic/claude-3-5-sonnet": 20},
+		// Seed default current prices so the "other" field is non-zero when a
+		// single-field diff is reconciled. This mirrors production where models
+		// typically have both input and output prices set before any diff fires.
+		currentPrices: map[[2]int]struct{ input, output float64 }{
+			{10, 1}: {input: 0.000005, output: 0.00001},
+			{10, 2}: {input: 0.000005, output: 0.00001},
+			{10, 3}: {input: 0.000005, output: 0.00001},
+			{10, 4}: {input: 0.000005, output: 0.00001},
+			{20, 1}: {input: 0.000003, output: 0.000015},
+			{20, 2}: {input: 0.000003, output: 0.000015},
+			{20, 3}: {input: 0.000003, output: 0.000015},
+			{20, 4}: {input: 0.000003, output: 0.000015},
+		},
 	}
 }
 
@@ -391,7 +403,7 @@ func TestReconcile_FlagDiscrepancyError_DoesNotPropagateToReconcile(t *testing.T
 	}
 }
 
-func TestReconcile_LookupCurrentPriceError_StillPublishesWithZeroForUnchangedField(t *testing.T) {
+func TestReconcile_LookupCurrentPriceError_SkipsPublishDueToZeroField(t *testing.T) {
 	s := newMockStore()
 	s.lookupCurrentPrErr = errors.New("simulated DB read error")
 	r := reconciler.NewWithStore(s)
@@ -400,12 +412,13 @@ func TestReconcile_LookupCurrentPriceError_StillPublishesWithZeroForUnchangedFie
 		inputDiff("openai/gpt-4o", "litellm", 0.000005),
 	}
 
-	// LookupCurrentPrice fails, but publish should still proceed using 0 for the other field.
+	// LookupCurrentPrice fails → output defaults to 0 → publish is skipped
+	// to avoid writing incomplete (zero) price data to price_history.
 	if err := r.Reconcile(context.Background(), diffs); err != nil {
 		t.Fatalf("LookupCurrentPrice error should not propagate from Reconcile: %v", err)
 	}
-	if len(s.published) == 0 {
-		t.Error("publish should proceed even when LookupCurrentPrice fails (output defaults to 0)")
+	if len(s.published) != 0 {
+		t.Error("publish should be skipped when LookupCurrentPrice fails (output would be 0)")
 	}
 }
 
@@ -427,11 +440,11 @@ func TestReconcile_PublishPriceError_DoesNotPropagateToReconcile(t *testing.T) {
 	}
 }
 
-func TestReconcile_BothSourcesZeroPrice_DoesNotPanic(t *testing.T) {
-	// Both sources report 0: allAgree is true (0==0 within epsilon) so the
-	// allAgree fast-path fires and publishes with (0, 0). Scrapers already
-	// filter out 0-priced models so this is a defence-in-depth test; the
-	// important invariant is that it does not panic or return an error.
+func TestReconcile_BothSourcesZeroPrice_SkipsPublish(t *testing.T) {
+	// Both sources report 0 for input: allAgree is true (0==0 within epsilon)
+	// but the zero-price guard in publish() rejects the record to prevent
+	// misleading $0 entries in price_history. The important invariant is that
+	// it does not panic or return an error.
 	s := newMockStore()
 	r := reconciler.NewWithStore(s)
 	diffs := []diff.PriceDiff{
@@ -442,9 +455,9 @@ func TestReconcile_BothSourcesZeroPrice_DoesNotPanic(t *testing.T) {
 	if err := r.Reconcile(context.Background(), diffs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Both agreed at 0 → publishes (reconciler trusts scrapers to filter zeros upstream)
-	if len(s.published) == 0 {
-		t.Error("expected publish for zero-price 2-source agreement (scraper is responsible for filtering)")
+	// Zero-price publish is rejected — incomplete data should not enter price_history.
+	if len(s.published) != 0 {
+		t.Error("expected no publish for zero-price agreement (zero = incomplete data)")
 	}
 	if len(s.flagged) != 0 {
 		t.Error("expected no flag when both sources agree")
