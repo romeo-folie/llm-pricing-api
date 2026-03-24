@@ -84,6 +84,19 @@ func insertFixture(t *testing.T, db *pgxpool.Pool) fixture {
 		t.Fatalf("insert source B: %v", err)
 	}
 
+	// Seed initial prices for both sources so LookupCurrentPrice returns
+	// non-zero values for the "other" field. Without this, the zero-price
+	// guard in publish() rejects every record because the unchanged field is 0.
+	for _, sid := range []int{srcAID, srcBID} {
+		if _, err := db.Exec(ctx,
+			`INSERT INTO prices (model_id, source_id, input_cost_per_token, output_cost_per_token, confidence)
+			 VALUES ($1, $2, 0.000001, 0.000001, 'medium')`,
+			modelID, sid,
+		); err != nil {
+			t.Fatalf("seed prices for source %d: %v", sid, err)
+		}
+	}
+
 	t.Cleanup(func() {
 		// Delete in FK-safe order. Log (not Fatal) so cleanup failures are visible
 		// without masking the original test result.
