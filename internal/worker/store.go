@@ -152,13 +152,33 @@ func (s *pgxWorkerStore) EnsureModels(ctx context.Context, scraped []scraper.Scr
 	return nil
 }
 
-// nameFromSlug extracts a human-readable name from a "provider/model" slug.
-// For example, "openai/gpt-4" → "gpt-4".
+// nameFromSlug extracts a human-readable name from a model slug.
+//
+// Simple case: "openai/gpt-4" → "gpt-4".
+//
+// Some providers (e.g. Fireworks AI) use deep path slugs like
+// "fireworks_ai/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0".
+// Stripping only the first segment would leave "accounts/fireworks/models/…"
+// as the name, which is unreadable. For these slugs we return the last
+// path segment instead, e.g. "stable-diffusion-xl-1024-v1-0".
 func nameFromSlug(slug string) string {
-	if idx := strings.IndexByte(slug, '/'); idx >= 0 && idx < len(slug)-1 {
-		return slug[idx+1:]
+	// No "/" at all — slug is already a bare model name.
+	firstSlash := strings.IndexByte(slug, '/')
+	if firstSlash < 0 || firstSlash == len(slug)-1 {
+		return slug
 	}
-	return slug
+
+	// If the remainder after the first segment itself contains a "/", the slug
+	// has a deep path (e.g. "fireworks_ai/accounts/…/model-name"). In that
+	// case return the last segment only.
+	remainder := slug[firstSlash+1:]
+	if strings.ContainsRune(remainder, '/') {
+		if lastSlash := strings.LastIndexByte(slug, '/'); lastSlash >= 0 && lastSlash < len(slug)-1 {
+			return slug[lastSlash+1:]
+		}
+	}
+
+	return remainder
 }
 
 // normalizeModality maps raw modality strings from external APIs to the

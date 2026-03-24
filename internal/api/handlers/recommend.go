@@ -34,6 +34,20 @@ var taskModalityMap = map[string]string{
 	"embeddings":     "embedding",
 }
 
+// useCaseModalityMap maps use_case values to the required model modality.
+// Text-based use cases must not surface image, audio, or embedding models.
+// "video" maps to "multimodal" since video understanding requires multimodal
+// capability. Use cases not listed here accept any modality.
+var useCaseModalityMap = map[string]string{
+	"coding":    "text",
+	"reasoning": "text",
+	"finance":   "text",
+	"writing":   "text",
+	"agentic":   "text",
+	"general":   "text",
+	"video":     "multimodal",
+}
+
 // recommendModelResponse extends modelResponse with capability scoring data.
 // Warnings are not per-item — they belong to the full result set and are
 // surfaced at envelope level via recommendEnvelope.
@@ -113,6 +127,21 @@ func (h *Handlers) Recommend(c *fiber.Ctx) error {
 			}
 		}
 		models = filtered
+	}
+
+	// Apply use_case modality filter. Text-based use cases (coding, agentic, etc.)
+	// must not surface image, audio, or embedding models — they would score 0 on
+	// all capability dimensions and would rank first only because of price.
+	if filter.UseCase != "" {
+		if mod := useCaseModalityMap[filter.UseCase]; mod != "" {
+			filtered := make([]ModelRow, 0, len(models))
+			for _, m := range models {
+				if m.Modality == mod {
+					filtered = append(filtered, m)
+				}
+			}
+			models = filtered
+		}
 	}
 
 	if filter.UseCase == "" {

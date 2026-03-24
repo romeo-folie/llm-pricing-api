@@ -9,7 +9,6 @@ export interface RecommendedModel {
   price_output: number
   scores: Record<string, number> | null
   rationale: string
-  warnings: string[]
   fallback: boolean
 }
 
@@ -20,6 +19,45 @@ interface ResultsPanelProps {
   warnings?: string[]
   selectedModels: string[]
   onSelect: (slug: string) => void
+}
+
+/**
+ * Consolidates related warning strings into a single line.
+ *
+ * Warnings that share a common prefix (e.g. "Limited benchmark coverage for X",
+ * "Limited benchmark coverage for Y") are grouped under that prefix with the
+ * subjects joined by ", ". Unrelated warnings are appended after a space.
+ *
+ * Example input:  ["Limited benchmark coverage for agentic",
+ *                  "Limited benchmark coverage for tool_use",
+ *                  "Limited benchmark coverage for reasoning"]
+ * Example output: "Limited benchmark coverage for: agentic, tool_use, reasoning"
+ */
+function consolidateWarnings(warnings: string[]): string {
+  const groups: Record<string, string[]> = {}
+  const ungrouped: string[] = []
+
+  // Pattern: "<prefix> for <subject>" — group by prefix.
+  const forPattern = /^(.+) for (.+)$/
+  for (const w of warnings) {
+    const m = w.match(forPattern)
+    if (m) {
+      const prefix = m[1]
+      if (!groups[prefix]) groups[prefix] = []
+      groups[prefix].push(m[2].replace(/_/g, " "))
+    } else {
+      ungrouped.push(w)
+    }
+  }
+
+  const parts: string[] = Object.entries(groups).map(
+    ([prefix, subjects]) =>
+      subjects.length === 1
+        ? `${prefix} for ${subjects[0]}`
+        : `${prefix} for: ${subjects.join(", ")}`
+  )
+
+  return [...parts, ...ungrouped].join(" · ")
 }
 
 function formatPricePerM(p: number): string {
@@ -205,13 +243,7 @@ function TopPickCard({
         </div>
       )}
 
-      {model.warnings && model.warnings.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {model.warnings.map((w, i) => (
-            <WarningBadge key={i} text={w} />
-          ))}
-        </div>
-      )}
+
     </div>
   )
 }
@@ -310,20 +342,17 @@ export default function ResultsPanel({
     /* pb-20 compensates for the sticky CTA bar height on mobile so content isn't hidden beneath it */
     <div className={selectedModels.length >= 1 ? "pb-20" : undefined}>
       {warnings.length > 0 && (
-        <div className="mb-4 flex flex-col gap-1">
-          {warnings.map((w, i) => (
-            <div
-              key={i}
-              className="text-xs px-3 py-2 border"
-              style={{
-                borderColor: "var(--warningBorder)",
-                color: "var(--warningText)",
-                backgroundColor: "var(--warningBg)",
-              }}
-            >
-              {w}
-            </div>
-          ))}
+        <div className="mb-4">
+          <div
+            className="text-xs px-3 py-2 border"
+            style={{
+              borderColor: "var(--warningBorder)",
+              color: "var(--warningText)",
+              backgroundColor: "var(--warningBg)",
+            }}
+          >
+            {consolidateWarnings(warnings)}
+          </div>
         </div>
       )}
 
