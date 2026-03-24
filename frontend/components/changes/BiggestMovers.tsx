@@ -11,6 +11,24 @@ interface BiggestMoversProps {
   topMovers: TopMover[] | null
 }
 
+/**
+ * Determine which pricing dimension drove the change and return a compact
+ * label ("in", "out", or "in+out") so users understand where the move
+ * came from without needing to cross-reference the live feed.
+ */
+function moverDimensionLabel(m: TopMover): string {
+  const inputChanged =
+    m.old_input_price > 0 &&
+    Math.abs(m.new_input_price - m.old_input_price) > 0.0001
+  const outputChanged =
+    m.old_output_price > 0 &&
+    Math.abs(m.new_output_price - m.old_output_price) > 0.0001
+
+  if (inputChanged && outputChanged) return "in+out"
+  if (inputChanged) return "in"
+  return "out"
+}
+
 export default function BiggestMovers({ topMovers }: BiggestMoversProps) {
   const movers = topMovers ?? []
 
@@ -40,7 +58,7 @@ export default function BiggestMovers({ topMovers }: BiggestMoversProps) {
             {movers.map((mover, i) => {
               const increased = mover.delta_pct >= 0
               const arrow = increased ? "\u25B2" : "\u25BC"
-              const { color: pvColor, bg: pvBg } = providerStyle(mover.provider)
+              const dimLabel = moverDimensionLabel(mover)
 
               return (
                 <div
@@ -93,19 +111,32 @@ export default function BiggestMovers({ topMovers }: BiggestMoversProps) {
                     />
                   </div>
 
-                  {/* Delta */}
-                  <span
-                    className="font-orbitron text-sm"
-                    style={{
-                      color: deltaToColor(mover.delta_pct),
-                      fontWeight: 700,
-                      flexShrink: 0,
-                      textAlign: "right",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {arrow} {formatDelta(mover.delta_pct)}
-                  </span>
+                  {/* Delta + dimension label */}
+                  <div style={{ flexShrink: 0, textAlign: "right" }}>
+                    <span
+                      className="font-orbitron text-sm"
+                      style={{
+                        color: deltaToColor(mover.delta_pct),
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                        display: "block",
+                      }}
+                    >
+                      {arrow} {formatDelta(mover.delta_pct)}
+                    </span>
+                    <span
+                      className="font-outfit"
+                      style={{
+                        fontSize: "10px",
+                        color: "var(--dim)",
+                        whiteSpace: "nowrap",
+                        display: "block",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {dimLabel} price
+                    </span>
+                  </div>
                 </div>
               )
             })}
