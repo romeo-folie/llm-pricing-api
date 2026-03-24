@@ -24,9 +24,13 @@ interface PageProps {
 
 export default async function ChangesPage({ searchParams }: PageProps) {
   const sp = await searchParams
+
+  // Default the feed to 7 days when no explicit since is provided, so
+  // the SSR-rendered feed matches the summary/movers time window.
+  const defaultSince = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString()
   const filter = {
     provider: sp.provider || undefined,
-    since:    sp.since    || undefined,
+    since:    sp.since    || defaultSince,
   }
 
   const [changesResult, summaryResult, providersResult] = await Promise.allSettled([

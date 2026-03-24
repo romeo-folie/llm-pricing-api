@@ -25,6 +25,16 @@ interface ChangesFeedProps {
 
 const POLL_INTERVAL = 60_000
 
+/** Convert a TimeWindow label to an ISO 8601 timestamp for the feed `since` param. */
+function windowToSince(win: TimeWindow): string {
+  const ms: Record<TimeWindow, number> = {
+    "24h": 24 * 60 * 60_000,
+    "7d":  7 * 24 * 60 * 60_000,
+    "30d": 30 * 24 * 60 * 60_000,
+  }
+  return new Date(Date.now() - ms[win]).toISOString()
+}
+
 export default function ChangesFeed({
   initialChanges,
   initialTotal,
@@ -45,6 +55,9 @@ export default function ChangesFeed({
   const [polling,     setPolling]     = useState(true)
   const [pollFailed,  setPollFailed]  = useState(false)
   const [timeWindow,  setTimeWindow]  = useState<TimeWindow>("7d")
+  // Whether the feed since is driven by the time window selector (true)
+  // or a custom date from the DatePicker (false).
+  const [syncedToWindow, setSyncedToWindow] = useState(!initialSince)
 
   // Pagination state
   const [total,       setTotal]       = useState(initialTotal)
@@ -121,7 +134,26 @@ export default function ChangesFeed({
   }
 
   useEffect(() => {
-    startPolling(provider, since)
+    // On mount, if no explicit since was provided via URL, sync the feed to
+    // the default time window (7d) so the feed matches the summary/movers.
+    if (!initialSince) {
+      const winSince = windowToSince(timeWindow)
+      setSince(winSince)
+
+      fetchChangesPage(provider, winSince)
+        .then((result) => {
+          setChanges(result.data)
+          setTotal(result.total)
+          setHasMore(result.hasMore)
+          setNextCursor(result.nextCursor)
+          knownIdsRef.current = new Set(result.data.map((c) => c.id))
+        })
+        .catch(() => setPollFailed(true))
+
+      startPolling(provider, winSince)
+    } else {
+      startPolling(provider, since)
+    }
     setPolling(true)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,10 +199,42 @@ export default function ChangesFeed({
 
   function handleTimeWindowChange(win: TimeWindow) {
     setTimeWindow(win)
+    setSyncedToWindow(true)
+
+    const winSince = windowToSince(win)
+
     // Fetch new summary for the selected window
     fetchSummary(win, provider)
       .then(setSummary)
       .catch(() => {/* summary failure is non-critical */})
+
+    // Sync the live feed to the same time window
+    generationRef.current++
+    const gen = generationRef.current
+
+    setSince(winSince)
+    knownIdsRef.current = new Set()
+    setNextCursor(null)
+    setHasMore(false)
+    setLoadingMore(false)
+    router.push(buildUrl(provider, winSince), { scroll: false })
+
+    fetchChangesPage(provider, winSince)
+      .then((result) => {
+        if (generationRef.current !== gen) return
+        setChanges(result.data)
+        setTotal(result.total)
+        setHasMore(result.hasMore)
+        setNextCursor(result.nextCursor)
+        knownIdsRef.current = new Set(result.data.map((c) => c.id))
+        setPollFailed(false)
+      })
+      .catch(() => {
+        if (generationRef.current !== gen) return
+        setPollFailed(true)
+      })
+
+    startPolling(provider, winSince)
   }
 
   async function loadMore() {
@@ -310,14 +374,21 @@ export default function ChangesFeed({
         </select>
 
         <DatePicker
-          value={since}
-          onChange={(val) => applyFilter(provider, val)}
+          value={syncedToWindow ? "" : since}
+          onChange={(val) => {
+            setSyncedToWindow(false)
+            applyFilter(provider, val)
+          }}
           placeholder="Since date"
         />
 
-        {(provider || since) && (
+        {(provider || !syncedToWindow) && (
           <button
-            onClick={() => applyFilter("", "")}
+            onClick={() => {
+              setSyncedToWindow(true)
+              const winSince = windowToSince(timeWindow)
+              applyFilter("", winSince)
+            }}
             className="font-outfit text-sm"
             style={{
               padding: "6px 12px",
