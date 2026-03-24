@@ -10,9 +10,6 @@ import type { RecommendedModel } from "./ResultsPanel"
 import ComparePanel from "./ComparePanel"
 import type { CompareModel } from "./ComparePanel"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.llmrates.live"
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY
-
 function buildRecommendUrl(useCase: string, filters: CompareFilters): string {
   const params = new URLSearchParams({
     use_case: useCase,
@@ -27,19 +24,13 @@ function buildRecommendUrl(useCase: string, filters: CompareFilters): string {
   }
   if (filters.requiresTools) params.set("requires_tools", "true")
   if (filters.requiresStructuredOutput) params.set("requires_structured_output", "true")
-  return `${API_BASE}/v1/recommend?${params.toString()}`
+  return `/api/recommend?${params.toString()}`
 }
 
 function buildCompareUrl(slugs: string[], useCase: string | null): string {
   const params = new URLSearchParams({ models: slugs.join(",") })
   if (useCase) params.set("use_case", useCase)
-  return `${API_BASE}/v1/compare?${params.toString()}`
-}
-
-function buildHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {}
-  if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`
-  return headers
+  return `/api/compare?${params.toString()}`
 }
 
 export default function CompareClient() {
@@ -68,7 +59,7 @@ export default function CompareClient() {
     setLoading(true)
     setApiError(null)
     try {
-      const res = await fetch(buildRecommendUrl(uc, f), { headers: buildHeaders() })
+      const res = await fetch(buildRecommendUrl(uc, f))
       if (!res.ok) throw new Error(`API error ${res.status}`)
       const json = await res.json()
       const envelope = json.data as { items?: RecommendedModel[]; warnings?: string[] } | null
@@ -88,7 +79,7 @@ export default function CompareClient() {
     setCompareLoading(true)
     setCompareError(null)
     try {
-      const res = await fetch(buildCompareUrl(slugs, uc), { headers: buildHeaders() })
+      const res = await fetch(buildCompareUrl(slugs, uc))
       if (!res.ok) throw new Error(`API error ${res.status}`)
       const json = await res.json()
       const envelope = json.data as { items?: CompareModel[] } | null
