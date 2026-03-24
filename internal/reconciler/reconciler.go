@@ -442,6 +442,21 @@ func (r *Reconciler) publish(
 		return
 	}
 
+	// Guard: reject records where either price is zero. A zero value is almost
+	// certainly incomplete data (e.g. a new model where only one field has been
+	// scraped so far). Writing $0 to price_history creates misleading chart data.
+	// The correct price will be published once both fields have non-zero values.
+	if input <= 0 || output <= 0 {
+		r.logger.Debug().
+			Int("model_id", modelID).
+			Int("source_id", sourceID).
+			Str("field", string(field)).
+			Float64("input", input).
+			Float64("output", output).
+			Msg("reconciler: skipping publish — incomplete price (zero input or output)")
+		return
+	}
+
 	if err := r.store.PublishPrice(ctx, modelID, sourceID, input, output, confidence, underlyingProvider); err != nil {
 		r.logger.Warn().
 			Int("model_id", modelID).

@@ -69,15 +69,16 @@ export default function ModelDetailModal() {
 
   function addToCompare() {
     if (!data?.model) return
-    const modelId = data.model.id
-    trackAddToCompare(modelId)
+    const modelSlug = data.model.slug
+    trackAddToCompare(data.model.id)
     // Close the modal first by removing the `model` query param, then navigate
-    // to /compare — keeps navigation SPA and avoids losing in-memory state.
+    // to /compare with the "general" use case pre-selected so recommendations
+    // load immediately and the model appears in context.
     const params = new URLSearchParams(searchParams.toString())
     params.delete("model")
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
-    router.push(`/compare?models=${encodeURIComponent(modelId)}`)
+    router.push(`/compare?use-case=general&models=${encodeURIComponent(modelSlug)}`)
   }
 
   const isOpen = !!modelId
