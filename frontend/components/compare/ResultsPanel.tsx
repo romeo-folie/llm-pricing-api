@@ -7,7 +7,7 @@ export interface RecommendedModel {
   slug: string
   price_input: number
   price_output: number
-  scores: Record<string, number>
+  scores: Record<string, number> | null
   rationale: string
   warnings: string[]
   fallback: boolean
