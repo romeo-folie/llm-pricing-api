@@ -132,7 +132,7 @@ function TopPickCard({
   isSelected: boolean
   onSelect: (slug: string) => void
 }) {
-  const scoreValues = Object.values(model.scores)
+  const scoreValues = Object.values(model.scores ?? {})
   const composite = model.fallback || scoreValues.length === 0
     ? null
     : scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length
@@ -194,12 +194,12 @@ function TopPickCard({
         </p>
       )}
 
-      {Object.keys(model.scores).length > 0 && (
+      {Object.keys(model.scores ?? {}).length > 0 && (
         <div className="mb-4">
           <div className="text-xs uppercase tracking-wide mb-2 font-semibold" style={{ color: "var(--muted)" }}>
             Score Breakdown
           </div>
-          {Object.entries(model.scores).map(([dim, val]) => (
+          {Object.entries(model.scores ?? {}).map(([dim, val]) => (
             <ScoreBar key={dim} label={dim} value={val} />
           ))}
         </div>
@@ -225,8 +225,8 @@ function AlternativeCard({
   isSelected: boolean
   onSelect: (slug: string) => void
 }) {
-  const topDim = Object.values(model.scores).length > 0
-    ? Object.entries(model.scores).sort((a, b) => b[1] - a[1])[0]
+  const topDim = Object.values(model.scores ?? {}).length > 0
+    ? Object.entries(model.scores ?? {}).sort((a, b) => b[1] - a[1])[0]
     : null
 
   return (
