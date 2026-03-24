@@ -172,10 +172,13 @@ func TestIntegration_TwoSourceAgreement_PublishesToPriceHistory(t *testing.T) {
 		t.Errorf("expected 1 price_history row after 2-source agreement, got %d", histCount)
 	}
 
+	// The prices table has a UNIQUE(model_id, source_id) constraint. We seeded
+	// one row per source in insertFixture, and PublishPrice upserts — so after
+	// two-source agreement both rows are updated, giving us 2 rows total.
 	priceCount := countRows(t, db,
 		`SELECT COUNT(*) FROM prices WHERE model_id = $1`, fix.modelID)
-	if priceCount != 1 {
-		t.Errorf("expected 1 prices row after 2-source agreement, got %d", priceCount)
+	if priceCount != 2 {
+		t.Errorf("expected 2 prices rows after 2-source agreement (one per source), got %d", priceCount)
 	}
 }
 
