@@ -1,10 +1,10 @@
 # llm-pricing-api
 
-A reconciled, multi-source pricing data API for large language models.
+A reconciled, multi-source pricing and capability data API for large language models.
 
-The API aggregates token pricing from OpenRouter, LiteLLM, and provider documentation pages, reconciles discrepancies across sources, stores an immutable change history in TimescaleDB, and serves it through a versioned REST API with tier-based access control.
+The API aggregates token pricing from OpenRouter, LiteLLM, and provider documentation pages, reconciles discrepancies across sources, stores an immutable change history in TimescaleDB, and serves it through a versioned REST API with tier-based access control. It also ingests benchmark scores from BFCL, HuggingFace Open LLM Leaderboard, and Chatbot Arena to power capability-aware model recommendations.
 
-**The differentiator is price history and change tracking.** Every competing resource gives a snapshot; this gives the full timeline with source attribution, confidence metadata, and a real-time SSE stream of changes.
+**The differentiator is price history, change tracking, and capability scoring.** Every competing resource gives a pricing snapshot; this gives the full timeline with source attribution, confidence metadata, a real-time SSE stream of changes, and benchmark-grounded capability scores that let you find the right model — not just the cheapest one.
 
 ---
 
@@ -19,45 +19,63 @@ The API aggregates token pricing from OpenRouter, LiteLLM, and provider document
 - [Database Migrations](#database-migrations)
 - [Deployment](#deployment)
 - [Testing](#testing)
+- [Benchmark Ingestion](#benchmark-ingestion)
 
 ---
 
 ## Architecture
 
-The system has five layers built in dependency order:
+The system has two parallel data pipelines feeding a shared store, served through a single REST API:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Data Pipeline (asynq workers)                              │
-│                                                             │
-│  OpenRouter ──┐                                             │
-│  LiteLLM ─────┼──► diff engine ──► reconciler ──► DB write │
-│  Provider docs┘          ↕                  ↕              │
-│                      5% threshold      2-source             │
-│                      → review queue    agreement            │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  Pricing Pipeline (asynq workers)                                    │
+│                                                                      │
+│  OpenRouter ──┐                                                      │
+│  LiteLLM ─────┼──► diff engine ──► reconciler ──► DB write          │
+│  Provider docs┘          ↕                  ↕                       │
+│                      5% threshold      2-source                      │
+│                      → review queue    agreement                     │
+└──────────────────────────────────────────────────────────────────────┘
          │ confirmed changes
-         ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Storage                                                      │
-│  PostgreSQL + TimescaleDB    Redis                            │
-│  ├── sources                 ├── Unkey validation cache       │
-│  ├── models                  ├── response cache               │
-│  ├── prices (current)        └── asynq job queue             │
-│  ├── price_history (hypertable, immutable)                    │
-│  ├── review_queue                                             │
-│  └── webhooks                                                 │
-└──────────────────────────────────────────────────────────────┘
+         │
+┌──────────────────────────────────────────────────────────────────────┐
+│  Benchmark Pipeline (asynq workers, daily cron)                      │
+│                                                                      │
+│  BFCL V4 ──────────┐                                                 │
+│  HuggingFace LLM ──┼──► slugmap.Resolve() ──► UpsertBenchmarkScore() │
+│  Chatbot Arena ────┘          ↕                                      │
+│  Manual CLI ──────────────────┘  → model_benchmark_scores            │
+│                                                                      │
+│  Daily recompute job → ComputeAllCapabilityScores()                  │
+│                      → model_capability_scores (with freshness)      │
+│  Daily staleness job → flags scores older than 90 days               │
+└──────────────────────────────────────────────────────────────────────┘
          │
          ▼
-┌──────────────────────────────────────────────────────────────┐
-│  REST API (Fiber)                                             │
-│                                                              │
-│  Middleware chain:                                            │
-│  Request → Auth (Unkey) → Rate limit → Cache → Handler       │
-│                                                              │
-│  Tiers: Free · Developer · Pro                                │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  Storage                                                              │
+│  PostgreSQL + TimescaleDB         Redis                               │
+│  ├── sources                      ├── Unkey validation cache          │
+│  ├── models                       ├── response cache                  │
+│  ├── prices (current)             └── asynq job queue                │
+│  ├── price_history (hypertable, immutable)                            │
+│  ├── review_queue                                                     │
+│  ├── webhooks                                                         │
+│  ├── benchmarks (12 seeded)                                           │
+│  ├── model_benchmark_scores                                           │
+│  └── model_capability_scores                                          │
+└──────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  REST API (Fiber)                                                     │
+│                                                                       │
+│  Middleware chain:                                                    │
+│  Request → Auth (Unkey) → Rate limit → Cache → Handler               │
+│                                                                       │
+│  Tiers: Free · Developer · Pro                                        │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Reconciliation rules
@@ -143,32 +161,40 @@ Railway was chosen for hosting because it supports Nixpacks (builds the Go binar
 ```
 .
 ├── cmd/
-│   ├── api/            # HTTP server entry point (Fiber app, middleware, routes, graceful shutdown)
-│   └── worker/         # Background worker entry point (asynq server + cron scheduler)
+│   ├── api/                    # HTTP server entry point (Fiber app, middleware, routes, graceful shutdown)
+│   ├── worker/                 # Background worker entry point (asynq server + cron scheduler)
+│   └── tools/
+│       └── ingest_benchmark/   # Manual benchmark score ingestion CLI
 ├── internal/
-│   ├── api/            # HTTP response helpers: RFC 7807 errors, TrustMeta, response envelope
-│   │   └── handlers/   # One file per endpoint group; Store interface for DB access
-│   ├── cache/          # Redis client initialisation
-│   ├── config/         # Environment variable loader (Config struct)
-│   ├── database/       # pgxpool initialisation with connection tuning
-│   ├── diff/           # Pure-function price diff engine; no I/O
-│   ├── logger/         # zerolog setup with OTel trace_id/span_id injection
-│   ├── middleware/      # Auth (Unkey + Redis cache), rate limiting, response cache, security headers
-│   ├── models/         # Domain types: Model, Source, Price, PriceHistory, ReviewQueueItem
-│   ├── otel/           # OpenTelemetry SDK init with no-op fallback
-│   ├── reconciler/     # Reconciliation engine: 2-source agreement, discrepancy flagging, webhook fan-out
-│   ├── review/         # Admin review queue: HTTP handlers + server-rendered HTML UI
+│   ├── api/                    # HTTP response helpers: RFC 7807 errors, TrustMeta, response envelope
+│   │   └── handlers/           # One file per endpoint group; Store interface for DB access
+│   ├── cache/                  # Redis client initialisation
+│   ├── config/                 # Environment variable loader (Config struct)
+│   ├── database/               # pgxpool initialisation with connection tuning
+│   ├── diff/                   # Pure-function price diff engine; no I/O
+│   ├── intelligence/           # Capability scoring: aggregator, lookup helpers, benchmark → score computation
+│   ├── logger/                 # zerolog setup with OTel trace_id/span_id injection
+│   ├── middleware/              # Auth (Unkey + Redis cache), rate limiting, response cache, security headers
+│   ├── models/                 # Domain types: Model, Source, Price, PriceHistory, ReviewQueueItem
+│   ├── otel/                   # OpenTelemetry SDK init with no-op fallback
+│   ├── reconciler/             # Reconciliation engine: 2-source agreement, discrepancy flagging, webhook fan-out
+│   ├── review/                 # Admin review queue: HTTP handlers + server-rendered HTML UI
 │   ├── scraper/
-│   │   ├── openrouter/ # OpenRouter /v1/models scraper (runs every 6 hours)
-│   │   └── litellm/    # LiteLLM GitHub JSON scraper (runs every 24 hours)
-│   ├── webhooks/       # Webhook domain types
-│   └── worker/         # asynq task handlers: scraper pipeline, webhook delivery
-├── migrations/         # SQL schema (7 migrations, golang-migrate)
-├── docker-compose.yml  # Local postgres + redis
-├── Makefile            # Dev workflow targets
-├── railway.json        # Railway build/deploy/health-check config
-├── DEPLOY.md           # Step-by-step Railway deployment runbook
-└── .env.example        # All supported environment variables with descriptions
+│   │   ├── openrouter/         # OpenRouter /v1/models scraper (runs every 6 hours)
+│   │   ├── litellm/            # LiteLLM GitHub JSON scraper (runs every 24 hours)
+│   │   ├── bfcl/               # BFCL V4 leaderboard scraper (runs daily)
+│   │   ├── huggingface_llm/    # HuggingFace Open LLM Leaderboard scraper (MMLU-Pro, GPQA, IFEval; daily)
+│   │   ├── chatbot_arena/      # Chatbot Arena ELO scraper → min-max normalised 0-100 (daily)
+│   │   ├── benchmark_scraper.go # BenchmarkScraper interface
+│   │   └── slugmap/            # Leaderboard name → canonical DB slug resolver (exact + prefix fallback)
+│   ├── webhooks/               # Webhook domain types
+│   └── worker/                 # asynq task handlers: scraper pipeline, benchmark jobs, webhook delivery
+├── migrations/                 # SQL schema (13 migrations, golang-migrate)
+├── docker-compose.yml          # Local postgres + redis
+├── Makefile                    # Dev workflow targets
+├── railway.json                # Railway build/deploy/health-check config
+├── DEPLOY.md                   # Step-by-step Railway deployment runbook
+└── .env.example                # All supported environment variables with descriptions
 ```
 
 Each package under `internal/` has its own `README.md` explaining its purpose, key types, and usage.
@@ -185,7 +211,7 @@ Each package under `internal/` has its own `README.md` explaining its purpose, k
 | `GET /v1/compare?models=slug1,slug2[&use_case=X]` | Free | Side-by-side pricing + capability scores for up to 5 models (by slug). Optional `use_case` param returns rationale |
 | `GET /v1/changes` | Free | Recent price changes; filter by `?since=`, `?provider=` |
 | `GET /v1/models/:id/history` | Developer+ | Full price history; filter by `?from=`, `?to=` |
-| `GET /v1/recommend` | Developer+ | Models ranked by task type, context size, and price |
+| `GET /v1/recommend` | Developer+ | Models ranked by task type, context size, price, and benchmark capability scores; includes per-dimension `freshness` metadata |
 | `GET /v1/context` | Developer+ | ≤2 100-token pricing snapshot for agent system prompts |
 | `GET /v1/stream/changes` | Developer+ | SSE stream of price changes; supports `Last-Event-ID` reconnection |
 | `POST /v1/webhooks` | Pro | Register a webhook URL for price-change notifications |
@@ -295,6 +321,8 @@ make migrate-down
 | 000005 | `price_history` TimescaleDB hypertable (7-day chunks, deduplication index) |
 | 000006 | `review_queue` table |
 | 000007 | `webhooks` table |
+| 000008–000012 | Intelligence layer tables (`model_intelligence`, `model_capability_scores`, UC Phase 1 schema) |
+| 000013 | `benchmarks` table (12 core benchmarks seeded: BFCL, MMLU-Pro, GPQA Diamond, Chatbot Arena, etc.) + `model_benchmark_scores` table |
 
 ---
 
@@ -341,3 +369,37 @@ go test -cover ./...
 ```
 
 The test suite uses mock implementations of every storage and external interface (`mockStore`, `mockReconcilerStore`, `mockScraper`, `mockUnkeyVerifier`) so no live database or Redis instance is required to run the tests.
+
+---
+
+## Benchmark Ingestion
+
+Three leaderboards are scraped daily by background workers and fed into the capability scoring pipeline:
+
+| Leaderboard | Dimensions | Normalisation |
+|---|---|---|
+| BFCL V4 (Berkeley Function Calling) | `tool_use` | Raw AST accuracy score (0–100) |
+| HuggingFace Open LLM Leaderboard | `quality` (MMLU-Pro), `reasoning` (GPQA Diamond), `instruction` (IFEval) | 0–1 scores multiplied by 100 |
+| Chatbot Arena | `preference` | ELO rating → min-max normalised 0–100 across the current leaderboard |
+
+All scrapers go through `slugmap.Resolve()`, which maps leaderboard display names (e.g. `"GPT-4o-2024-11-20"`) to canonical DB model slugs using exact match with a prefix fallback. Unresolved names are logged and skipped — no silent data corruption.
+
+### Capability recompute
+
+After each scraper run (and once daily as a standalone job), `ComputeAllCapabilityScores()` aggregates raw benchmark scores into per-dimension capability scores stored in `model_capability_scores`. These scores feed the `/v1/recommend` endpoint, which returns a `freshness` map per model indicating how recently each dimension's scores were updated.
+
+A separate daily staleness job flags any score older than 90 days as stale, preventing outdated benchmark data from silently influencing recommendations.
+
+### Manual ingestion
+
+For one-off score insertions (e.g. internal evaluations, private benchmarks):
+
+```bash
+go run ./cmd/tools/ingest_benchmark \
+  --model gpt-4o \
+  --benchmark "BFCL V4" \
+  --score 91.3 \
+  --source-url https://gorilla.cs.berkeley.edu/leaderboard.html
+```
+
+The CLI inserts the score and triggers a capability recompute for the affected model.
