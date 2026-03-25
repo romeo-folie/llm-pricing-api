@@ -198,9 +198,12 @@ function TopPickCard({
 
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2 pr-8">
         <span
-          className="font-orbitron text-xs font-semibold px-2 py-0.5 border"
+          className="font-orbitron text-xs font-semibold px-2 py-0.5 border inline-flex items-center gap-1"
           style={{ borderColor: "var(--accent)", color: "var(--accent)", letterSpacing: "0.06em" }}
         >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+            <path d="M5 0.5L6.18 3.57L9.51 3.8L7 5.97L7.85 9.22L5 7.45L2.15 9.22L3 5.97L0.49 3.8L3.82 3.57L5 0.5Z" />
+          </svg>
           Top Pick
         </span>
         <span className="font-orbitron text-xs" style={{ color: "var(--muted)" }}>
