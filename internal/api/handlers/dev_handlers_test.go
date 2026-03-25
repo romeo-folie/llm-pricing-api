@@ -759,6 +759,62 @@ func TestRecommend_FallbackFlag_WhenNoScores(t *testing.T) {
 	}
 }
 
+// TestRecommend_ScoredModelsRankBeforeZeroScoreModels verifies that models
+// with real benchmark data always appear before zero-score models even when
+// the zero-score models are cheaper. This prevents Fireworks/ultra-cheap
+// providers from dominating the top pick slot purely due to price.
+func TestRecommend_ScoredModelsRankBeforeZeroScoreModels(t *testing.T) {
+	ctx := 8192
+	score80 := float64(80)
+	store := &mockStore{
+		recommendModels: func(_ context.Context, _ handlers.RecommendFilter) ([]handlers.ModelRow, error) {
+			return []handlers.ModelRow{
+				// Cheapest model but zero benchmark data — should NOT win top pick
+				{ID: 1, Provider: "fireworks", Name: "ultra-cheap", Slug: "fireworks/ultra-cheap", Modality: "text", ContextWindow: &ctx, PriceInput: 0.0000001, Meta: api.TrustMeta{}},
+				// More expensive but has real benchmark scores — should rank first
+				{ID: 2, Provider: "openai", Name: "gpt-4o", Slug: "openai/gpt-4o", Modality: "text", ContextWindow: &ctx, PriceInput: 0.000005, Meta: api.TrustMeta{}},
+			}, nil
+		},
+		getCapabilityScoresForModels: func(_ context.Context, ids []int) (map[int][]intelligence.CapabilityScore, error) {
+			return map[int][]intelligence.CapabilityScore{
+				1: {}, // no scores — fireworks model falls back to price
+				2: {
+					{Dimension: "coding", Score: &score80, BenchmarkCount: 3},
+					{Dimension: "reasoning", Score: &score80, BenchmarkCount: 3},
+				},
+			}, nil
+		},
+	}
+	app := newDevApp(store)
+	status, body := get(t, app, "/v1/recommend?use_case=coding")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", status, body)
+	}
+	var envelope struct {
+		Data struct {
+			Items []struct {
+				Slug     string `json:"slug"`
+				Fallback bool   `json:"fallback"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(envelope.Data.Items) < 2 {
+		t.Fatalf("expected 2 items, got %d", len(envelope.Data.Items))
+	}
+	if envelope.Data.Items[0].Slug != "openai/gpt-4o" {
+		t.Errorf("top pick should be the scored model, got %s", envelope.Data.Items[0].Slug)
+	}
+	if envelope.Data.Items[0].Fallback {
+		t.Error("top pick (scored model) should not have fallback=true")
+	}
+	if !envelope.Data.Items[1].Fallback {
+		t.Error("second model (zero-score) should have fallback=true")
+	}
+}
+
 // ===================================================================
 // GetContext tests
 // ===================================================================

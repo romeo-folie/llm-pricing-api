@@ -211,7 +211,16 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 	}
 
 	const epsilon = 1e-9
+	// Partition: models with actual capability scores rank before zero-score
+	// models (no benchmark data). Within each partition, sort by score desc
+	// then price asc. This prevents ultra-cheap providers (e.g. Fireworks)
+	// from dominating the top slot purely because they have no benchmarks.
 	sort.SliceStable(scored, func(i, j int) bool {
+		iHasScore := scored[i].cs > epsilon
+		jHasScore := scored[j].cs > epsilon
+		if iHasScore != jHasScore {
+			return iHasScore // scored models always beat zero-score models
+		}
 		if math.Abs(scored[i].cs-scored[j].cs) > epsilon {
 			return scored[i].cs > scored[j].cs
 		}

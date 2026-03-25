@@ -127,9 +127,8 @@ function SelectionCheckbox({
       aria-checked={checked}
       aria-label={`Select ${name} for comparison`}
       onClick={onClick}
-      className="w-5 h-5 border flex items-center justify-center transition-opacity"
+      className="w-5 h-5 border flex items-center justify-center"
       style={{
-        opacity: checked || parentHovered ? 1 : 0,
         borderColor: checked ? "var(--accent)" : "var(--border)",
         backgroundColor: checked ? "var(--accent)" : "transparent",
         cursor: "pointer",
@@ -184,8 +183,9 @@ function TopPickCard({
         backgroundColor: "var(--surface)",
       }}
     >
-      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
-        style={{ opacity: isSelected ? 1 : undefined }}
+      <div
+        className="absolute top-4 right-4 transition-opacity"
+        style={{ opacity: isSelected ? 1 : 0.3 }}
       >
         <SelectionCheckbox
           checked={isSelected}
@@ -198,9 +198,12 @@ function TopPickCard({
 
       <div className="flex items-start justify-between mb-3 flex-wrap gap-2 pr-8">
         <span
-          className="font-orbitron text-xs font-semibold px-2 py-0.5 border"
+          className="font-orbitron text-xs font-semibold px-2 py-0.5 border inline-flex items-center gap-1"
           style={{ borderColor: "var(--accent)", color: "var(--accent)", letterSpacing: "0.06em" }}
         >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+            <path d="M5 0.5L6.18 3.57L9.51 3.8L7 5.97L7.85 9.22L5 7.45L2.15 9.22L3 5.97L0.49 3.8L3.82 3.57L5 0.5Z" />
+          </svg>
           Top Pick
         </span>
         <span className="font-orbitron text-xs" style={{ color: "var(--muted)" }}>
@@ -268,17 +271,25 @@ function AlternativeCard({
         borderColor: isSelected ? "var(--accent)" : "var(--border)",
         borderLeftWidth: isSelected ? "3px" : "1px",
         backgroundColor: "var(--surface)",
+        // Subtle dashed outline signals selectability before hover
+        outline: isSelected ? "none" : "1px dashed transparent",
       }}
       onClick={() => onSelect(model.slug)}
       onMouseEnter={(e) => {
-        if (!isSelected) e.currentTarget.style.backgroundColor = "var(--surfaceHi)"
+        if (!isSelected) {
+          e.currentTarget.style.backgroundColor = "var(--surfaceHi)"
+          e.currentTarget.style.outline = "1px dashed var(--accent)"
+        }
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.backgroundColor = "var(--surface)"
+        e.currentTarget.style.outline = "1px dashed transparent"
       }}
     >
-      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"
-        style={{ opacity: isSelected ? 1 : undefined }}
+      {/* Checkbox is always visible at low opacity so cards look selectable at a glance */}
+      <div
+        className="absolute top-3 right-3 transition-opacity"
+        style={{ opacity: isSelected ? 1 : 0.3 }}
       >
         <SelectionCheckbox
           checked={isSelected}
