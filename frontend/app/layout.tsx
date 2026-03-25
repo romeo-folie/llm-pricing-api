@@ -61,12 +61,21 @@ export const metadata: Metadata = {
     title: "LLMRates — AI Model Pricing API & Cost Comparison",
     description:
       "Compare AI model pricing across providers. Reconciled LLM token costs with full price history. Built for agents and developers.",
+    images: [
+      {
+        url: `${SITE_URL}/og-image.png`,
+        width: 1200,
+        height: 628,
+        alt: "LLMRates — Compare AI Model Pricing Across Providers",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "LLMRates — AI Model Pricing API & Cost Comparison",
     description:
       "Compare AI model pricing across providers. Multi-source verified LLM token costs with full price history and agent APIs.",
+    images: [`${SITE_URL}/og-image.png`],
   },
   alternates: {
     canonical: "/",
