@@ -127,9 +127,8 @@ function SelectionCheckbox({
       aria-checked={checked}
       aria-label={`Select ${name} for comparison`}
       onClick={onClick}
-      className="w-5 h-5 border flex items-center justify-center transition-opacity"
+      className="w-5 h-5 border flex items-center justify-center"
       style={{
-        opacity: checked || parentHovered ? 1 : 0,
         borderColor: checked ? "var(--accent)" : "var(--border)",
         backgroundColor: checked ? "var(--accent)" : "transparent",
         cursor: "pointer",
@@ -184,8 +183,9 @@ function TopPickCard({
         backgroundColor: "var(--surface)",
       }}
     >
-      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
-        style={{ opacity: isSelected ? 1 : undefined }}
+      <div
+        className="absolute top-4 right-4 transition-opacity"
+        style={{ opacity: isSelected ? 1 : 0.3 }}
       >
         <SelectionCheckbox
           checked={isSelected}
@@ -268,17 +268,25 @@ function AlternativeCard({
         borderColor: isSelected ? "var(--accent)" : "var(--border)",
         borderLeftWidth: isSelected ? "3px" : "1px",
         backgroundColor: "var(--surface)",
+        // Subtle dashed outline signals selectability before hover
+        outline: isSelected ? "none" : "1px dashed transparent",
       }}
       onClick={() => onSelect(model.slug)}
       onMouseEnter={(e) => {
-        if (!isSelected) e.currentTarget.style.backgroundColor = "var(--surfaceHi)"
+        if (!isSelected) {
+          e.currentTarget.style.backgroundColor = "var(--surfaceHi)"
+          e.currentTarget.style.outline = "1px dashed var(--accent)"
+        }
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.backgroundColor = "var(--surface)"
+        e.currentTarget.style.outline = "1px dashed transparent"
       }}
     >
-      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"
-        style={{ opacity: isSelected ? 1 : undefined }}
+      {/* Checkbox is always visible at low opacity so cards look selectable at a glance */}
+      <div
+        className="absolute top-3 right-3 transition-opacity"
+        style={{ opacity: isSelected ? 1 : 0.3 }}
       >
         <SelectionCheckbox
           checked={isSelected}
