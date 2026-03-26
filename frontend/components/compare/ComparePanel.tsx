@@ -12,10 +12,10 @@ export interface CompareModel {
   price_input: number
   price_output: number
   context_window: number | null
-  scores: Record<string, number>
-  freshness: Record<string, string>
-  rationale: string
-  warnings: string[]
+  scores?: Record<string, number>
+  freshness?: Record<string, string>
+  rationale?: string
+  warnings?: string[]
 }
 
 interface ComparePanelProps {
@@ -102,7 +102,7 @@ function ModelColumn({
   onSwap: (position: "a" | "b", newSlug: string) => void
 }) {
   const [showSwap, setShowSwap] = useState(false)
-  const scoreValues = Object.values(model.scores)
+  const scoreValues = Object.values(model.scores ?? {})
   const composite = scoreValues.length > 0
     ? scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length
     : null
@@ -148,9 +148,9 @@ function ModelColumn({
       </div>
 
       {/* Score bars */}
-      {Object.keys(model.scores).length > 0 && (
+      {Object.keys(model.scores ?? {}).length > 0 && (
         <div className="mb-4">
-          {Object.entries(model.scores).map(([dim, val]) => (
+          {Object.entries(model.scores ?? {}).map(([dim, val]) => (
             <ScoreBar key={dim} label={dim} value={val} />
           ))}
         </div>

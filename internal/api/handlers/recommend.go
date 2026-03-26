@@ -212,17 +212,31 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 
 	const epsilon = 1e-9
 	// Partition: models with actual capability scores rank before zero-score
-	// models (no benchmark data). Within each partition, sort by score desc
-	// then price asc. This prevents ultra-cheap providers (e.g. Fireworks)
-	// from dominating the top slot purely because they have no benchmarks.
+	// models (no benchmark data). Within each partition:
+	//   - Scored partition: sort by score desc, then price asc.
+	//   - Fallback partition: sort by recency (confirmed_at desc) to surface
+	//     the latest model versions first, then price asc as tiebreaker.
+	//     This prevents ultra-cheap stale providers (e.g. Fireworks image models)
+	//     from dominating the top slot purely because they have no benchmarks.
 	sort.SliceStable(scored, func(i, j int) bool {
 		iHasScore := scored[i].cs > epsilon
 		jHasScore := scored[j].cs > epsilon
 		if iHasScore != jHasScore {
 			return iHasScore // scored models always beat zero-score models
 		}
-		if math.Abs(scored[i].cs-scored[j].cs) > epsilon {
-			return scored[i].cs > scored[j].cs
+		if iHasScore {
+			// Both have scores: rank by capability score desc, price asc.
+			if math.Abs(scored[i].cs-scored[j].cs) > epsilon {
+				return scored[i].cs > scored[j].cs
+			}
+			return scored[i].row.PriceInput < scored[j].row.PriceInput
+		}
+		// Both in fallback (no benchmark data): prefer recently confirmed models
+		// so users see the latest versions first, then price asc as tiebreaker.
+		iTime := scored[i].row.ConfirmedAt
+		jTime := scored[j].row.ConfirmedAt
+		if !iTime.Equal(jTime) {
+			return iTime.After(jTime)
 		}
 		return scored[i].row.PriceInput < scored[j].row.PriceInput
 	})

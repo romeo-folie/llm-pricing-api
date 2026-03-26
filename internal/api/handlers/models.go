@@ -44,13 +44,21 @@ func modelToResponse(r ModelRow) modelResponse {
 }
 
 // ListModels handles GET /v1/models.
-// Supports query params: provider, modality, min_context, page, per_page.
+// Supports query params: provider, modality, min_context, page, per_page, sort.
+// sort=recent (default) — most recently confirmed models first (surfaces latest versions).
+// sort=alpha — alphabetical by provider + name (legacy behaviour).
 // Sets X-Total-Count header with the total number of matching models.
 func (h *Handlers) ListModels(c *fiber.Ctx) error {
+	sort := c.Query("sort", "recent")
+	if sort != "recent" && sort != "alpha" {
+		return api.NewBadRequest("sort must be one of: recent, alpha")
+	}
+
 	filter := ListModelsFilter{
 		Provider: c.Query("provider"),
 		Modality: c.Query("modality"),
 		Search:   c.Query("q"),
+		Sort:     sort,
 		Page:     1,
 		PerPage:  50,
 	}
