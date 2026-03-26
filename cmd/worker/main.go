@@ -156,6 +156,7 @@ func run() error {
 	// Intelligence recomputation handlers.
 	mux.HandleFunc(worker.TaskRecomputeCapabilityScores, h.HandleRecomputeCapabilityScores)
 	mux.HandleFunc(worker.TaskStalenessCheck, h.HandleStalenessCheck)
+	mux.HandleFunc(worker.TaskCalibrateWeights, h.HandleCalibrateWeights)
 
 	// WebhookDeliveryHandler holds the AES key so it can decrypt secrets at
 	// task execution time — secrets are stored encrypted at rest.
@@ -222,6 +223,10 @@ func run() error {
 		log.Error().Err(err).Msg("scheduler: register staleness_check")
 		return err
 	}
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskCalibrateWeights, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register calibrate_weights")
+		return err
+	}
 
 	if err := scheduler.Start(); err != nil {
 		log.Error().Err(err).Msg("scheduler: start")
@@ -265,6 +270,7 @@ func run() error {
 		// Intelligence tasks — initial run on startup.
 		{worker.TaskRecomputeCapabilityScores, "recompute_capability_scores", nil},
 		{worker.TaskStalenessCheck, "staleness_check", nil},
+		{worker.TaskCalibrateWeights, "calibrate_weights", nil},
 	}
 	for _, t := range initialTasks {
 		opts := append([]asynq.Option{asynq.Unique(24 * time.Hour)}, t.opts...)

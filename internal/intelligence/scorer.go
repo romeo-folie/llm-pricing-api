@@ -113,6 +113,13 @@ func dimensionWeights(uc UseCase, pri Priority) map[string]float64 {
 	return weights
 }
 
+// DimensionWeightsFor returns the weight map for a (useCase, priority) pair.
+// This is the public entry point; the internal dimensionWeights function
+// performs the actual computation.
+func DimensionWeightsFor(useCase, priority string) map[string]float64 {
+	return dimensionWeights(UseCase(useCase), Priority(priority))
+}
+
 // ScoreModel computes a composite capability score (0–100) for a model given
 // its pre-fetched capability scores, use case, and priority.
 // Returns 0 if no capability scores are available.

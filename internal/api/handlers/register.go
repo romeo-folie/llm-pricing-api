@@ -120,6 +120,33 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 	return nil
 }
 
+// RegisterFeedback registers the public POST /v1/feedback endpoint on the root
+// Fiber app. No API key is required, but IP-based rate limiting is applied.
+// If an Authorization header is present, the key hash is recorded.
+//
+// Route registered:
+//
+//	POST /v1/feedback — submit recommendation feedback
+func RegisterFeedback(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) {
+	fs := NewFeedbackStore(db)
+	fh := NewFeedbackHandler(fs)
+
+	fb := app.Group("/v1")
+	fb.Post("/feedback", middleware.IPRateLimit(rdb, log), fh.Create)
+}
+
+// RegisterAdminFeedback registers the admin feedback analytics endpoint.
+// This route is registered inside the admin group (basic auth protected).
+//
+// Route registered:
+//
+//	GET /v1/admin/feedback — feedback analytics for a use case
+func RegisterAdminFeedback(admin fiber.Router, db *pgxpool.Pool) {
+	fs := NewFeedbackStore(db)
+	ah := NewAdminFeedbackHandler(fs)
+	admin.Get("/feedback", ah.GetAnalytics)
+}
+
 // RegisterPro registers Pro-tier endpoint handlers on the v1 router.
 // All routes here are gated behind RequireTier("pro") so Free and Developer
 // tier keys receive RFC 7807 403 responses.

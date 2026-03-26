@@ -1,5 +1,7 @@
 "use client"
 
+import ThumbsWidget from "../ThumbsWidget"
+
 export interface RecommendedModel {
   id: number
   provider: string
@@ -255,10 +257,12 @@ function AlternativeCard({
   model,
   isSelected,
   onSelect,
+  useCase,
 }: {
   model: RecommendedModel
   isSelected: boolean
   onSelect: (slug: string) => void
+  useCase: string
 }) {
   const topDim = Object.values(model.scores ?? {}).length > 0
     ? Object.entries(model.scores ?? {}).sort((a, b) => b[1] - a[1])[0]
@@ -309,14 +313,20 @@ function AlternativeCard({
       ) : (
         <div className="text-xs italic" style={{ color: "var(--muted)" }}>No capability data</div>
       )}
-      <div className="font-orbitron text-xs mt-1" style={{ color: "var(--muted)" }}>
-        {formatPricePerM(model.price_input)} input
+      <div className="flex items-center justify-between mt-1">
+        <div className="font-orbitron text-xs" style={{ color: "var(--muted)" }}>
+          {formatPricePerM(model.price_input)} input
+        </div>
+        <div onClick={(e) => e.stopPropagation()}>
+          <ThumbsWidget useCase={useCase} modelSlug={model.slug} />
+        </div>
       </div>
     </div>
   )
 }
 
 export default function ResultsPanel({
+  useCase,
   models,
   loading,
   warnings = [],
@@ -385,6 +395,7 @@ export default function ResultsPanel({
                 model={m}
                 isSelected={selectedModels.includes(m.slug)}
                 onSelect={onSelect}
+                useCase={useCase}
               />
             ))}
           </div>

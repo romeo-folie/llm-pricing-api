@@ -243,6 +243,9 @@ func main() {
 	// These serve the Compare page and are safe to expose unauthenticated.
 	handlers.RegisterPublic(app, db, redisClient)
 
+	// Register POST /v1/feedback — public, IP rate-limited, no auth required.
+	handlers.RegisterFeedback(app, db, redisClient, log)
+
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
 	if err := handlers.RegisterDev(v1, db, redisClient); err != nil {
@@ -261,6 +264,9 @@ func main() {
 	admin.Get("/review", reviewHandler.List)
 	admin.Post("/review/:id/approve", reviewHandler.Approve)
 	admin.Post("/review/:id/reject", reviewHandler.Reject)
+
+	// Feedback analytics — admin-only.
+	handlers.RegisterAdminFeedback(admin, db)
 
 	// Start internal Prometheus metrics server on a separate port.
 	// This server is intentionally NOT behind the public-facing Fiber instance

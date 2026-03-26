@@ -265,3 +265,15 @@ func (h *Handlers) HandleStalenessCheck(ctx context.Context, _ *asynq.Task) erro
 
 	return nil
 }
+
+// HandleCalibrateWeights runs the daily feedback-driven weight calibration.
+// It adjusts dimension weights for each (use_case, priority) pair based on
+// aggregated user feedback signals from the last 30 days.
+func (h *Handlers) HandleCalibrateWeights(ctx context.Context, _ *asynq.Task) error {
+	h.logger.Info().Msg("handler: calibrating weights from feedback")
+	if err := intelligence.CalibrateWeights(ctx, h.db, h.logger); err != nil {
+		return fmt.Errorf("intelligence:calibrate_weights: %w", err)
+	}
+	h.logger.Info().Msg("handler: weight calibration complete")
+	return nil
+}

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { ScoreBar } from "./ResultsPanel"
 import type { RecommendedModel } from "./ResultsPanel"
+import ThumbsWidget from "../ThumbsWidget"
 
 export interface CompareModel {
   id: number
@@ -95,11 +96,13 @@ function ModelColumn({
   position,
   availableModels,
   onSwap,
+  useCase,
 }: {
   model: CompareModel
   position: "a" | "b"
   availableModels: RecommendedModel[]
   onSwap: (position: "a" | "b", newSlug: string) => void
+  useCase: string | null
 }) {
   const [showSwap, setShowSwap] = useState(false)
   const scoreValues = Object.values(model.scores ?? {})
@@ -175,8 +178,8 @@ function ModelColumn({
         </div>
       )}
 
-      {/* Swap button */}
-      <div className="relative">
+      {/* Swap button + Feedback */}
+      <div className="relative flex items-center gap-3">
         <button
           className="text-xs border px-2 py-1 transition-colors"
           style={{ borderColor: "var(--border)", color: "var(--muted)", cursor: "pointer" }}
@@ -184,6 +187,7 @@ function ModelColumn({
         >
           Swap model &#x21C5;
         </button>
+        {useCase && <ThumbsWidget useCase={useCase} modelSlug={model.slug} />}
         {showSwap && (
           <SwapPicker
             availableModels={availableModels}
@@ -288,6 +292,7 @@ export default function ComparePanel({
               position="a"
               availableModels={availableModels}
               onSwap={onSwap}
+              useCase={useCase}
             />
             <div
               className="hidden md:block w-px self-stretch"
@@ -299,6 +304,7 @@ export default function ComparePanel({
               position="b"
               availableModels={availableModels}
               onSwap={onSwap}
+              useCase={useCase}
             />
           </div>
 

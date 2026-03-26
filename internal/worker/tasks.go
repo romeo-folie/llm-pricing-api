@@ -27,6 +27,9 @@ const (
 	// to keep capability scores and freshness indicators current.
 	TaskRecomputeCapabilityScores = "intelligence:recompute_capability_scores"
 	TaskStalenessCheck            = "intelligence:staleness_check"
+
+	// TaskCalibrateWeights runs the daily feedback-driven weight calibration.
+	TaskCalibrateWeights = "intelligence:calibrate_weights"
 )
 
 // TypeWebhookDeliver re-exports the canonical constant from internal/webhooks
