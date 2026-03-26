@@ -24,6 +24,21 @@ export const metadata: Metadata = {
     description:
       "Compare GPT-4o, Claude 3.5, Gemini, and Grok pricing side by side. Full price history, real-time changes, and agent-native APIs.",
     type: "website",
+    images: [
+      {
+        url: "https://llmrates.live/og-image.png",
+        width: 1200,
+        height: 628,
+        alt: "LLMRates — Compare AI Model Pricing Across Providers",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "LLMRates — AI Model Pricing API & Cost Comparison",
+    description:
+      "Compare AI model pricing across providers. Multi-source verified LLM token costs with full price history and agent APIs.",
+    images: ["https://llmrates.live/og-image.png"],
   },
 }
 
