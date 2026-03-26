@@ -114,6 +114,10 @@ type ListModelsFilter struct {
 	Page int
 	// PerPage is the maximum number of results per page; 0 is treated as 50.
 	PerPage int
+	// Sort controls ordering. "recent" (default) sorts by confirmed_at DESC so
+	// the most recently updated/confirmed models appear first — surfaces latest
+	// model versions at the top. "alpha" sorts by provider + name alphabetically.
+	Sort string // "recent" | "alpha"
 }
 
 // ChangesFilter carries query-string parameters for the GET /v1/changes
@@ -337,6 +341,14 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 	}
 
 	// Main query: join with latest price and source name.
+	// Default sort is "recent": COALESCE(confirmed_at, created_at) DESC so the
+	// most recently confirmed (i.e. latest) models appear first. "alpha" falls
+	// back to the legacy provider + name ordering for callers that need it.
+	orderBy := "COALESCE(p.confirmed_at, m.created_at) DESC, m.provider, m.name"
+	if filter.Sort == "alpha" {
+		orderBy = "m.provider, m.name"
+	}
+
 	args = append(args, limit, offset)
 	mainSQL := fmt.Sprintf(`
 		SELECT
@@ -360,9 +372,9 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 		) p ON true
 		LEFT JOIN sources src ON src.id = p.source_id
 		%s
-		ORDER BY m.provider, m.name
+		ORDER BY %s
 		LIMIT $%d OFFSET $%d
-	`, where, argIdx, argIdx+1)
+	`, where, orderBy, argIdx, argIdx+1)
 
 	rows, err := s.db.Query(ctx, mainSQL, args...)
 	if err != nil {

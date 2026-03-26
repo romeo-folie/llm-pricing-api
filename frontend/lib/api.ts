@@ -249,6 +249,8 @@ export interface ModelsFilter {
   modality?: string
   min_context?: number
   q?: string
+  /** "recent" (default) — most recently confirmed first. "alpha" — provider + name. */
+  sort?: "recent" | "alpha"
 }
 
 export async function getModels(filter?: ModelsFilter): Promise<Model[]> {
@@ -257,6 +259,7 @@ export async function getModels(filter?: ModelsFilter): Promise<Model[]> {
   if (filter?.modality) params.set("modality", filter.modality)
   if (filter?.min_context) params.set("min_context", String(filter.min_context))
   if (filter?.q) params.set("q", filter.q)
+  if (filter?.sort) params.set("sort", filter.sort)
   params.set("per_page", "200")
 
   // Paginate through all pages so that models beyond the first 200 are
@@ -300,6 +303,7 @@ export async function getModelsPaginated(
   if (filter?.modality) params.set("modality", filter.modality)
   if (filter?.min_context) params.set("min_context", String(filter.min_context))
   if (filter?.q) params.set("q", filter.q)
+  if (filter?.sort) params.set("sort", filter.sort)
   params.set("page", String(filter?.page ?? 1))
   params.set("per_page", String(filter?.per_page ?? 24))
   const qs = `?${params.toString()}`
