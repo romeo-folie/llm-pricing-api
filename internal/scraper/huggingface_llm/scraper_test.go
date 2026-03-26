@@ -8,7 +8,9 @@ import (
 	"testing"
 )
 
-func TestFetchData_ParsesRows(t *testing.T) {
+// TestFetchPage_ParsesRows verifies that fetchPage correctly decodes the
+// open-llm-leaderboard/contents column names returned by the HF Datasets Server.
+func TestFetchPage_ParsesRows(t *testing.T) {
 	mmlu := 85.5
 	gpqa := 72.3
 	ifeval := 91.0
@@ -16,16 +18,14 @@ func TestFetchData_ParsesRows(t *testing.T) {
 	resp := datasetResponse{
 		Rows: []datasetRow{
 			{Row: rowContent{
-				ModelName:   "gpt-4o",
+				FullModel:   "meta-llama/Llama-3.3-70B-Instruct",
 				MMLUPro:     &mmlu,
 				GPQADiamond: &gpqa,
 				IFEval:      &ifeval,
-				Date:        "2025-01-15",
 			}},
 			{Row: rowContent{
-				ModelName: "unknown-model",
+				FullModel: "unknown-model/unknown",
 				MMLUPro:   &mmlu,
-				Date:      "2025-02-01",
 			}},
 		},
 	}
@@ -38,48 +38,27 @@ func TestFetchData_ParsesRows(t *testing.T) {
 
 	s := &Scraper{client: srv.Client()}
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
-	httpResp, err := s.client.Do(req)
+	rows, err := s.fetchPage(context.Background(), srv.URL)
 	if err != nil {
-		t.Fatalf("fetch failed: %v", err)
-	}
-	defer httpResp.Body.Close()
-
-	var got datasetResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&got); err != nil {
-		t.Fatalf("decode failed: %v", err)
+		t.Fatalf("fetchPage failed: %v", err)
 	}
 
-	if len(got.Rows) != 2 {
-		t.Fatalf("expected 2 rows, got %d", len(got.Rows))
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
 	}
-	if got.Rows[0].Row.ModelName != "gpt-4o" {
-		t.Errorf("row[0].ModelName = %q; want gpt-4o", got.Rows[0].Row.ModelName)
+	if rows[0].Row.FullModel != "meta-llama/Llama-3.3-70B-Instruct" {
+		t.Errorf("row[0].FullModel = %q; want meta-llama/Llama-3.3-70B-Instruct", rows[0].Row.FullModel)
 	}
-	if got.Rows[0].Row.MMLUPro == nil || *got.Rows[0].Row.MMLUPro != 85.5 {
+	if rows[0].Row.MMLUPro == nil || *rows[0].Row.MMLUPro != 85.5 {
 		t.Errorf("row[0].MMLUPro unexpected value")
 	}
 }
 
-func TestNormalization_ZeroToOne(t *testing.T) {
-	// If score is between 0 and 1, it should be multiplied by 100.
-	val := 0.855
-	norm := val
-	if norm <= 1.0 && norm > 0 {
-		norm *= 100
-	}
-	if norm != 85.5 {
-		t.Errorf("normalized score = %f; want 85.5", norm)
-	}
-}
-
 func TestNormalization_AlreadyPercent(t *testing.T) {
-	// If score is already 0–100, it should stay the same.
+	// The /contents dataset returns scores already in 0–100 range.
+	// No normalization should be applied.
 	val := 85.5
-	norm := val
-	if norm <= 1.0 && norm > 0 {
-		norm *= 100
-	}
+	norm := val // pass-through
 	if norm != 85.5 {
 		t.Errorf("normalized score = %f; want 85.5", norm)
 	}

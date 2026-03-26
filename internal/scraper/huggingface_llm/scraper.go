@@ -21,23 +21,27 @@ import (
 )
 
 const (
-	// datasetBaseURL is the HuggingFace Datasets Server API for the Open LLM Leaderboard.
-	// Pagination is handled by the offset/length query parameters.
-	datasetBaseURL = "https://datasets-server.huggingface.co/rows?dataset=open-llm-leaderboard%2Fresults&config=default&split=train"
+	// datasetBaseURL is the HuggingFace Datasets Server API for the Open LLM Leaderboard v2
+	// contents dataset. The original open-llm-leaderboard/results endpoint returns HTTP 500
+	// due to a schema change on the HuggingFace side; open-llm-leaderboard/contents is the
+	// canonical replacement and returns the same benchmark columns.
+	datasetBaseURL = "https://datasets-server.huggingface.co/rows?dataset=open-llm-leaderboard%2Fcontents&config=default&split=train"
 	pageSize       = 100
 	// maxPages caps the number of pages fetched per run to avoid runaway scrapes.
-	maxPages = 20
-	sourceURL = "https://huggingface.co/open-llm-leaderboard/open_llm_leaderboard"
+	// The dataset has ~4500 rows so 45 pages at 100 rows each covers it fully.
+	maxPages  = 50
+	sourceURL = "https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard"
 )
 
 // benchmarkDimension maps the leaderboard column names to DB benchmark names.
+// The /contents dataset uses "MMLU-PRO", "GPQA", "IFEval" as column names.
 var benchmarkDimensions = []struct {
 	jsonField     string
 	benchmarkName string
 }{
-	{"mmlu_pro", "MMLU-Pro"},
-	{"gpqa_diamond", "GPQA Diamond"},
-	{"ifeval", "IFEval"},
+	{"MMLU-PRO", "MMLU-Pro"},
+	{"GPQA", "GPQA Diamond"},
+	{"IFEval", "IFEval"},
 }
 
 // Scraper fetches HuggingFace Open LLM Leaderboard data and upserts benchmark scores.
@@ -77,12 +81,14 @@ type datasetRow struct {
 }
 
 type rowContent struct {
-	ModelName   string   `json:"model_name"`
+	// open-llm-leaderboard/contents column names.
 	FullModel   string   `json:"fullname"`
-	MMLUPro     *float64 `json:"mmlu_pro"`
-	GPQADiamond *float64 `json:"gpqa_diamond"`
-	IFEval      *float64 `json:"ifeval"`
-	Date        string   `json:"date"`
+	ModelMarkup string   `json:"Model"` // HTML anchor tag — not used directly
+	MMLUPro     *float64 `json:"MMLU-PRO"`
+	GPQADiamond *float64 `json:"GPQA"`
+	IFEval      *float64 `json:"IFEval"`
+	SubmittedAt string   `json:"Submission Date"`
+	UploadedAt  string   `json:"Upload To Hub Date"`
 }
 
 // Scrape fetches the leaderboard, resolves model names to canonical slugs,
@@ -112,26 +118,16 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 		return fmt.Errorf("huggingface_llm: %w", err)
 	}
 
-	// Filter to entries from the last 6 months.
-	cutoff := time.Now().AddDate(0, -6, 0)
 	now := time.Now().UTC()
 
 	var matched, skipped int
 	for _, row := range rows {
 		r := row.Row
 
-		// Filter by date if available.
-		if r.Date != "" {
-			if t, err := time.Parse("2006-01-02", r.Date); err == nil && t.Before(cutoff) {
-				continue
-			}
-		}
-
-		// Try to resolve the model name.
-		name := r.ModelName
-		if name == "" {
-			name = r.FullModel
-		}
+		// Use the fullname field as the model identifier. It is the HuggingFace
+		// repo path (e.g. "meta-llama/Llama-3.3-70B-Instruct") which is the most
+		// stable identifier across leaderboard versions.
+		name := r.FullModel
 		slug, ok := slugmap.Resolve(name)
 		if !ok {
 			s.logger.Debug().Str("model", name).Msg("huggingface_llm: no slug mapping — skipping")
@@ -148,13 +144,13 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 
 		// Extract each benchmark score.
 		scores := map[string]*float64{
-			"mmlu_pro":     r.MMLUPro,
-			"gpqa_diamond": r.GPQADiamond,
-			"ifeval":       r.IFEval,
+			"MMLU-PRO": r.MMLUPro,
+			"GPQA":     r.GPQADiamond,
+			"IFEval":   r.IFEval,
 		}
 
 		for _, bm := range benchmarks {
-			val := scores[bm.jsonField]
+			val := scores[bm.jsonField] // jsonField is the JSON column name e.g. "MMLU-PRO"
 			if val == nil {
 				continue
 			}

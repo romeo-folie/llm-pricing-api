@@ -32,38 +32,48 @@ func TestNormalizeELO(t *testing.T) {
 	}
 }
 
-func TestFetchJSON_ParsesEntries(t *testing.T) {
-	entries := []arenaEntry{
-		{Model: "gpt-4o", ELO: 1350},
-		{Model: "claude-3-5-sonnet", ELO: 1300},
-		{Model: "gemini-2.0-flash", ELO: 1250},
+// TestFetchPage_ParsesHFResponse verifies that fetchPage correctly parses the
+// HuggingFace Datasets Server envelope format.
+func TestFetchPage_ParsesHFResponse(t *testing.T) {
+	// The HF Datasets Server wraps rows in {"rows": [{"row": {...}}, ...]}
+	hfPayload := hfResponse{
+		Rows: []hfRow{
+			{Row: struct {
+				Model      string `json:"Model"`
+				ArenaScore int    `json:"Arena Score"`
+			}{Model: "Gemini-2.5-Pro", ArenaScore: 1474}},
+			{Row: struct {
+				Model      string `json:"Model"`
+				ArenaScore int    `json:"Arena Score"`
+			}{Model: "Claude Opus 4 (20250514)", ArenaScore: 1368}},
+			{Row: struct {
+				Model      string `json:"Model"`
+				ArenaScore int    `json:"Arena Score"`
+			}{Model: "GPT-4o-2024-05-13", ArenaScore: 1300}},
+		},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(entries)
+		_ = json.NewEncoder(w).Encode(hfPayload)
 	}))
 	defer srv.Close()
 
 	s := &Scraper{client: srv.Client()}
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
-	resp, err := s.client.Do(req)
+	rows, err := s.fetchPage(context.Background(), srv.URL)
 	if err != nil {
-		t.Fatalf("fetch failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var got []arenaEntry
-	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
-		t.Fatalf("decode failed: %v", err)
+		t.Fatalf("fetchPage failed: %v", err)
 	}
 
-	if len(got) != 3 {
-		t.Fatalf("expected 3 entries, got %d", len(got))
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(rows))
 	}
-	if got[0].ELO != 1350 {
-		t.Errorf("entry[0].ELO = %f; want 1350", got[0].ELO)
+	if rows[0].Row.Model != "Gemini-2.5-Pro" {
+		t.Errorf("rows[0].Row.Model = %q; want Gemini-2.5-Pro", rows[0].Row.Model)
+	}
+	if rows[0].Row.ArenaScore != 1474 {
+		t.Errorf("rows[0].Row.ArenaScore = %d; want 1474", rows[0].Row.ArenaScore)
 	}
 }
 

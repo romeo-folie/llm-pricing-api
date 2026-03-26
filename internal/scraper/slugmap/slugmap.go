@@ -9,7 +9,10 @@ import "strings"
 // a contains-based fallback is used.
 var canonicalMap = map[string]string{
 	// OpenAI
+	// Note: after parenthetical stripping + space→hyphen, Chatbot Arena names like
+	// "ChatGPT-4o-latest (2025-03-26)" → "chatgpt-4o-latest"
 	"gpt-4o":                        "openai/gpt-4o",
+	"chatgpt-4o-latest":             "openai/gpt-4o",
 	"gpt-4o-2024-05-13":             "openai/gpt-4o",
 	"gpt-4o-2024-08-06":             "openai/gpt-4o",
 	"gpt-4o-2024-11-20":             "openai/gpt-4o",
@@ -19,6 +22,7 @@ var canonicalMap = map[string]string{
 	"gpt-4-turbo-2024-04-09":        "openai/gpt-4-turbo",
 	"gpt-4-1":                        "openai/gpt-4.1",
 	"gpt-4.1":                        "openai/gpt-4.1",
+	"gpt-4.5-preview":               "openai/gpt-4.5-preview",
 	"gpt-4.1-mini":                   "openai/gpt-4.1-mini",
 	"gpt-4.1-nano":                   "openai/gpt-4.1-nano",
 	"o1":                             "openai/o1",
@@ -40,7 +44,9 @@ var canonicalMap = map[string]string{
 	"claude-3-5-haiku":               "anthropic/claude-3-5-haiku",
 	"claude-3-5-haiku-20241022":      "anthropic/claude-3-5-haiku",
 	"claude-3.5-haiku":               "anthropic/claude-3-5-haiku",
-	// Claude 4.x family — version-first slug format
+	// Claude 4.x family — Chatbot Arena uses space-separated names like
+	// "Claude Opus 4 (20250514)" → after normalise: "claude-opus-4"
+	// Version-first slug format (from Anthropic scraper)
 	"claude-opus-4-6":                "anthropic/claude-4-6-opus",
 	"claude-4-6-opus":                "anthropic/claude-4-6-opus",
 	"claude-4-opus":                  "anthropic/claude-4-6-opus",
@@ -67,7 +73,7 @@ var canonicalMap = map[string]string{
 	"claude-3-haiku":                 "anthropic/claude-3-haiku",
 	"claude-3-haiku-20240307":        "anthropic/claude-3-haiku",
 
-	// Google
+	// Google — Chatbot Arena uses names like "Gemini-2.5-Pro" → "gemini-2.5-pro"
 	"gemini-2.0-flash":               "google/gemini-2.0-flash",
 	"gemini-2.0-flash-001":           "google/gemini-2.0-flash",
 	"gemini-2.5-pro":                 "google/gemini-2.5-pro",
@@ -75,8 +81,12 @@ var canonicalMap = map[string]string{
 	"gemini-2.5-flash":               "google/gemini-2.5-flash",
 	"gemini-2.5-flash-preview":       "google/gemini-2.5-flash",
 	"gemini-1.5-pro":                 "google/gemini-1.5-pro",
+	"gemini-1.5-pro-002":             "google/gemini-1.5-pro",
+	"gemini-1.5-pro-001":             "google/gemini-1.5-pro",
 	"gemini-1.5-pro-latest":          "google/gemini-1.5-pro",
 	"gemini-1.5-flash":               "google/gemini-1.5-flash",
+	"gemini-1.5-flash-002":           "google/gemini-1.5-flash",
+	"gemini-1.5-flash-001":           "google/gemini-1.5-flash",
 	"gemini-1.5-flash-latest":        "google/gemini-1.5-flash",
 	"gemini-pro":                     "google/gemini-pro",
 
@@ -139,9 +149,21 @@ var prefixFallbacks = []struct {
 }
 
 // Resolve maps a leaderboard model name to its canonical DB slug.
+// Handles Chatbot Arena–style names such as "Claude Opus 4 (20250514)" and
+// "ChatGPT-4o-latest (2025-03-26)" by stripping parenthetical suffixes and
+// normalising spaces to hyphens before lookup.
 // Returns ("", false) if no mapping exists.
 func Resolve(name string) (slug string, ok bool) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
+
+	// Strip parenthetical suffixes (e.g. "(20250514)", "(thinking-16k)", "(2025-03-26)").
+	if idx := strings.Index(normalized, "("); idx != -1 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+
+	// Normalise spaces and underscores to hyphens for Chatbot Arena names
+	// like "claude opus 4" → "claude-opus-4".
+	normalized = strings.NewReplacer(" ", "-", "_", "-").Replace(normalized)
 
 	// Exact match first.
 	if s, found := canonicalMap[normalized]; found {

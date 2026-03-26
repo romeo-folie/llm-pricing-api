@@ -1,6 +1,12 @@
 // Package chatbot_arena implements a benchmark scraper for the Chatbot Arena
-// (LMSYS) leaderboard. It fetches ELO scores, normalizes them to 0–100, and
-// upserts them into the model_benchmark_scores table.
+// (LMSYS/lmarena-ai) leaderboard. It fetches ELO/Arena scores from the
+// HuggingFace dataset mirror maintained by mathewhe, normalizes them to 0–100,
+// and upserts them into the model_benchmark_scores table.
+//
+// The original lmarena.ai/api/leaderboard endpoint moved to arena.ai and is
+// now Cloudflare-protected (returns 403). The mathewhe HuggingFace dataset
+// (https://huggingface.co/datasets/mathewhe/chatbot-arena-elo) provides the
+// same data via the HF Datasets Server API and is updated regularly.
 package chatbot_arena
 
 import (
@@ -22,11 +28,14 @@ import (
 )
 
 const (
-	// primaryURL is the live ELO ratings endpoint from the LM Arena leaderboard API.
-	// This replaces the static July 2024 snapshot which never received newer data.
-	primaryURL = "https://lmarena.ai/api/leaderboard"
-	sourceURL  = "https://lmarena.ai"
-	benchmarkName = "Chatbot Arena"
+	// datasetBaseURL is the HuggingFace Datasets Server endpoint for the
+	// mathewhe/chatbot-arena-elo dataset. This dataset mirrors the live
+	// Chatbot Arena leaderboard (updated regularly) and is accessible
+	// without authentication. Offset and length are appended per-page.
+	datasetBaseURL = "https://datasets-server.huggingface.co/rows?dataset=mathewhe%2Fchatbot-arena-elo&config=default&split=train"
+	pageSize       = 100
+	sourceURL      = "https://huggingface.co/datasets/mathewhe/chatbot-arena-elo"
+	benchmarkName  = "Chatbot Arena"
 )
 
 // Scraper fetches Chatbot Arena leaderboard data and upserts benchmark scores.
@@ -56,23 +65,28 @@ func New(db *pgxpool.Pool, client *http.Client) *Scraper {
 // SetLogger configures the structured logger.
 func (s *Scraper) SetLogger(l zerolog.Logger) { s.logger = l }
 
-// arenaEntry represents one model in the Chatbot Arena leaderboard JSON.
-// The JSON format varies across sources; we support the common fields.
-type arenaEntry struct {
-	Model string  `json:"model"`
-	ELO   float64 `json:"elo"`
-	Rating float64 `json:"rating"`
+// hfRow matches one row from the HuggingFace Datasets Server response.
+type hfRow struct {
+	Row struct {
+		Model      string `json:"Model"`
+		ArenaScore int    `json:"Arena Score"`
+	} `json:"row"`
+}
+
+// hfResponse is the top-level envelope from the Datasets Server API.
+type hfResponse struct {
+	Rows []hfRow `json:"rows"`
 }
 
 // Scrape fetches the Chatbot Arena leaderboard, resolves model names, normalizes
-// ELO scores to 0–100, and upserts benchmark scores.
+// Arena scores to 0–100, and upserts benchmark scores.
 func (s *Scraper) Scrape(ctx context.Context) error {
 	benchmarkID, err := intelligence.LookupBenchmarkID(ctx, s.db, benchmarkName)
 	if err != nil {
 		return fmt.Errorf("chatbot_arena: %w", err)
 	}
 
-	entries, err := s.fetchJSON(ctx)
+	entries, err := s.fetchAllPages(ctx)
 	if err != nil {
 		return fmt.Errorf("chatbot_arena: %w", err)
 	}
@@ -81,27 +95,21 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 		return fmt.Errorf("chatbot_arena: no entries returned")
 	}
 
-	// Extract ELO scores for normalization.
-	elos := make([]float64, 0, len(entries))
-	for i := range entries {
-		elo := entries[i].ELO
-		if elo == 0 {
-			elo = entries[i].Rating
-		}
-		entries[i].ELO = elo
-		if elo > 0 {
-			elos = append(elos, elo)
+	// Extract scores for normalization.
+	scores := make([]float64, 0, len(entries))
+	for _, e := range entries {
+		if e.ArenaScore > 0 {
+			scores = append(scores, float64(e.ArenaScore))
 		}
 	}
-
-	minELO, maxELO := minMax(elos)
+	minScore, maxScore := minMax(scores)
 
 	now := time.Now().UTC()
 	version := "elo-" + now.Format("2006-01")
 
 	var matched, skipped int
 	for _, e := range entries {
-		if e.ELO <= 0 {
+		if e.ArenaScore <= 0 {
 			continue
 		}
 
@@ -119,8 +127,8 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			continue
 		}
 
-		raw := e.ELO
-		norm := NormalizeELO(e.ELO, minELO, maxELO)
+		raw := float64(e.ArenaScore)
+		norm := NormalizeELO(raw, minScore, maxScore)
 
 		if err := intelligence.UpsertBenchmarkScore(ctx, s.db, intelligence.BenchmarkScore{
 			ModelID:          modelID,
@@ -141,11 +149,71 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 	return nil
 }
 
-// NormalizeELO converts an ELO score to a 0–100 scale using min-max normalization.
+// arenaEntry holds the normalized data from one leaderboard row.
+type arenaEntry struct {
+	Model      string
+	ArenaScore int
+}
+
+// fetchAllPages paginates through the HuggingFace Datasets Server endpoint
+// and returns all rows.
+func (s *Scraper) fetchAllPages(ctx context.Context) ([]arenaEntry, error) {
+	var all []arenaEntry
+	offset := 0
+	for {
+		url := fmt.Sprintf("%s&offset=%d&length=%d", datasetBaseURL, offset, pageSize)
+		rows, err := s.fetchPage(ctx, url)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for _, r := range rows {
+			all = append(all, arenaEntry{
+				Model:      r.Row.Model,
+				ArenaScore: r.Row.ArenaScore,
+			})
+		}
+		if len(rows) < pageSize {
+			break // Last page.
+		}
+		offset += pageSize
+	}
+	return all, nil
+}
+
+// fetchPage retrieves one page of results from the HuggingFace Datasets Server.
+func (s *Scraper) fetchPage(ctx context.Context, url string) ([]hfRow, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("User-Agent", "llm-pricing-api/1.0")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var hfResp hfResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10<<20)).Decode(&hfResp); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	return hfResp.Rows, nil
+}
+
+// NormalizeELO converts an Arena score to a 0–100 scale using min-max normalization.
 // Exported for testing.
 func NormalizeELO(elo, minELO, maxELO float64) float64 {
 	if maxELO == minELO {
-		return 50.0 // All models have the same ELO.
+		return 50.0 // All models have the same score.
 	}
 	norm := (elo - minELO) / (maxELO - minELO) * 100
 	return math.Round(norm*100) / 100 // Round to 2 decimal places.
@@ -167,30 +235,4 @@ func minMax(vals []float64) (min, max float64) {
 		}
 	}
 	return min, max
-}
-
-// fetchJSON retrieves the leaderboard JSON.
-func (s *Scraper) fetchJSON(ctx context.Context) ([]arenaEntry, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, primaryURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("User-Agent", "llm-pricing-api/1.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var entries []arenaEntry
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 10<<20)).Decode(&entries); err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
-	}
-	return entries, nil
 }
