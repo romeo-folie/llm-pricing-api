@@ -1210,6 +1210,15 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 	if filter.MaxPriceInput != nil {
 		where += fmt.Sprintf(" AND COALESCE(p.input_cost_per_token, 0)::float8 <= $%d", argIdx)
 		args = append(args, *filter.MaxPriceInput)
+		argIdx++
+	}
+	// Push the use-case modality filter into SQL so image/audio/embedding models
+	// never consume slots in the candidate pool.
+	if filter.UseCase != "" {
+		if mod := useCaseModalityMap[filter.UseCase]; mod != "" {
+			where += fmt.Sprintf(" AND m.modality = $%d", argIdx)
+			args = append(args, mod)
+		}
 	}
 
 	sql := fmt.Sprintf(`
@@ -1234,8 +1243,8 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 		) p ON true
 		LEFT JOIN sources src ON src.id = p.source_id
 		%s
-		ORDER BY price_input ASC
-		LIMIT 50
+		ORDER BY COALESCE(p.confirmed_at, m.created_at) DESC, price_input ASC
+		LIMIT 200
 	`, where)
 
 	rows, err := s.db.Query(ctx, sql, args...)
