@@ -29,18 +29,39 @@ var canonicalMap = map[string]string{
 	"o4-mini":                        "openai/o4-mini",
 
 	// Anthropic
-	"claude-3-5-sonnet":              "anthropic/claude-3.5-sonnet",
-	"claude-3-5-sonnet-20241022":     "anthropic/claude-3.5-sonnet",
-	"claude-3-5-sonnet-20240620":     "anthropic/claude-3.5-sonnet",
-	"claude-3.5-sonnet":              "anthropic/claude-3.5-sonnet",
-	"claude-3-5-haiku":               "anthropic/claude-3.5-haiku",
-	"claude-3-5-haiku-20241022":      "anthropic/claude-3.5-haiku",
-	"claude-3.5-haiku":               "anthropic/claude-3.5-haiku",
-	"claude-opus-4-6":                "anthropic/claude-opus-4-6",
-	"claude-4-opus":                  "anthropic/claude-opus-4-6",
-	"claude-sonnet-4-6":              "anthropic/claude-sonnet-4-6",
-	"claude-4-sonnet":                "anthropic/claude-sonnet-4-6",
-	"claude-sonnet-4":                "anthropic/claude-sonnet-4-6",
+	// Slug format in DB: anthropic/claude-<major>-<minor>-<variant>
+	// (produced by canonicalAnthropicSlug in the Anthropic scraper).
+	// Leaderboards use variant-first names (e.g. "claude-opus-4-6") which
+	// must map to the version-first DB slug (e.g. "anthropic/claude-4-6-opus").
+	"claude-3-5-sonnet":              "anthropic/claude-3-5-sonnet",
+	"claude-3-5-sonnet-20241022":     "anthropic/claude-3-5-sonnet",
+	"claude-3-5-sonnet-20240620":     "anthropic/claude-3-5-sonnet",
+	"claude-3.5-sonnet":              "anthropic/claude-3-5-sonnet",
+	"claude-3-5-haiku":               "anthropic/claude-3-5-haiku",
+	"claude-3-5-haiku-20241022":      "anthropic/claude-3-5-haiku",
+	"claude-3.5-haiku":               "anthropic/claude-3-5-haiku",
+	// Claude 4.x family — version-first slug format
+	"claude-opus-4-6":                "anthropic/claude-4-6-opus",
+	"claude-4-6-opus":                "anthropic/claude-4-6-opus",
+	"claude-4-opus":                  "anthropic/claude-4-6-opus",
+	"claude-opus-4-5":                "anthropic/claude-4-5-opus",
+	"claude-4-5-opus":                "anthropic/claude-4-5-opus",
+	"claude-opus-4-1":                "anthropic/claude-4-1-opus",
+	"claude-4-1-opus":                "anthropic/claude-4-1-opus",
+	"claude-opus-4":                  "anthropic/claude-4-opus",
+	"claude-sonnet-4-6":              "anthropic/claude-4-6-sonnet",
+	"claude-4-6-sonnet":              "anthropic/claude-4-6-sonnet",
+	"claude-4-sonnet":                "anthropic/claude-4-6-sonnet",
+	"claude-sonnet-4-5":              "anthropic/claude-4-5-sonnet",
+	"claude-4-5-sonnet":              "anthropic/claude-4-5-sonnet",
+	"claude-sonnet-4-1":              "anthropic/claude-4-1-sonnet",
+	"claude-4-1-sonnet":              "anthropic/claude-4-1-sonnet",
+	"claude-sonnet-4":                "anthropic/claude-4-sonnet",
+	"claude-haiku-4-5":               "anthropic/claude-4-5-haiku",
+	"claude-4-5-haiku":               "anthropic/claude-4-5-haiku",
+	"claude-haiku-4-1":               "anthropic/claude-4-1-haiku",
+	"claude-4-1-haiku":               "anthropic/claude-4-1-haiku",
+	// Claude 3.x legacy
 	"claude-3-opus":                  "anthropic/claude-3-opus",
 	"claude-3-opus-20240229":         "anthropic/claude-3-opus",
 	"claude-3-haiku":                 "anthropic/claude-3-haiku",
@@ -81,25 +102,39 @@ var canonicalMap = map[string]string{
 }
 
 // prefixFallbacks maps a lowercased prefix to a slug. Used when exact match
-// fails — checked in order of decreasing specificity.
+// fails — checked in order of decreasing specificity (longest prefix first).
 var prefixFallbacks = []struct {
 	prefix string
 	slug   string
 }{
-	{"claude-opus-4", "anthropic/claude-opus-4-6"},
-	{"claude-sonnet-4", "anthropic/claude-sonnet-4-6"},
-	{"claude-3-5-sonnet", "anthropic/claude-3.5-sonnet"},
-	{"claude-3-5-haiku", "anthropic/claude-3.5-haiku"},
+	// Claude 4.x — version-first slugs (most specific first)
+	{"claude-opus-4-6", "anthropic/claude-4-6-opus"},
+	{"claude-opus-4-5", "anthropic/claude-4-5-opus"},
+	{"claude-opus-4-1", "anthropic/claude-4-1-opus"},
+	{"claude-opus-4", "anthropic/claude-4-opus"},
+	{"claude-sonnet-4-6", "anthropic/claude-4-6-sonnet"},
+	{"claude-sonnet-4-5", "anthropic/claude-4-5-sonnet"},
+	{"claude-sonnet-4-1", "anthropic/claude-4-1-sonnet"},
+	{"claude-sonnet-4", "anthropic/claude-4-sonnet"},
+	{"claude-haiku-4-5", "anthropic/claude-4-5-haiku"},
+	{"claude-haiku-4-1", "anthropic/claude-4-1-haiku"},
+	// Claude 3.5
+	{"claude-3-5-sonnet", "anthropic/claude-3-5-sonnet"},
+	{"claude-3-5-haiku", "anthropic/claude-3-5-haiku"},
+	// OpenAI
 	{"gpt-4o-mini", "openai/gpt-4o-mini"},
 	{"gpt-4o", "openai/gpt-4o"},
 	{"gpt-4-turbo", "openai/gpt-4-turbo"},
+	// Google
 	{"gemini-2.5-pro", "google/gemini-2.5-pro"},
 	{"gemini-2.5-flash", "google/gemini-2.5-flash"},
 	{"gemini-2.0-flash", "google/gemini-2.0-flash"},
 	{"gemini-1.5-pro", "google/gemini-1.5-pro"},
 	{"gemini-1.5-flash", "google/gemini-1.5-flash"},
+	// Meta
 	{"llama-3.3-70b", "meta-llama/llama-3.3-70b-instruct"},
 	{"llama-3.1-405b", "meta-llama/llama-3.1-405b-instruct"},
+	// Mistral
 	{"mistral-large", "mistralai/mistral-large"},
 }
 

@@ -10,10 +10,10 @@ func TestResolve_ExactMatch(t *testing.T) {
 		{"gpt-4o", "openai/gpt-4o"},
 		{"GPT-4o", "openai/gpt-4o"},
 		{"gpt-4o-mini", "openai/gpt-4o-mini"},
-		{"claude-3-5-sonnet-20241022", "anthropic/claude-3.5-sonnet"},
-		{"claude-3.5-sonnet", "anthropic/claude-3.5-sonnet"},
-		{"claude-opus-4-6", "anthropic/claude-opus-4-6"},
-		{"claude-sonnet-4-6", "anthropic/claude-sonnet-4-6"},
+		{"claude-3-5-sonnet-20241022", "anthropic/claude-3-5-sonnet"},
+		{"claude-3.5-sonnet", "anthropic/claude-3-5-sonnet"},
+		{"claude-opus-4-6", "anthropic/claude-4-6-opus"},
+		{"claude-sonnet-4-6", "anthropic/claude-4-6-sonnet"},
 		{"gemini-2.0-flash", "google/gemini-2.0-flash"},
 		{"gemini-2.5-pro", "google/gemini-2.5-pro"},
 		{"llama-3.3-70b-instruct", "meta-llama/llama-3.3-70b-instruct"},
@@ -39,7 +39,7 @@ func TestResolve_PrefixFallback(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"claude-3-5-sonnet-20250101", "anthropic/claude-3.5-sonnet"},
+		{"claude-3-5-sonnet-20250101", "anthropic/claude-3-5-sonnet"},
 		{"gpt-4o-2025-01-01", "openai/gpt-4o"},
 		{"gemini-2.5-pro-exp-0827", "google/gemini-2.5-pro"},
 		{"llama-3.3-70b-instruct-turbo", "meta-llama/llama-3.3-70b-instruct"},
