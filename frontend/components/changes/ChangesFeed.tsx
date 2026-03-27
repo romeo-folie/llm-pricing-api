@@ -291,13 +291,44 @@ export default function ChangesFeed({
               {total} {total === 1 ? "change" : "changes"}
             </span>
           )}
-          <SiteBadge
-            label={pollFailed ? "Paused" : "Live"}
-            color={polling && !pollFailed ? "#10B981" : "var(--muted)"}
-            bg={polling && !pollFailed ? "#e8f5e9" : "#f5f5f5"}
-            dot
-            dotClassName={polling && !pollFailed ? "animate-live" : ""}
-          />
+          {pollFailed ? (
+            <SiteBadge
+              label="Paused"
+              color="var(--muted)"
+              bg="#f5f5f5"
+              dot
+            />
+          ) : (
+            <span
+              className="font-orbitron"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "1px 6px",
+                border: "none",
+                color: "#ffffff",
+                backgroundColor: "#10B981",
+                flexShrink: 0,
+                letterSpacing: "0.12em",
+                fontSize: "0.65rem",
+                lineHeight: 1.4,
+                textTransform: "uppercase",
+              }}
+            >
+              <span
+                className={polling ? "animate-live" : ""}
+                style={{
+                  width: "5px",
+                  height: "5px",
+                  borderRadius: "50%",
+                  backgroundColor: "rgba(255,255,255,0.7)",
+                  display: "inline-block",
+                }}
+              />
+              LIVE
+            </span>
+          )}
           <span className="font-outfit text-xs" style={{ color: "var(--dim)" }}>
             polling every 60s
           </span>

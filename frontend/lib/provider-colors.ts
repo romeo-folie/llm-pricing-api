@@ -13,5 +13,6 @@ export const PROVIDER_COLORS: Record<string, { color: string; bg: string }> = {
 /** Look up provider color tokens with a safe fallback for unknown providers. */
 export function providerStyle(provider: string): { color: string; bg: string } {
   const key = provider.toLowerCase()
-  return PROVIDER_COLORS[key] ?? { color: "var(--dim)", bg: "var(--surfaceLo)" }
+  // Unknown providers should still be legible in badges (especially in model detail modal).
+  return PROVIDER_COLORS[key] ?? { color: "var(--ink)", bg: "var(--surfaceLo)" }
 }

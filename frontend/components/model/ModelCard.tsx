@@ -4,7 +4,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
 import { formatPrice, formatContext } from "@/lib/format"
 import { safeJsonLd } from "@/lib/utils"
-import { SiteBadge } from "@/components/ui/SiteBadge"
 
 interface ModelCardProps {
   model: Model
@@ -86,14 +85,36 @@ export default function ModelCard({ model, index = 0 }: ModelCardProps) {
           </div>
         </div>
 
-        {/* LIVE badge */}
-        <SiteBadge
-          label="Live"
-          color="#10B981"
-          bg="#e8f5e9"
-          dot
-          className="flex-shrink-0"
-        />
+        {/* LIVE badge (intentionally distinct from SiteBadge styles) */}
+        <span
+          className="font-orbitron"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            padding: "1px 6px",
+            border: "none",
+            color: "#ffffff",
+            backgroundColor: "#10B981",
+            flexShrink: 0,
+            letterSpacing: "0.12em",
+            fontSize: "0.65rem",
+            lineHeight: 1.4,
+            textTransform: "uppercase",
+          }}
+        >
+          <span
+            className="animate-live"
+            style={{
+              width: "5px",
+              height: "5px",
+              borderRadius: "50%",
+              backgroundColor: "rgba(255,255,255,0.7)",
+              display: "inline-block",
+            }}
+          />
+          LIVE
+        </span>
 
         {/* Context window */}
         <span
