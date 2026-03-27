@@ -93,26 +93,59 @@ func (s *pgxFeedbackStore) IsDuplicateFeedback(ctx context.Context, sessionID, m
 }
 
 func (s *pgxFeedbackStore) InsertFeedback(ctx context.Context, f FeedbackRow) error {
-	// Atomic INSERT with duplicate guard scoped to the 1-hour policy window.
-	// The WHERE NOT EXISTS subquery and the INSERT execute in a single statement,
-	// eliminating the TOCTOU race of a separate check-then-insert.
-	// Zero rows affected means a duplicate was found within the window.
-	tag, err := s.db.Exec(ctx, `
-		INSERT INTO recommendation_feedback (session_id, api_key_id, use_case, model_slug, signal, context)
-		SELECT $1, $2, $3, $4, $5, $6
-		WHERE NOT EXISTS (
-			SELECT 1 FROM recommendation_feedback
-			WHERE session_id = $1 AND model_slug = $4 AND use_case = $3
-			  AND created_at > NOW() - INTERVAL '1 hour'
-		)
-	`, f.SessionID, nilIfEmpty(f.APIKeyID), f.UseCase, f.ModelSlug, f.Signal, nilIfEmpty(f.Context))
+	// Use a transaction + advisory lock to serialize concurrent requests for the
+	// same (session_id, model_slug, use_case) tuple. pg_advisory_xact_lock takes
+	// a session-scoped exclusive lock that is released automatically at commit/rollback.
+	// This ensures the existence check and the insert are atomic with respect to
+	// concurrent callers, without adding a permanent unique constraint.
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Derive a stable int64 lock key from the tuple so different tuples don't block
+	// each other unnecessarily. We use a simple FNV-1a fold.
+	lockKey := feedbackLockKey(f.SessionID, f.ModelSlug, f.UseCase)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey); err != nil {
+		return err
+	}
+
+	// Check for existing row within the 1-hour window (now protected by the lock).
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM recommendation_feedback
+			WHERE session_id = $1 AND model_slug = $2 AND use_case = $3
+			  AND created_at > NOW() - INTERVAL '1 hour'
+		)
+	`, f.SessionID, f.ModelSlug, f.UseCase).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
 		return ErrDuplicateFeedback
 	}
-	return nil
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO recommendation_feedback (session_id, api_key_id, use_case, model_slug, signal, context)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, f.SessionID, nilIfEmpty(f.APIKeyID), f.UseCase, f.ModelSlug, f.Signal, nilIfEmpty(f.Context)); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+// feedbackLockKey folds a (sessionID, modelSlug, useCase) tuple into an int64
+// for use as a PostgreSQL advisory lock key.
+func feedbackLockKey(sessionID, modelSlug, useCase string) int64 {
+	const prime = int64(1099511628211)
+	h := int64(-3750763034362895579) // FNV-1a offset basis (14695981039346656037 as signed int64)
+	for _, b := range []byte(sessionID + "\x00" + modelSlug + "\x00" + useCase) {
+		h ^= int64(b)
+		h *= prime
+	}
+	return h
 }
 
 func (s *pgxFeedbackStore) TopFeedbackModels(ctx context.Context, useCase string, days, limit int, positive bool) ([]FeedbackSummary, error) {
