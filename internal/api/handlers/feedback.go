@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"llm-pricing-api/internal/api"
@@ -94,21 +93,22 @@ func (s *pgxFeedbackStore) IsDuplicateFeedback(ctx context.Context, sessionID, m
 }
 
 func (s *pgxFeedbackStore) InsertFeedback(ctx context.Context, f FeedbackRow) error {
+	// Atomic INSERT with duplicate guard scoped to the 1-hour policy window.
+	// The WHERE NOT EXISTS subquery and the INSERT execute in a single statement,
+	// eliminating the TOCTOU race of a separate check-then-insert.
+	// Zero rows affected means a duplicate was found within the window.
 	tag, err := s.db.Exec(ctx, `
 		INSERT INTO recommendation_feedback (session_id, api_key_id, use_case, model_slug, signal, context)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (session_id, model_slug, use_case) DO NOTHING
+		SELECT $1, $2, $3, $4, $5, $6
+		WHERE NOT EXISTS (
+			SELECT 1 FROM recommendation_feedback
+			WHERE session_id = $1 AND model_slug = $4 AND use_case = $3
+			  AND created_at > NOW() - INTERVAL '1 hour'
+		)
 	`, f.SessionID, nilIfEmpty(f.APIKeyID), f.UseCase, f.ModelSlug, f.Signal, nilIfEmpty(f.Context))
 	if err != nil {
-		// Translate unique_violation (23505) to the typed sentinel in case the
-		// constraint is enforced via a path that doesn't use ON CONFLICT.
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return ErrDuplicateFeedback
-		}
 		return err
 	}
-	// ON CONFLICT DO NOTHING: zero rows affected means a duplicate was suppressed.
 	if tag.RowsAffected() == 0 {
 		return ErrDuplicateFeedback
 	}

@@ -27,6 +27,11 @@ export default function ThumbsWidget({ useCase, modelSlug }: ThumbsWidgetProps) 
       if (state === "sending") return
       const target: FeedbackState = signal === 1 ? "up" : "down"
 
+      // Clear any prior confirmation timer before starting a new request.
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
       // Enter sending state immediately — blocks duplicate clicks until complete.
       setState("sending")
 
