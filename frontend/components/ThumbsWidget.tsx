@@ -19,8 +19,8 @@ export default function ThumbsWidget({ useCase, modelSlug }: ThumbsWidgetProps) 
       if (state === "sending") return
       const target: FeedbackState = signal === 1 ? "up" : "down"
 
-      // Optimistic highlight.
-      setState(target)
+      // Enter sending state immediately — blocks duplicate clicks until complete.
+      setState("sending")
 
       try {
         const res = await fetch("/api/feedback", {
@@ -35,12 +35,12 @@ export default function ThumbsWidget({ useCase, modelSlug }: ThumbsWidgetProps) 
         })
 
         if (!res.ok) {
-          // Revert on error.
           setState("idle")
           return
         }
 
-        // Brief confirmation — revert to idle after 1s.
+        // Show confirmation highlight briefly, then return to idle.
+        setState(target)
         setTimeout(() => setState("idle"), 1000)
       } catch {
         setState("idle")

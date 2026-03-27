@@ -3,8 +3,10 @@ package intelligence
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 )
@@ -136,9 +138,14 @@ func loadEffectiveWeights(ctx context.Context, db *pgxpool.Pool, useCase, priori
 		LIMIT 1
 	`, useCase, priority).Scan(&weightsJSON, &source)
 	if err != nil {
-		// pgx returns no rows → fall back to hardcoded.
-		hardcoded := dimensionWeights(UseCase(useCase), Priority(priority))
-		return hardcoded, "", nil
+		// Only fall back to hardcoded weights when no row exists.
+		// Any other error (connection failure, query error, etc.) is a real
+		// problem and must be surfaced to the caller.
+		if errors.Is(err, pgx.ErrNoRows) {
+			hardcoded := dimensionWeights(UseCase(useCase), Priority(priority))
+			return hardcoded, "", nil
+		}
+		return nil, "", err
 	}
 
 	var weights map[string]float64
