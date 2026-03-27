@@ -124,15 +124,20 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 // Fiber app. No API key is required, but IP-based rate limiting is applied.
 // If an Authorization header is present, the key hash is recorded.
 //
+// trustedProxies is passed to IPRateLimit so that the real end-user IP is
+// resolved from X-Forwarded-For when the request arrives via a known proxy
+// (e.g. the Next.js frontend proxy on Vercel). Without trusted proxies the
+// rate limiter keys on the proxy server's IP, throttling all users together.
+//
 // Route registered:
 //
 //	POST /v1/feedback — submit recommendation feedback
-func RegisterFeedback(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) {
+func RegisterFeedback(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger, trustedProxies ...string) {
 	fs := NewFeedbackStore(db)
 	fh := NewFeedbackHandler(fs)
 
 	fb := app.Group("/v1")
-	fb.Post("/feedback", middleware.IPRateLimit(rdb, log), fh.Create)
+	fb.Post("/feedback", middleware.IPRateLimit(rdb, log, trustedProxies...), fh.Create)
 }
 
 // RegisterAdminFeedback registers the admin feedback analytics endpoint.

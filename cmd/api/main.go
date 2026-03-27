@@ -244,7 +244,9 @@ func main() {
 	handlers.RegisterPublic(app, db, redisClient)
 
 	// Register POST /v1/feedback — public, IP rate-limited, no auth required.
-	handlers.RegisterFeedback(app, db, redisClient, log)
+	// Pass trusted proxies so IP rate limiting applies per end-user when the
+	// request is forwarded by the Next.js frontend proxy.
+	handlers.RegisterFeedback(app, db, redisClient, log, trustedProxies...)
 
 	// Register all /v1/ endpoint groups.
 	handlers.RegisterFree(v1, db, redisClient)
