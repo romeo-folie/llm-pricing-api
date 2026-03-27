@@ -122,7 +122,8 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 
 // RegisterFeedback registers the public POST /v1/feedback endpoint on the root
 // Fiber app. No API key is required, but IP-based rate limiting is applied.
-// If an Authorization header is present, the key hash is recorded.
+// OptionalAuth runs after the rate limiter: if a valid Bearer token is present,
+// tier and key_hash are recorded for attribution; otherwise the request proceeds.
 //
 // trustedProxies is passed to IPRateLimit so that the real end-user IP is
 // resolved from X-Forwarded-For when the request arrives via a known proxy
@@ -132,12 +133,16 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 // Route registered:
 //
 //	POST /v1/feedback — submit recommendation feedback
-func RegisterFeedback(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger, trustedProxies ...string) {
+func RegisterFeedback(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger, verifier middleware.UnkeyVerifier, apiID string, trustedProxies ...string) {
 	fs := NewFeedbackStore(db)
 	fh := NewFeedbackHandler(fs)
 
 	fb := app.Group("/v1")
-	fb.Post("/feedback", middleware.IPRateLimit(rdb, log, trustedProxies...), fh.Create)
+	fb.Post("/feedback",
+		middleware.IPRateLimit(rdb, log, trustedProxies...),
+		middleware.OptionalAuth(verifier, rdb, apiID),
+		fh.Create,
+	)
 }
 
 // RegisterAdminFeedback registers the admin feedback analytics endpoint.

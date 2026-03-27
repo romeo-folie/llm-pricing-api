@@ -219,3 +219,48 @@ func RequireTier(minTier string) fiber.Handler {
 func tierAtLeast(actual, required string) bool {
 	return tierOrder[actual] >= tierOrder[required]
 }
+
+// OptionalAuth is like Auth but never rejects the request.
+// If a valid Bearer token is present, tier and key_hash are set in c.Locals;
+// if the header is absent or the key is invalid, the request proceeds with no
+// locals set. Used on public endpoints that optionally record API key attribution.
+func OptionalAuth(verifier UnkeyVerifier, redisClient *redis.Client, apiID string) fiber.Handler {
+	cfg := &authConfig{verifier: verifier, redis: redisClient, apiID: apiID}
+	return func(c *fiber.Ctx) error {
+		authHeader := c.Get("Authorization")
+		const prefix = "Bearer "
+		if authHeader == "" || !strings.HasPrefix(authHeader, prefix) {
+			return c.Next()
+		}
+		rawKey := strings.TrimPrefix(authHeader, prefix)
+		if rawKey == "" {
+			return c.Next()
+		}
+		hash := keyHash(rawKey)
+		cacheKey := "unkey:" + hash
+
+		var result cachedVerifyResult
+		if data, err := redisClient.Get(c.Context(), cacheKey).Bytes(); err == nil {
+			if jsonErr := json.Unmarshal(data, &result); jsonErr == nil {
+				if result.Valid {
+					c.Locals(LocalKeyTier, result.Tier)
+					c.Locals(LocalKeyHash, hash)
+				}
+				return c.Next()
+			}
+		}
+
+		valid, tier, err := cfg.verifier.VerifyKey(c.Context(), rawKey, cfg.apiID)
+		if err == nil {
+			result = cachedVerifyResult{Valid: valid, Tier: tier}
+			if data, merr := json.Marshal(result); merr == nil {
+				_ = redisClient.Set(c.Context(), cacheKey, data, unkeyTTL).Err()
+			}
+			if valid {
+				c.Locals(LocalKeyTier, tier)
+				c.Locals(LocalKeyHash, hash)
+			}
+		}
+		return c.Next()
+	}
+}

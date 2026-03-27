@@ -67,10 +67,6 @@ func calibratePair(ctx context.Context, db *pgxpool.Pool, log zerolog.Logger, uc
 
 	// 3. Identify primary dimensions for this use case.
 	primaryDims := PrimaryDimensions(uc)
-	primarySet := make(map[string]bool, len(primaryDims))
-	for _, d := range primaryDims {
-		primarySet[d] = true
-	}
 
 	// 4. Adjust weights based on feedback signals.
 	newWeights := make(map[string]float64, len(currentWeights))
