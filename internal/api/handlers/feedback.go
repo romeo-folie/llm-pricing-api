@@ -2,14 +2,20 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"llm-pricing-api/internal/api"
 	"llm-pricing-api/internal/intelligence"
 )
+
+// ErrDuplicateFeedback is returned by InsertFeedback when the unique constraint
+// (session_id, model_slug, use_case) is violated at the DB level.
+var ErrDuplicateFeedback = errors.New("duplicate feedback")
 
 // FeedbackRequest is the JSON body for POST /v1/feedback.
 type FeedbackRequest struct {
@@ -88,11 +94,25 @@ func (s *pgxFeedbackStore) IsDuplicateFeedback(ctx context.Context, sessionID, m
 }
 
 func (s *pgxFeedbackStore) InsertFeedback(ctx context.Context, f FeedbackRow) error {
-	_, err := s.db.Exec(ctx, `
+	tag, err := s.db.Exec(ctx, `
 		INSERT INTO recommendation_feedback (session_id, api_key_id, use_case, model_slug, signal, context)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (session_id, model_slug, use_case) DO NOTHING
 	`, f.SessionID, nilIfEmpty(f.APIKeyID), f.UseCase, f.ModelSlug, f.Signal, nilIfEmpty(f.Context))
-	return err
+	if err != nil {
+		// Translate unique_violation (23505) to the typed sentinel in case the
+		// constraint is enforced via a path that doesn't use ON CONFLICT.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrDuplicateFeedback
+		}
+		return err
+	}
+	// ON CONFLICT DO NOTHING: zero rows affected means a duplicate was suppressed.
+	if tag.RowsAffected() == 0 {
+		return ErrDuplicateFeedback
+	}
+	return nil
 }
 
 func (s *pgxFeedbackStore) TopFeedbackModels(ctx context.Context, useCase string, days, limit int, positive bool) ([]FeedbackSummary, error) {
@@ -229,6 +249,9 @@ func (h *FeedbackHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if err := h.store.InsertFeedback(c.Context(), row); err != nil {
+		if errors.Is(err, ErrDuplicateFeedback) {
+			return api.NewConflict("duplicate feedback: same session_id + model_slug + use_case")
+		}
 		return api.NewInternalError("failed to record feedback")
 	}
 

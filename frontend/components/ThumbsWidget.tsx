@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { useFeedbackSession } from "../hooks/useFeedbackSession"
 
 interface ThumbsWidgetProps {
@@ -13,6 +13,14 @@ type FeedbackState = "idle" | "up" | "down" | "sending"
 export default function ThumbsWidget({ useCase, modelSlug }: ThumbsWidgetProps) {
   const sessionId = useFeedbackSession()
   const [state, setState] = useState<FeedbackState>("idle")
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clean up any pending timeout when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current !== null) clearTimeout(timeoutRef.current)
+    }
+  }, [])
 
   const send = useCallback(
     async (signal: 1 | -1) => {
@@ -41,7 +49,7 @@ export default function ThumbsWidget({ useCase, modelSlug }: ThumbsWidgetProps) 
 
         // Show confirmation highlight briefly, then return to idle.
         setState(target)
-        setTimeout(() => setState("idle"), 1000)
+        timeoutRef.current = setTimeout(() => setState("idle"), 1000)
       } catch {
         setState("idle")
       }
