@@ -30,6 +30,11 @@ func RealIP(c *fiber.Ctx, trustedProxies ...string) string {
 		return peerIP
 	}
 
+	// Prefer X-Real-IP (single value, set by infrastructure, harder to spoof)
+	// over X-Forwarded-For (chain, client-controllable first element).
+	if xri := c.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
 	if xff := c.Get("X-Forwarded-For"); xff != "" {
 		// Use the leftmost (first) entry — this is the original client IP.
 		// Rightmost is the last proxy hop, not the client.

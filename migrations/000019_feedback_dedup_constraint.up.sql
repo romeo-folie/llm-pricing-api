@@ -1,3 +1,4 @@
--- No schema change: duplicate enforcement is handled atomically in the INSERT
--- using a WHERE NOT EXISTS subquery scoped to the 1-hour policy window.
--- See: internal/api/handlers/feedback.go InsertFeedback().
+-- No schema change: duplicate enforcement uses an advisory lock + transactional
+-- check-then-insert in InsertFeedback (internal/api/handlers/feedback.go).
+-- The 1-hour dedup window is applied at the application layer via
+-- pg_advisory_xact_lock keyed on (session_id, model_slug, use_case).

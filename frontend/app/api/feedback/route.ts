@@ -15,19 +15,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Forward the real client IP so backend IP rate limiting applies per end-user,
-  // not per Next.js server. X-Forwarded-For may already contain a chain if the
-  // request came through Vercel's edge; we preserve it and append the last hop.
-  const existingXFF = req.headers.get("x-forwarded-for")
-  const clientIP = req.headers.get("x-real-ip") ?? existingXFF?.split(",")[0]?.trim() ?? ""
-  const forwardedFor = existingXFF ? `${existingXFF}, ${clientIP}` : clientIP
+  // Forward only X-Real-IP, which is set by Vercel's edge infrastructure and
+  // cannot be spoofed by the browser client. Do NOT forward X-Forwarded-For —
+  // it can contain client-controlled values that would allow IP spoofing for
+  // rate-limit identity.
+  const realIP = req.headers.get("x-real-ip") ?? ""
 
   const upstream = await fetch(`${API_BASE}/v1/feedback`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
-      ...(clientIP ? { "X-Forwarded-For": forwardedFor, "X-Real-IP": clientIP } : {}),
+      ...(realIP ? { "X-Real-IP": realIP } : {}),
     },
     body: JSON.stringify(body),
     cache: "no-store",
