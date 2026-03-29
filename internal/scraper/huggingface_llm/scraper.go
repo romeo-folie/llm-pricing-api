@@ -85,12 +85,12 @@ type modelAgg struct {
 func (s *Scraper) Scrape(ctx context.Context) error {
 	benchmarkID, err := intelligence.LookupBenchmarkID(ctx, s.db, benchmarkName)
 	if err != nil {
-		return fmt.Errorf("huggingface_llm: %w", err)
+		return fmt.Errorf("livecodebench: %w", err)
 	}
 
 	data, err := s.fetchData(ctx)
 	if err != nil {
-		return fmt.Errorf("huggingface_llm: %w", err)
+		return fmt.Errorf("livecodebench: %w", err)
 	}
 
 	// Build a map from model_repr → model_name for slug resolution.
@@ -129,14 +129,14 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			slug, ok = slugmap.Resolve(repr)
 		}
 		if !ok {
-			s.logger.Debug().Str("model_repr", repr).Str("model_name", modelName).Msg("huggingface_llm: no slug mapping — skipping")
+			s.logger.Debug().Str("model_repr", repr).Str("model_name", modelName).Msg("livecodebench: no slug mapping — skipping")
 			skipped++
 			continue
 		}
 
 		modelID, err := intelligence.LookupModelIDBySlug(ctx, s.db, slug)
 		if err != nil {
-			s.logger.Debug().Str("slug", slug).Err(err).Msg("huggingface_llm: model not in DB — skipping")
+			s.logger.Debug().Str("slug", slug).Err(err).Msg("livecodebench: model not in DB — skipping")
 			skipped++
 			continue
 		}
@@ -154,7 +154,7 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			Confidence:       "high",
 			EvaluatedAt:      now,
 		}); err != nil {
-			return fmt.Errorf("huggingface_llm: upsert score for %s: %w", slug, err)
+			return fmt.Errorf("livecodebench: upsert score for %s: %w", slug, err)
 		}
 		matched++
 	}
@@ -164,7 +164,7 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 		Int("skipped", skipped).
 		Int("total_models", len(data.Models)).
 		Int("total_performances", len(data.Performances)).
-		Msg("huggingface_llm: scrape complete")
+		Msg("livecodebench: scrape complete")
 	return nil
 }
 

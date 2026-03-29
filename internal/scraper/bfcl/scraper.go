@@ -92,12 +92,12 @@ func extractModelFromTags(tags []string) (string, bool) {
 func (s *Scraper) Scrape(ctx context.Context) error {
 	benchmarkID, err := intelligence.LookupBenchmarkID(ctx, s.db, benchmarkName)
 	if err != nil {
-		return fmt.Errorf("bfcl: %w", err)
+		return fmt.Errorf("swebench: %w", err)
 	}
 
 	entries, err := s.fetchVerifiedEntries(ctx)
 	if err != nil {
-		return fmt.Errorf("bfcl: %w", err)
+		return fmt.Errorf("swebench: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -118,14 +118,14 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 
 		slug, ok := slugmap.Resolve(modelName)
 		if !ok {
-			s.logger.Debug().Str("model", modelName).Msg("bfcl: no slug mapping — skipping")
+			s.logger.Debug().Str("model", modelName).Msg("swebench: no slug mapping — skipping")
 			skipped++
 			continue
 		}
 
 		modelID, err := intelligence.LookupModelIDBySlug(ctx, s.db, slug)
 		if err != nil {
-			s.logger.Debug().Str("slug", slug).Err(err).Msg("bfcl: model not in DB — skipping")
+			s.logger.Debug().Str("slug", slug).Err(err).Msg("swebench: model not in DB — skipping")
 			skipped++
 			continue
 		}
@@ -151,7 +151,7 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			Confidence:       "high",
 			EvaluatedAt:      evaluatedAt,
 		}); err != nil {
-			return fmt.Errorf("bfcl: upsert score for %s: %w", slug, err)
+			return fmt.Errorf("swebench: upsert score for %s: %w", slug, err)
 		}
 		matched++
 	}
@@ -161,7 +161,7 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 		Int("skipped", skipped).
 		Int("no_model_tag", noTag).
 		Int("total_entries", len(entries)).
-		Msg("bfcl: scrape complete")
+		Msg("swebench: scrape complete")
 	return nil
 }
 
