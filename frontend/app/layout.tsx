@@ -64,8 +64,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: `${SITE_URL}/og-image.png`,
-        width: 1200,
-        height: 628,
+        width: 1188,
+        height: 613,
         alt: "LLMRates — Compare AI Model Pricing Across Providers",
       },
     ],
