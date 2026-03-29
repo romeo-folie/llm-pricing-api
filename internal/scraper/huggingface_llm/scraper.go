@@ -1,3 +1,4 @@
+// TODO(refactor): rename package huggingface_llm → livecodebench to match the implementation.
 // Package huggingface_llm implements a benchmark scraper for LiveCodeBench.
 // It fetches per-question pass@1 scores, aggregates them to per-model averages,
 // and upserts them into the model_benchmark_scores table.
