@@ -25,6 +25,20 @@ export default function CompareClient({ allModels }: CompareClientProps) {
   const initialModels = searchParams.get("models")?.split(",").filter(Boolean).slice(0, 5) ?? []
 
   const [selectedSlugs, setSelectedSlugs] = useState<string[]>(initialModels)
+
+  // Keep selectedSlugs in sync with URL on browser back/forward navigation.
+  // We compare the URL value to the last value WE pushed — if they differ, the
+  // navigation came from outside (history pop) and we should update state.
+  const lastPushedUrl = useRef(initialModels.join(","))
+  useEffect(() => {
+    const fromUrl = searchParams.get("models")?.split(",").filter(Boolean).slice(0, 5) ?? []
+    const fromUrlKey = fromUrl.join(",")
+    if (fromUrlKey !== lastPushedUrl.current) {
+      // URL changed externally (back/forward) — pull state from URL.
+      lastPushedUrl.current = fromUrlKey
+      setSelectedSlugs(fromUrl)
+    }
+  }, [searchParams])
   const [useCase, setUseCase] = useState<string | null>(null)
   const [contextMin, setContextMin] = useState<number | null>(null)
   const [requiresTools, setRequiresTools] = useState(false)
@@ -94,8 +108,10 @@ export default function CompareClient({ allModels }: CompareClientProps) {
   // ── URL sync ───────────────────────────────────────────────────────────────
   const syncUrl = useCallback(
     (slugs: string[]) => {
+      const key = slugs.join(",")
+      lastPushedUrl.current = key
       const params = new URLSearchParams()
-      if (slugs.length > 0) params.set("models", slugs.join(","))
+      if (slugs.length > 0) params.set("models", key)
       const qs = params.toString()
       router.replace(`/compare${qs ? `?${qs}` : ""}`, { scroll: false })
     },
@@ -106,24 +122,24 @@ export default function CompareClient({ allModels }: CompareClientProps) {
     (slug: string) => {
       setSelectedSlugs((prev) => {
         if (prev.includes(slug) || prev.length >= 5) return prev
-        const next = [...prev, slug]
-        syncUrl(next)
-        return next
+        return [...prev, slug]
       })
     },
-    [syncUrl],
+    [],
   )
 
   const handleRemove = useCallback(
     (slug: string) => {
-      setSelectedSlugs((prev) => {
-        const next = prev.filter((s) => s !== slug)
-        syncUrl(next)
-        return next
-      })
+      setSelectedSlugs((prev) => prev.filter((s) => s !== slug))
     },
-    [syncUrl],
+    [],
   )
+
+  // Sync URL whenever selectedSlugs changes — outside the state updater to
+  // avoid side effects inside a pure updater (would fire twice in Strict Mode).
+  useEffect(() => {
+    syncUrl(selectedSlugs)
+  }, [selectedSlugs, syncUrl])
 
   // ── Client-side filters on the model list ─────────────────────────────────
   const filteredModels = allModels.filter((m) => {
