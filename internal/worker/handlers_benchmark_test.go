@@ -60,14 +60,14 @@ func TestHandleHuggingFaceLLMScrape(t *testing.T) {
 }
 
 // TestHandleChatbotArenaScrape verifies the handler creates a scraper and calls Scrape.
+// The Chatbot Arena scraper is a no-op stub (upstream API returned 403), so this
+// should succeed without error rather than panic.
 func TestHandleChatbotArenaScrape(t *testing.T) {
 	store := &mockStore{}
 	h := newTestHandlers(store)
-	panicked := invokePanics(func() {
-		_ = h.HandleChatbotArenaScrape(context.Background(), asynq.NewTask(TaskChatbotArenaScrape, nil))
-	})
-	if !panicked {
-		t.Fatal("expected panic from nil DB pool — handler may not be calling scraper.Scrape")
+	err := h.HandleChatbotArenaScrape(context.Background(), asynq.NewTask(TaskChatbotArenaScrape, nil))
+	if err != nil {
+		t.Fatalf("HandleChatbotArenaScrape() returned error: %v; want nil (no-op stub)", err)
 	}
 }
 
