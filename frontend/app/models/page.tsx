@@ -117,14 +117,16 @@ export default async function ModelsPage({ searchParams }: PageProps) {
         {/* Filters */}
         <form
           method="GET"
-          className="animate-draw-border-box"
+          className="animate-draw-border-box animate-wireframe-fade"
           style={{
             marginBottom: "20px",
-            backgroundColor: "var(--bg)",
-            "--draw-delay": "0.6s"
+            padding: "16px 20px",
+            backgroundColor: "var(--surfaceLo)",
+            "--draw-delay": "1.3s",
+            animationDelay: "1.3s",
           } as React.CSSProperties}
         >
-          <div className="animate-wireframe-fade flex flex-wrap gap:8px p-3" style={{ animationDelay: "1.3s", gap: "8px" }}>
+          <div className="flex flex-wrap" style={{ gap: "8px", alignItems: "center" }}>
           
           {/* Text search */}
           <input

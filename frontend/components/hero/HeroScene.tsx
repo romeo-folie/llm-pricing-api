@@ -28,11 +28,11 @@ const SOURCES: SourceNode[] = [
   // Primary — tight cluster; scraped @every 24h (daily)
   { name: "OpenAI", sub: "daily", cx: 100, cy: 72, tier: "primary", tierIdx: 0 },
   { name: "Anthropic", sub: "daily", cx: 135, cy: 170, tier: "primary", tierIdx: 1 },
-  { name: "Google", sub: "daily", cx: 90, cy: 268, tier: "primary", tierIdx: 2 },
+  { name: "Google", sub: "daily", cx: 105, cy: 268, tier: "primary", tierIdx: 2 },
   // Aggregators — scattered wider; scrape cadences vary
   { name: "OpenRouter", sub: "every 6h", cx: 210, cy: 32, tier: "aggregator", tierIdx: 0 },
   { name: "LiteLLM", sub: "daily", cx: 255, cy: 215, tier: "aggregator", tierIdx: 1 },
-  { name: "Hugging Face", sub: "daily", cx: 220, cy: 300, tier: "aggregator", tierIdx: 2 },
+  { name: "Hugging Face", sub: "daily", cx: 220, cy: 285, tier: "aggregator", tierIdx: 2 },
 ];
 
 /** Per-provider brand colors applied to planet core, glow, and flow particle. */
@@ -125,7 +125,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
   return (
     <div
       className={className}
-      style={{ width: "100%", overflow: "hidden", ...style }}
+      style={{ width: "100%", overflow: "visible", ...style }}
       role="img"
       aria-label="Architecture diagram: direct API pricing data from OpenAI, Anthropic, and Google, plus aggregated data from OpenRouter, LiteLLM, and Hugging Face, flows through a reconciliation engine to verified API endpoints"
     >
@@ -135,7 +135,7 @@ export default function HeroScene({ className, style }: HeroSceneProps) {
           width: "100%",
           display: "flex",
           justifyContent: "center",
-          overflow: "hidden"
+          overflow: "visible"
         }}
       >
         <svg
