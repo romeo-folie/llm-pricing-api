@@ -77,12 +77,6 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
   return (
     <div>
       <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.2s" }}>
-        <span
-          className="font-orbitron text-xs tracking-widest"
-          style={{ color: "var(--dim)", display: "block", marginBottom: "8px" }}
-        >
-          CALCULATOR
-        </span>
         <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
           Cost Calculator
         </h1>
