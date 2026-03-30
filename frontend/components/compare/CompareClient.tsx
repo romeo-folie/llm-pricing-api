@@ -172,36 +172,56 @@ export default function CompareClient({ allModels }: CompareClientProps) {
         </p>
       </div>
 
-      {/* FilterBar */}
-      <div style={{ marginBottom: "16px" }}>
+      {/* Controls card — FilterBar + ModelPicker */}
+      <div
+        className="animate-draw-border-box animate-wireframe-fade"
+        style={{
+          padding: "20px",
+          backgroundColor: "var(--surfaceLo)",
+          marginBottom: "24px",
+          animationDelay: "1.3s",
+          "--draw-delay": "1.3s",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+        } as React.CSSProperties}
+      >
         <FilterBar
           useCase={useCase}
           onUseCaseChange={setUseCase}
-          contextMin={contextMin}
-          onContextMinChange={setContextMin}
           requiresTools={requiresTools}
           onRequiresToolsChange={setRequiresTools}
           requiresStructuredOutput={requiresStructuredOutput}
           onRequiresStructuredOutputChange={setRequiresStructuredOutput}
         />
-      </div>
 
-      {/* ModelPicker */}
-      <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.5s" }}>
-        <div
-          className="font-orbitron text-xs tracking-wide mb-2"
-          style={{ color: "var(--dim)", textTransform: "uppercase", letterSpacing: "0.08em" }}
-        >
-          Add Models
+        <div>
+          <div
+            className="font-orbitron text-xs tracking-wide"
+            style={{ color: "var(--dim)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}
+          >
+            Add Models
+          </div>
+          <ModelPicker
+            models={filteredModels}
+            selected={selectedSlugs}
+            onSelect={handleSelect}
+            onRemove={handleRemove}
+            max={5}
+            scoredSlugs={scoredSlugs.size > 0 ? scoredSlugs : undefined}
+          />
+          {selectedSlugs.length > 0 && (
+            <div
+              className="font-outfit text-xs"
+              style={{ color: "var(--muted)", marginTop: "8px" }}
+            >
+              {selectedSlugs.length} of 5 selected
+              {selectedSlugs.length >= 2 && (
+                <span style={{ color: "var(--accent)", marginLeft: "8px" }}>↓ comparison below</span>
+              )}
+            </div>
+          )}
         </div>
-        <ModelPicker
-          models={filteredModels}
-          selected={selectedSlugs}
-          onSelect={handleSelect}
-          onRemove={handleRemove}
-          max={5}
-          scoredSlugs={scoredSlugs.size > 0 ? scoredSlugs : undefined}
-        />
       </div>
 
       {/* CompareTable — renders when 2+ models selected */}
