@@ -21,9 +21,10 @@ every confirmed change flows through the `Reconciler`. It enforces:
 
 ```
 internal/reconciler/
-  reconciler.go       # Reconciler type, Reconcile method, multi- and single-source logic, webhook fan-out
+  reconciler.go       # Reconciler type, Reconcile method, multi- and single-source logic, first-seen publish, webhook fan-out
+  pending.go          # Redis-backed persistence of the pending map (hydrate/persist/delete + snapshot helper)
   event.go            # SSEEvent type and Redis Pub/Sub publishing (publishEvent)
-  store.go            # Store interface + pgxStore (PostgreSQL-backed implementation)
+  store.go            # Store interface + pgxStore (PublishPrice also stamps last_verified_at)
   reconciler_test.go  # Unit tests using an in-memory mockStore (includes Redis tests via miniredis)
   reconciler_integration_test.go  # Integration tests requiring a live DB and Redis
   README.md           # This file
@@ -111,20 +112,38 @@ Decision logic per (slug, field) group:
 | Scenario | Action |
 |----------|--------|
 | 2+ sources, but all share the same `effectiveProvider` | Collapsed to single-source (independence gate) |
-| 1 source (or collapsed group), 1st cycle | Held in pending map (not published) |
-| 1 source (or collapsed group), 2nd cycle (same value) | Published with `ConfidenceMedium` |
+| 1 source (or collapsed group), **brand-new model** (no existing price row) | Published immediately with `ConfidenceLow` (first-seen) |
+| 1 source (or collapsed group), existing price, 1st cycle | Held in pending map (not published) |
+| 1 source (or collapsed group), existing price, 2nd cycle (same value) | Published with `ConfidenceMedium` |
 | 1 source (or collapsed group), value changed | Counter reset; stays pending |
 | 2+ **independent** sources, all agree within ε | Published with `ConfidenceHigh` |
 | 2+ **independent** sources, consensus ≥2, outlier >5% | **Flag AND publish** `ConfidenceHigh` |
 | 2+ **independent** sources, all disagree, max delta >5% | Flagged for review; not published |
 | 2+ **independent** sources, minor spread (≤5%) | Published with `ConfidenceMedium` |
 
+**First-seen publishing:** a model with no existing `prices` row for the source is published
+on its first sighting at `ConfidenceLow` rather than waiting two cycles — a labelled-low
+price is more useful than no price, and there is no prior value to protect. Existing prices
+still require the 2-consecutive-fetch gate. Because a new model is published one field at a
+time, `Reconcile` builds a per-cycle `(slug, field) → value` map and passes the sibling
+field's value into `publish()`, so both `input` and `output` are written together and the
+incomplete-price guard (which rejects rows where either side is 0) does not block the first write.
+
+**Freshness stamp:** every `publish()` also sets `prices.last_verified_at` (in the same
+transaction as the upsert). Unchanged prices that never reach the reconciler are stamped by
+the worker's `MarkVerified` bulk update. The API reads `last_verified_at` as the freshness
+anchor for `age_hours`/confidence.
+
 **Pending map TTL:** entries not refreshed within 72 hours are swept by `sweepStalePending()`
 at the start of each `Reconcile` call, bounding memory growth.
 
-> **Known limitation:** the pending map is in-memory only. Process restarts (e.g., deploys)
-> will reset it, causing single-source changes to re-enter as "first occurrence". Redis
-> persistence for the pending map is deferred to the worker-wiring phase.
+**Pending map persistence (`pending.go`):** the in-memory pending map is mirrored to a Redis
+hash (`reconciler:pending`, 72h rolling TTL). It is hydrated once per process at the start of
+the first `Reconcile` (`loadPendingFromRedis`), and every mutation is written through
+(`persistPending`, from a value snapshot taken under the lock) or removed
+(`deletePendingFromRedis`). This lets the 2-consecutive-fetch counter survive worker
+restarts/deploys instead of resetting to "first occurrence". When no Redis client is
+configured, the map is in-memory only (all Redis helpers are no-ops).
 
 ### `pendingChange` struct
 

@@ -36,13 +36,19 @@ type PriceHistoryRow struct {
 // TrustMeta holds the trust/quality metadata that accompanies every API response.
 // Every field is included in the JSON response envelope under the "meta" key.
 type TrustMeta struct {
-	// ConfirmedAt is the timestamp of the most recent confirmed price record.
+	// ConfirmedAt is the timestamp of the most recent confirmed price *change*
+	// (the last time the value actually moved).
 	ConfirmedAt time.Time `json:"confirmed_at"`
+	// LastVerifiedAt is the timestamp at which the current price was most recently
+	// re-verified as still current by a scrape — whether or not it changed. This is
+	// the freshness anchor: AgeHours is measured from here, not from ConfirmedAt, so
+	// a stable price re-seen on schedule does not read as stale.
+	LastVerifiedAt time.Time `json:"last_verified_at"`
 	// Source is the name of the primary source for the latest value.
 	Source string `json:"source"`
 	// Confidence is "high", "medium", or "low" — see ComputeTrustMeta for rules.
 	Confidence models.Confidence `json:"confidence"`
-	// AgeHours is how many hours have elapsed since the latest confirmation.
+	// AgeHours is how many hours have elapsed since the latest verification.
 	AgeHours float64 `json:"age_hours"`
 	// ChangeVelocity is the number of distinct price values in the last 30 days
 	// divided by 30 — a measure of how rapidly the price is changing.
@@ -52,14 +58,20 @@ type TrustMeta struct {
 // ComputeTrustMeta derives a TrustMeta value from a slice of price history rows.
 // It is a pure function: no I/O, no side-effects, fully deterministic.
 //
+// lastVerifiedAt is the current price's last re-verification time (prices.last_verified_at).
+// When non-nil and later than the latest change, it is the freshness anchor used for
+// AgeHours and the medium-confidence recency window. When nil (legacy rows with no
+// verification stamp yet), the function falls back to the latest change timestamp,
+// preserving the original behaviour.
+//
 // Confidence rules:
 //   - "high"   — 2+ distinct source names agree on the latest (input, output) price pair.
-//   - "medium" — single source, confirmed within the last 24 hours.
-//   - "low"    — single source, confirmed more than 24 hours ago.
+//   - "medium" — single source, verified within the last 24 hours.
+//   - "low"    — single source, last verified more than 24 hours ago.
 //
 // If rows is empty, ComputeTrustMeta returns a zero-value TrustMeta with
 // Confidence="low" to signal that no verified data is available.
-func ComputeTrustMeta(rows []PriceHistoryRow) TrustMeta {
+func ComputeTrustMeta(rows []PriceHistoryRow, lastVerifiedAt *time.Time) TrustMeta {
 	if len(rows) == 0 {
 		return TrustMeta{Confidence: models.ConfidenceLow}
 	}
@@ -73,7 +85,14 @@ func ComputeTrustMeta(rows []PriceHistoryRow) TrustMeta {
 	}
 
 	now := time.Now().UTC()
-	ageHours := now.Sub(latest.ConfirmedAt).Hours()
+
+	// Freshness is measured from the last verification when available, otherwise
+	// from the last change. verifiedAt is never earlier than the last change.
+	verifiedAt := latest.ConfirmedAt
+	if lastVerifiedAt != nil && lastVerifiedAt.After(verifiedAt) {
+		verifiedAt = *lastVerifiedAt
+	}
+	ageHours := now.Sub(verifiedAt).Hours()
 
 	// --- collect records that share the same (input, output) price pair --
 	// We compare prices using the same value so floating-point equality is
@@ -118,6 +137,7 @@ func ComputeTrustMeta(rows []PriceHistoryRow) TrustMeta {
 
 	return TrustMeta{
 		ConfirmedAt:    latest.ConfirmedAt,
+		LastVerifiedAt: verifiedAt,
 		Source:         latest.Source,
 		Confidence:     confidence,
 		AgeHours:       ageHours,

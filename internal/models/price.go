@@ -38,6 +38,10 @@ type Price struct {
 	ConfirmedAt        time.Time
 	Confidence         Confidence
 	CreatedAt          time.Time
+	// LastVerifiedAt is the timestamp of the most recent scrape that re-verified
+	// this price as still current (changed or unchanged). nil for rows written
+	// before the column existed; the API read path falls back to ConfirmedAt.
+	LastVerifiedAt *time.Time
 }
 
 // PriceHistory mirrors the price_history hypertable — an immutable record

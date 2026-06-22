@@ -83,6 +83,10 @@ func (m *mockStore) LookupCurrentPrice(_ context.Context, modelID, sourceID int)
 	if m.lookupCurrentPrErr != nil {
 		return 0, 0, false, m.lookupCurrentPrErr
 	}
+	// Guard the map: PublishPrice writes currentPrices, so concurrent reconcile
+	// goroutines may read and write it at the same time.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if p, ok := m.currentPrices[[2]int{modelID, sourceID}]; ok {
 		return p.input, p.output, true, nil
 	}
@@ -95,6 +99,12 @@ func (m *mockStore) PublishPrice(_ context.Context, modelID, sourceID int, input
 	}
 	m.mu.Lock()
 	m.published = append(m.published, publishCall{modelID, sourceID, input, output, confidence, underlyingProvider})
+	// Reflect the write back into current prices, mirroring the real store so a
+	// later lookup in the same cycle sees the row that was just published.
+	if m.currentPrices == nil {
+		m.currentPrices = map[[2]int]struct{ input, output float64 }{}
+	}
+	m.currentPrices[[2]int{modelID, sourceID}] = struct{ input, output float64 }{input, output}
 	m.mu.Unlock()
 	return nil
 }
@@ -298,6 +308,94 @@ func TestReconcile_SingleSource_SecondCycle_PublishesMediumConfidence(t *testing
 	}
 	if s.published[0].confidence != models.ConfidenceMedium {
 		t.Errorf("single-source auto-publish should use medium confidence, got %s", s.published[0].confidence)
+	}
+}
+
+// TestReconcile_SingleSource_NewModel_PublishesImmediatelyLow verifies the
+// first-seen fix: a model with no existing price row publishes on the first
+// cycle at ConfidenceLow instead of waiting for a second confirming fetch.
+func TestReconcile_SingleSource_NewModel_PublishesImmediatelyLow(t *testing.T) {
+	s := newMockStore()
+	// Brand-new model: remove the seeded price so LookupCurrentPrice returns found=false.
+	delete(s.currentPrices, [2]int{10, 1})
+	r := reconciler.NewWithStore(s)
+
+	// A new model arrives with both fields in the same cycle (as diff.Diff emits).
+	// The first field published completes the row using the sibling's value; the
+	// second field then sees an existing row and holds. Exactly one publish writes
+	// a complete (input>0, output>0) price at low confidence.
+	_ = r.Reconcile(context.Background(), []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000005),
+		outputDiff("openai/gpt-4o", "openrouter", 0.000010),
+	})
+
+	if len(s.published) != 1 {
+		t.Fatalf("brand-new model should publish exactly once, got %d publishes", len(s.published))
+	}
+	pub := s.published[0]
+	if pub.confidence != models.ConfidenceLow {
+		t.Errorf("first-seen publish should be low confidence, got %s", pub.confidence)
+	}
+	if pub.input <= 0 || pub.output <= 0 {
+		t.Errorf("first-seen publish must write both fields, got input=%v output=%v", pub.input, pub.output)
+	}
+}
+
+// TestReconcile_PendingPersists_AcrossReconcilerRestart verifies the Redis
+// persistence fix: a 2-consecutive-fetch counter recorded by one reconciler
+// instance survives into a fresh instance (simulating a worker restart) backed
+// by the same Redis, so the confirming fetch still publishes.
+func TestReconcile_PendingPersists_AcrossReconcilerRestart(t *testing.T) {
+	_, rdb := newMiniredisClient(t)
+	s := newMockStore() // model 10 has a seeded price → the 2-fetch gate applies
+
+	// A change to the existing price (0.000005 → 0.000007) is single-source.
+	d := inputDiff("openai/gpt-4o", "openrouter", 0.000007)
+
+	// Cycle 1 on the first instance: record pending (fetchCount=1), no publish.
+	r1 := reconciler.NewWithStore(s)
+	r1.SetRedisClient(rdb)
+	_ = r1.Reconcile(context.Background(), []diff.PriceDiff{d})
+	if len(s.published) != 0 {
+		t.Fatalf("cycle 1 should hold in pending, got %d publishes", len(s.published))
+	}
+
+	// Simulate a worker restart: a brand-new reconciler sharing the same Redis.
+	r2 := reconciler.NewWithStore(s)
+	r2.SetRedisClient(rdb)
+	_ = r2.Reconcile(context.Background(), []diff.PriceDiff{d})
+	if len(s.published) != 1 {
+		t.Fatalf("after restart, the confirming fetch should publish; got %d publishes", len(s.published))
+	}
+	if s.published[0].confidence != models.ConfidenceMedium {
+		t.Errorf("2-fetch publish should be medium confidence, got %s", s.published[0].confidence)
+	}
+}
+
+// TestReconcile_PendingLoad_SkipsStaleRedisEntry verifies that a pending entry
+// in Redis whose lastSeen is older than pendingTTL is NOT hydrated — otherwise a
+// long-abandoned counter could wrongly satisfy the 2-fetch gate after a restart.
+func TestReconcile_PendingLoad_SkipsStaleRedisEntry(t *testing.T) {
+	mr, rdb := newMiniredisClient(t)
+	s := newMockStore()
+
+	// Seed a stale entry directly in Redis (lastSeen far in the past) for the key
+	// that this cycle's diff will map to.
+	staleKey := "openai/gpt-4o:input_cost_per_token:openrouter"
+	mr.HSet("reconciler:pending", staleKey,
+		`{"v":0.000009,"s":"openrouter","fc":1,"ls":"2000-01-01T00:00:00Z"}`)
+
+	r := reconciler.NewWithStore(s)
+	r.SetRedisClient(rdb)
+
+	// Same value as the stale entry. If it were (wrongly) loaded, fetchCount would
+	// reach 2 and publish; since it must be skipped, this is a fresh first sighting.
+	_ = r.Reconcile(context.Background(), []diff.PriceDiff{
+		inputDiff("openai/gpt-4o", "openrouter", 0.000009),
+	})
+
+	if len(s.published) != 0 {
+		t.Fatalf("stale Redis pending entry must not be loaded; expected no publish, got %d", len(s.published))
 	}
 }
 

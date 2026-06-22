@@ -48,12 +48,13 @@ type pendingChange struct {
 //
 // Reconciler is safe for concurrent use.
 type Reconciler struct {
-	store       Store
-	pending     map[string]*pendingChange // key: slug+":"+field+":"+source
-	mu          sync.Mutex
-	asynqClient *asynq.Client  // optional; nil = webhook delivery disabled
-	redisClient *redis.Client  // optional; nil = Pub/Sub publishing disabled
-	logger      zerolog.Logger
+	store         Store
+	pending       map[string]*pendingChange // key: slug+":"+field+":"+source
+	pendingLoaded bool                      // true once hydrated from Redis (see loadPendingFromRedis)
+	mu            sync.Mutex
+	asynqClient   *asynq.Client // optional; nil = webhook delivery disabled
+	redisClient   *redis.Client // optional; nil = Pub/Sub publishing disabled
+	logger        zerolog.Logger
 }
 
 // New returns a Reconciler backed by the given PostgreSQL pool.
@@ -100,13 +101,17 @@ func (r *Reconciler) SetLogger(l zerolog.Logger) {
 // in-memory map bounded even when scrapers stop reporting a slug+field.
 func (r *Reconciler) sweepStalePending() {
 	cutoff := time.Now().Add(-pendingTTL)
+	var swept []string
 	r.mu.Lock()
 	for k, e := range r.pending {
 		if e.lastSeen.Before(cutoff) {
 			delete(r.pending, k)
+			swept = append(swept, k)
 		}
 	}
 	r.mu.Unlock()
+	// Mirror the eviction to Redis (outside the lock; fire-and-forget).
+	r.deletePendingFromRedis(swept...)
 }
 
 // effectiveProvider returns the infrastructure provider identity used for
@@ -150,6 +155,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		return nil
 	}
 
+	// Hydrate the pending map from Redis once per process so 2-fetch confirmation
+	// counters survive a worker restart (no-op when Redis is unconfigured).
+	r.loadPendingFromRedis(ctx)
 	r.sweepStalePending()
 	r.logger.Info().Int("num_diffs", len(diffs)).Msg("reconciler: starting")
 
@@ -174,12 +182,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 		field models.PriceField
 	}
 	groups := make(map[groupKey][]diff.PriceDiff)
+	// cycleVals indexes this cycle's scraped value for each (slug, field) so that
+	// when a brand-new model is published one field at a time, the sibling field's
+	// value (which arrives as its own diff in the same cycle) is available. Without
+	// it, the first publish would carry a 0 for the not-yet-stored sibling and be
+	// rejected by the incomplete-price guard, leaving the model price-less forever.
+	cycleVals := make(map[groupKey]float64, len(diffs))
 	for _, d := range diffs {
 		if sourceIDs[d.Source] < 0 {
 			continue // drop diffs from unresolvable sources
 		}
 		k := groupKey{d.ModelSlug, d.Field}
 		groups[k] = append(groups[k], d)
+		cycleVals[k] = d.NewValue
 	}
 
 	// Fetch active webhooks once per reconciliation cycle instead of once per
@@ -206,6 +221,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 			continue
 		}
 
+		// The sibling field's value from this same cycle (0 if not reported),
+		// used to complete a brand-new model's first write.
+		siblingValue := cycleVals[groupKey{k.slug, otherField(k.field)}]
+
 		if len(groupDiffs) >= 2 {
 			// Sort by source name for deterministic behaviour in both paths below.
 			// processMultiSource also sorts internally, but we sort here too so that
@@ -228,12 +247,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, diffs []diff.PriceDiff) erro
 					Str("field", string(k.field)).
 					Int("source_count", len(groupDiffs)).
 					Msg("reconciler: collapsing non-independent sources to single-source")
-				r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks)
+				r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks, siblingValue)
 			} else {
-				r.processMultiSource(ctx, k.slug, k.field, modelID, groupDiffs, sourceIDs, activeWebhooks)
+				r.processMultiSource(ctx, k.slug, k.field, modelID, groupDiffs, sourceIDs, activeWebhooks, siblingValue)
 			}
 		} else {
-			r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks)
+			r.processSingleSource(ctx, k.slug, k.field, modelID, groupDiffs[0], sourceIDs, activeWebhooks, siblingValue)
 		}
 	}
 
@@ -262,6 +281,7 @@ func (r *Reconciler) processMultiSource(
 	groupDiffs []diff.PriceDiff,
 	sourceIDs map[string]int,
 	activeWebhooks []WebhookRow,
+	siblingValue float64,
 ) {
 	type valuediff struct {
 		value    float64
@@ -288,7 +308,7 @@ func (r *Reconciler) processMultiSource(
 		}
 	}
 	if allAgree {
-		r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceHigh, groupDiffs[0].UnderlyingProvider, activeWebhooks)
+		r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceHigh, groupDiffs[0].UnderlyingProvider, activeWebhooks, siblingValue)
 		return
 	}
 
@@ -347,7 +367,7 @@ func (r *Reconciler) processMultiSource(
 		// If a consensus of 2+ sources exists, publish despite the outlier.
 		// This implements the PRD rule: single noisy source ≠ block on majority agreement.
 		if consensusSize >= 2 {
-			r.publish(ctx, modelID, consensusSourceID, field, consensusValue, models.ConfidenceHigh, groupDiffs[0].UnderlyingProvider, activeWebhooks)
+			r.publish(ctx, modelID, consensusSourceID, field, consensusValue, models.ConfidenceHigh, groupDiffs[0].UnderlyingProvider, activeWebhooks, siblingValue)
 		}
 		return
 	}
@@ -357,12 +377,27 @@ func (r *Reconciler) processMultiSource(
 	// after the sort above.  All candidates are within 5% of each other, so any value is
 	// a valid representation; alphabetical determinism is intentional and keeps the output
 	// stable across re-runs with the same source set.
-	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium, groupDiffs[0].UnderlyingProvider, activeWebhooks)
+	r.publish(ctx, modelID, values[0].sourceID, field, ref, models.ConfidenceMedium, groupDiffs[0].UnderlyingProvider, activeWebhooks, siblingValue)
+}
+
+// otherField returns the price field opposite to f (input ↔ output).
+func otherField(f models.PriceField) models.PriceField {
+	if f == models.PriceFieldInput {
+		return models.PriceFieldOutput
+	}
+	return models.PriceFieldInput
 }
 
 // processSingleSource handles a group where only one source reported a change.
-// It tracks the change in the pending map and publishes on the second consecutive cycle.
-// The mutex is acquired only while accessing the pending map; DB calls happen outside it.
+//
+// Brand-new models (no existing price row for this model+source) are published
+// immediately at ConfidenceLow — "a price labelled low-confidence" is strictly
+// better than "no price at all", and there is no prior value to protect. Changes
+// to an *existing* price still go through the 2-consecutive-fetch gate so a single
+// noisy scrape cannot overwrite a confirmed value.
+//
+// The mutex is acquired only while accessing the pending map; DB calls and Redis
+// persistence happen outside it.
 func (r *Reconciler) processSingleSource(
 	ctx context.Context,
 	slug string,
@@ -371,6 +406,7 @@ func (r *Reconciler) processSingleSource(
 	d diff.PriceDiff,
 	sourceIDs map[string]int,
 	activeWebhooks []WebhookRow,
+	siblingValue float64,
 ) {
 	// Use effectiveProvider so the key is stable across cycles even when different
 	// aggregators (e.g. HuggingFace vs OpenRouter) collapse to the same underlying
@@ -379,25 +415,62 @@ func (r *Reconciler) processSingleSource(
 	key := slug + ":" + string(field) + ":" + effectiveProvider(d)
 	sourceID := sourceIDs[d.Source]
 
+	// Does a price row already exist for this model+source? Determined outside the
+	// pending lock (consistent with publish, which also reads current price unlocked).
+	// On a lookup error we conservatively assume the row exists, so a transient DB
+	// blip cannot trigger a premature first-seen publish.
+	_, _, found, err := r.store.LookupCurrentPrice(ctx, modelID, sourceID)
+	if err != nil {
+		r.logger.Warn().Str("slug", slug).Err(err).Msg("reconciler: LookupCurrentPrice failed; treating as existing price")
+		found = true
+	}
+
 	r.mu.Lock()
 	entry, ok := r.pending[key]
-	shouldPublish := false
-	if ok && math.Abs(entry.value-d.NewValue) < epsilon {
+	shouldPublish := false    // 2-fetch gate satisfied → publish ConfidenceMedium
+	immediatePublish := false // brand-new model → publish ConfidenceLow now
+	var persistSnapshot *pendingEntry
+	deleteKey := false
+	switch {
+	case !found && !ok:
+		// First time we have ever seen this model+source and there is no stored
+		// price: publish immediately so the model is not left price-less.
+		immediatePublish = true
+	case ok && math.Abs(entry.value-d.NewValue) < epsilon:
 		entry.fetchCount++
 		entry.lastSeen = time.Now()
 		if entry.fetchCount >= 2 {
 			shouldPublish = true
 			delete(r.pending, key)
+			deleteKey = true
+		} else {
+			persistSnapshot = snapshotPending(entry)
 		}
-	} else {
-		// New value (or first time seeing this slug+field+source): start/reset counter.
+	default:
+		// New value (or first time seeing this slug+field+source for an existing
+		// price): start/reset the counter.
 		metrics.ReconcilerEventsTotal.WithLabelValues("pending_change_seen").Inc()
-		r.pending[key] = &pendingChange{value: d.NewValue, source: d.Source, fetchCount: 1, lastSeen: time.Now()}
+		entry = &pendingChange{value: d.NewValue, source: d.Source, fetchCount: 1, lastSeen: time.Now()}
+		r.pending[key] = entry
+		persistSnapshot = snapshotPending(entry)
 	}
 	r.mu.Unlock()
 
-	if shouldPublish {
-		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceMedium, d.UnderlyingProvider, activeWebhooks)
+	// Mirror pending-map mutations to Redis outside the lock, using a value
+	// snapshot taken under the lock so we never read the live entry concurrently.
+	if persistSnapshot != nil {
+		r.persistPending(key, *persistSnapshot)
+	}
+	if deleteKey {
+		r.deletePendingFromRedis(key)
+	}
+
+	switch {
+	case immediatePublish:
+		metrics.ReconcilerEventsTotal.WithLabelValues("first_seen_published").Inc()
+		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceLow, d.UnderlyingProvider, activeWebhooks, siblingValue)
+	case shouldPublish:
+		r.publish(ctx, modelID, sourceID, field, d.NewValue, models.ConfidenceMedium, d.UnderlyingProvider, activeWebhooks, siblingValue)
 	}
 }
 
@@ -415,6 +488,7 @@ func (r *Reconciler) publish(
 	confidence models.Confidence,
 	underlyingProvider string,
 	activeWebhooks []WebhookRow,
+	siblingValue float64,
 ) {
 	currInput, currOutput, _, err := r.store.LookupCurrentPrice(ctx, modelID, sourceID)
 	if err != nil {
@@ -425,13 +499,23 @@ func (r *Reconciler) publish(
 			Msg("reconciler: LookupCurrentPrice failed; unchanged field will be 0")
 	}
 
+	// For the field not being changed, prefer the stored value; if there is none
+	// yet (a brand-new model), fall back to the sibling field's value scraped in
+	// this same cycle so both columns are written together instead of leaving a 0
+	// that the incomplete-price guard below would reject.
 	var input, output float64
 	switch field {
 	case models.PriceFieldInput:
 		input = newValue
 		output = currOutput
+		if output <= 0 {
+			output = siblingValue
+		}
 	case models.PriceFieldOutput:
 		input = currInput
+		if input <= 0 {
+			input = siblingValue
+		}
 		output = newValue
 	default:
 		r.logger.Error().

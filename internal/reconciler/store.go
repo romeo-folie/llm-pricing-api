@@ -152,16 +152,20 @@ func (s *pgxStore) PublishPrice(ctx context.Context, modelID, sourceID int, inpu
 			Msg("store: price_history insert suppressed by duplicate constraint — possible double-publish")
 	}
 
+	// A publish is also a verification, so stamp last_verified_at = now here too.
+	// This keeps freshness correct for changed prices; the bulk MarkVerified path
+	// in the worker covers unchanged prices that never reach the reconciler.
 	_, err = tx.Exec(ctx, `
 		INSERT INTO prices
-			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, confidence, underlying_provider)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+			(model_id, input_cost_per_token, output_cost_per_token, source_id, confirmed_at, confidence, underlying_provider, last_verified_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $5)
 		ON CONFLICT (model_id, source_id) DO UPDATE SET
 			input_cost_per_token  = EXCLUDED.input_cost_per_token,
 			output_cost_per_token = EXCLUDED.output_cost_per_token,
 			confirmed_at          = EXCLUDED.confirmed_at,
 			confidence            = EXCLUDED.confidence,
-			underlying_provider   = EXCLUDED.underlying_provider
+			underlying_provider   = EXCLUDED.underlying_provider,
+			last_verified_at      = EXCLUDED.last_verified_at
 	`, modelID, input, output, sourceID, now, string(confidence), underlyingProvider)
 	if err != nil {
 		return fmt.Errorf("upsert prices (model=%d, source=%d): %w", modelID, sourceID, err)

@@ -46,16 +46,17 @@ type WorkerStore interface {
     FetchModels(ctx context.Context) ([]models.Model, error)
     FetchPricesBySource(ctx context.Context, sourceName string) ([]models.Price, error)
     EnsureModels(ctx context.Context, models []scraper.ScrapedModel) error
+    MarkVerified(ctx context.Context, sourceName string, slugs []string) error
 }
 ```
 
-`FetchModels` returns all rows from the `models` table (used by the diff engine to resolve model IDs to slugs). `FetchPricesBySource` returns all `prices` rows for the named source via `JOIN sources` — the result is the baseline the diff engine compares incoming scraped data against. `EnsureModels` upserts any model slugs from incoming scraped data that do not yet exist in the `models` table, creating them before the diff engine runs.
+`FetchModels` returns all rows from the `models` table (used by the diff engine to resolve model IDs to slugs). `FetchPricesBySource` returns all `prices` rows for the named source via `JOIN sources` — the result is the baseline the diff engine compares incoming scraped data against. `EnsureModels` upserts any model slugs from incoming scraped data that do not yet exist in the `models` table, creating them before the diff engine runs. `MarkVerified` bumps `prices.last_verified_at = NOW()` for every price row of the named source whose model slug was reported this cycle — the freshness signal the API reads, recorded even when a price did not change (and therefore never reached the reconciler).
 
 `NewPgxStore(db *pgxpool.Pool) WorkerStore` returns the production implementation.
 
 ### Handlers (`handlers.go`)
 
-`NewHandlers(store WorkerStore, rec *reconciler.Reconciler) *Handlers` is the constructor. Public methods (`HandleOpenRouterScrape`, `HandleLiteLLMScrape`, `HandleHuggingFaceScrape`) delegate to the private `runPipeline` helper.
+`NewHandlers(store WorkerStore, rec *reconciler.Reconciler, db *pgxpool.Pool) *Handlers` is the constructor. Public methods (`HandleOpenRouterScrape`, `HandleLiteLLMScrape`, `HandleHuggingFaceScrape`) delegate to the private `runPipeline` helper.
 
 **Pipeline per handler:**
 1. `slog.Info("handler: starting", ...)` — structured log with task name
@@ -65,7 +66,8 @@ type WorkerStore interface {
 5. `store.FetchPricesBySource(ctx, sourceName)` → stored prices for this source
 6. `diff.Diff(storedPrices, storedModels, scraped)` → `[]diff.PriceDiff`
 7. `reconciler.Reconcile(ctx, diffs)` — mediates all writes to `price_history`
-8. `slog.Info("handler: done", ..., "model_count", ...)` — structured log
+8. `store.MarkVerified(ctx, sourceName, slugs)` — stamps `last_verified_at` for every scraped model so freshness reflects re-verification, not just the last change (best-effort: a failure here is logged but does not fail the scrape)
+9. `slog.Info("handler: done", ..., "model_count", ...)` — structured log
 9. Return any error (signals asynq to retry the task)
 
 Scrapers never write to the database directly; all writes go through the reconciler.

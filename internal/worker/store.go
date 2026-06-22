@@ -29,6 +29,13 @@ type WorkerStore interface {
 	// Existing rows are updated with the latest metadata (context_window,
 	// modality) but the original created_at is preserved.
 	EnsureModels(ctx context.Context, scraped []scraper.ScrapedModel) error
+
+	// MarkVerified sets prices.last_verified_at = now() for every price row
+	// belonging to the named source whose model slug is in slugs. It is called
+	// once per scrape cycle to record that these prices were re-confirmed as
+	// current, independent of whether their value changed. A no-op when slugs
+	// is empty.
+	MarkVerified(ctx context.Context, sourceName string, slugs []string) error
 }
 
 // pgxWorkerStore is the PostgreSQL-backed implementation of WorkerStore.
@@ -148,6 +155,30 @@ func (s *pgxWorkerStore) EnsureModels(ctx context.Context, scraped []scraper.Scr
 	}
 	if failures == len(scraped) {
 		return fmt.Errorf("worker store: ensure models: all %d rows failed", failures)
+	}
+	return nil
+}
+
+// MarkVerified bumps prices.last_verified_at to now() for every price row from
+// the named source whose model slug appears in slugs. It resolves slug→model_id
+// and sourceName→source_id inside the query (a single round-trip) so the caller
+// only passes the scraped slugs. Rows that have no price for this source yet
+// (e.g. a brand-new model still pending its first publish) are simply not matched.
+func (s *pgxWorkerStore) MarkVerified(ctx context.Context, sourceName string, slugs []string) error {
+	if len(slugs) == 0 {
+		return nil
+	}
+	_, err := s.db.Exec(ctx, `
+		UPDATE prices p
+		SET last_verified_at = NOW()
+		FROM models m, sources s
+		WHERE p.model_id = m.id
+		  AND p.source_id = s.id
+		  AND s.name = $1
+		  AND m.slug = ANY($2::text[])
+	`, sourceName, slugs)
+	if err != nil {
+		return fmt.Errorf("worker store: mark verified for source %q: %w", sourceName, err)
 	}
 	return nil
 }

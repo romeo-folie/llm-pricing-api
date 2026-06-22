@@ -1,0 +1,20 @@
+-- Add last_verified_at to the prices table.
+--
+-- Why: prices.confirmed_at only advances when a price *value changes* (it is
+-- written exclusively by the reconciler's publish path, which is only reached
+-- when the diff engine detects a change). For models whose price is stable —
+-- the common case — confirmed_at freezes at the last actual change, so the API's
+-- age_hours = now - confirmed_at grows without bound and every stable model is
+-- reported as "stale"/low-confidence even though scrapers re-verify it on
+-- schedule.
+--
+-- last_verified_at decouples "last re-verified as still current" from "last
+-- changed". It is bumped on every confirming scrape (changed OR unchanged), and
+-- the API computes freshness from it. confirmed_at retains its original meaning
+-- (the timestamp of the last actual price change), and price_history stays
+-- append-only on real changes only.
+--
+-- Nullable with no DEFAULT: existing rows get NULL and the read path falls back
+-- to confirmed_at (COALESCE(last_verified_at, confirmed_at, created_at)), so the
+-- migration is non-destructive and requires no table rewrite.
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;

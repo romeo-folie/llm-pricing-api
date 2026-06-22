@@ -66,7 +66,8 @@ It also implements the `error` interface so handlers can `return api.NewNotFound
 
 ```go
 type TrustMeta struct {
-    ConfirmedAt    time.Time        `json:"confirmed_at"`
+    ConfirmedAt    time.Time        `json:"confirmed_at"`     // last actual price *change*
+    LastVerifiedAt time.Time        `json:"last_verified_at"` // last re-verification by a scrape
     Source         string           `json:"source"`
     Confidence     models.Confidence `json:"confidence"`
     AgeHours       float64          `json:"age_hours"`
@@ -74,15 +75,17 @@ type TrustMeta struct {
 }
 ```
 
-`ComputeTrustMeta(rows []PriceHistoryRow) TrustMeta` is a **pure function** — no I/O, fully deterministic. Handlers pass it the price history rows they already fetched:
+`ComputeTrustMeta(rows []PriceHistoryRow, lastVerifiedAt *time.Time) TrustMeta` is a **pure function** — no I/O, fully deterministic. Handlers pass it the price history rows they already fetched plus the current price's `prices.last_verified_at` (from the latest price row; `nil` for legacy rows or endpoints that don't load the current price).
+
+**Freshness anchor:** `AgeHours` and the medium-confidence recency window are measured from `last_verified_at` when present — the last time a scrape re-confirmed the value as still current — so a stable price re-seen on schedule does not read as stale. `ConfirmedAt` retains its meaning (the last time the value actually changed). When `lastVerifiedAt` is `nil`, freshness falls back to `ConfirmedAt`, preserving the original behaviour.
 
 **Confidence rules:**
 
 | Rule | Result |
 | --- | --- |
 | 2+ distinct source names agree on the latest price pair | `"high"` |
-| Single source, confirmed within 24 hours | `"medium"` |
-| Single source, confirmed more than 24 hours ago | `"low"` |
+| Single source, verified within 24 hours | `"medium"` |
+| Single source, last verified more than 24 hours ago | `"low"` |
 | No rows provided | `"low"` (zero TrustMeta) |
 
 **Change velocity** = (number of distinct price-pair values in the last 30 days) / 30. Expressed as changes per day.
@@ -106,7 +109,7 @@ Usage in handlers:
 func listModels(c *fiber.Ctx) error {
     rows, _ := store.ListModels(c.Context())
     history, _ := store.GetHistory(c.Context(), modelID)
-    meta := api.ComputeTrustMeta(toRows(history))
+    meta := api.ComputeTrustMeta(toRows(history), row.LastVerifiedAt)
     return api.OK(c, rows, meta)
 }
 ```
@@ -141,7 +144,7 @@ func getModel(c *fiber.Ctx) error {
     if err != nil {
         return api.NewInternalError("failed to fetch model")
     }
-    return api.OK(c, m, api.ComputeTrustMeta(historyRows))
+    return api.OK(c, m, api.ComputeTrustMeta(historyRows, row.LastVerifiedAt))
 }
 ```
 
@@ -159,5 +162,5 @@ for i, h := range history {
         RecordedAt:         h.RecordedAt,
     }
 }
-meta := api.ComputeTrustMeta(rows)
+meta := api.ComputeTrustMeta(rows, lastVerifiedAt)
 ```

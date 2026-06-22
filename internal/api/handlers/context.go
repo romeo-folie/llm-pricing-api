@@ -78,8 +78,14 @@ func (h *Handlers) GetContext(c *fiber.Ctx) error {
 	for len(items) > 0 {
 		fullEnvelope := api.Envelope{
 			Data: contextResponse{
-				Models:     items,
-				TokenCount: 0, // placeholder during trim loop
+				Models: items,
+				// Reserve the maximum digit-width the final token_count can take
+				// (it is always <= contextMaxTokens). Measuring with a 1-char "0"
+				// here would under-count by a few bytes, letting the final response
+				// — which embeds the real multi-digit token_count — slip just over
+				// the budget. Using contextMaxTokens guarantees the trimmed result
+				// stays within budget once the real count is filled in.
+				TokenCount: contextMaxTokens,
 				ModelCount: len(items),
 			},
 			Meta: zeroMeta,
