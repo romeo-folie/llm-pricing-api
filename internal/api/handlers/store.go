@@ -216,8 +216,12 @@ type ModelRow struct {
 	PriceInput float64
 	// PriceOutput is output_cost_per_token from the prices table (latest row).
 	PriceOutput float64
-	// ConfirmedAt is when the price was most recently confirmed.
+	// ConfirmedAt is when the price most recently changed.
 	ConfirmedAt time.Time
+	// LastVerifiedAt is when the current price was most recently re-verified by a
+	// scrape (prices.last_verified_at). nil for legacy rows with no stamp yet, in
+	// which case freshness falls back to ConfirmedAt.
+	LastVerifiedAt *time.Time
 	// Source is the human-readable source name for the latest price.
 	Source string
 	// UnderlyingProvider is the infrastructure provider for pass-through aggregators
@@ -361,10 +365,11 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			p.last_verified_at                            AS last_verified_at,
 			COALESCE(src.name, '')                        AS source
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, last_verified_at, source_id
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -388,7 +393,7 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 		if err := rows.Scan(
 			&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 			&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-			&r.ConfirmedAt, &r.Source,
+			&r.ConfirmedAt, &r.LastVerifiedAt, &r.Source,
 		); err != nil {
 			return nil, 0, fmt.Errorf("list models scan: %w", err)
 		}
@@ -409,7 +414,7 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 			return nil, 0, fmt.Errorf("list models history batch: %w", err)
 		}
 		for i := range models {
-			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID], models[i].LastVerifiedAt)
 		}
 	}
 
@@ -429,11 +434,12 @@ func (s *pgxStore) GetModel(ctx context.Context, id int) (ModelRow, error) {
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			p.last_verified_at                            AS last_verified_at,
 			COALESCE(src.name, '')                        AS source,
 			p.underlying_provider
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id, underlying_provider
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, last_verified_at, source_id, underlying_provider
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -446,7 +452,7 @@ func (s *pgxStore) GetModel(ctx context.Context, id int) (ModelRow, error) {
 	err := s.db.QueryRow(ctx, sql, id).Scan(
 		&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 		&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-		&r.ConfirmedAt, &r.Source, &r.UnderlyingProvider,
+		&r.ConfirmedAt, &r.LastVerifiedAt, &r.Source, &r.UnderlyingProvider,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -459,7 +465,7 @@ func (s *pgxStore) GetModel(ctx context.Context, id int) (ModelRow, error) {
 	if err != nil {
 		return ModelRow{}, fmt.Errorf("get model history %d: %w", id, err)
 	}
-	r.Meta = api.ComputeTrustMeta(history)
+	r.Meta = api.ComputeTrustMeta(history, r.LastVerifiedAt)
 	return r, nil
 }
 
@@ -476,11 +482,12 @@ func (s *pgxStore) GetModelBySlug(ctx context.Context, slug string) (ModelRow, e
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			p.last_verified_at                            AS last_verified_at,
 			COALESCE(src.name, '')                        AS source,
 			p.underlying_provider
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id, underlying_provider
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, last_verified_at, source_id, underlying_provider
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -493,7 +500,7 @@ func (s *pgxStore) GetModelBySlug(ctx context.Context, slug string) (ModelRow, e
 	err := s.db.QueryRow(ctx, sql, slug).Scan(
 		&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 		&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-		&r.ConfirmedAt, &r.Source, &r.UnderlyingProvider,
+		&r.ConfirmedAt, &r.LastVerifiedAt, &r.Source, &r.UnderlyingProvider,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -506,7 +513,7 @@ func (s *pgxStore) GetModelBySlug(ctx context.Context, slug string) (ModelRow, e
 	if err != nil {
 		return ModelRow{}, fmt.Errorf("get model history for slug %q: %w", slug, err)
 	}
-	r.Meta = api.ComputeTrustMeta(history)
+	r.Meta = api.ComputeTrustMeta(history, r.LastVerifiedAt)
 	return r, nil
 }
 
@@ -564,10 +571,11 @@ func (s *pgxStore) CompareModels(ctx context.Context, ids []int) ([]ModelRow, er
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			p.last_verified_at                            AS last_verified_at,
 			COALESCE(src.name, '')                        AS source
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, last_verified_at, source_id
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -589,7 +597,7 @@ func (s *pgxStore) CompareModels(ctx context.Context, ids []int) ([]ModelRow, er
 		if err := rows.Scan(
 			&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 			&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-			&r.ConfirmedAt, &r.Source,
+			&r.ConfirmedAt, &r.LastVerifiedAt, &r.Source,
 		); err != nil {
 			return nil, fmt.Errorf("compare models scan: %w", err)
 		}
@@ -621,7 +629,7 @@ func (s *pgxStore) CompareModels(ctx context.Context, ids []int) ([]ModelRow, er
 			return nil, fmt.Errorf("compare models history batch: %w", err)
 		}
 		for i := range models {
-			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID], models[i].LastVerifiedAt)
 		}
 	}
 
@@ -659,10 +667,11 @@ func (s *pgxStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			p.last_verified_at                            AS last_verified_at,
 			COALESCE(src.name, '')                        AS source
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, last_verified_at, source_id
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -682,7 +691,7 @@ func (s *pgxStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]
 		if err := rows.Scan(
 			&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 			&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-			&r.ConfirmedAt, &r.Source,
+			&r.ConfirmedAt, &r.LastVerifiedAt, &r.Source,
 		); err != nil {
 			return nil, fmt.Errorf("compare models by slug scan: %w", err)
 		}
@@ -714,7 +723,7 @@ func (s *pgxStore) CompareModelsBySlugs(ctx context.Context, slugs []string) ([]
 			return nil, fmt.Errorf("compare models by slug history batch: %w", err)
 		}
 		for i := range models {
-			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID], models[i].LastVerifiedAt)
 		}
 	}
 
@@ -1244,10 +1253,11 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 			COALESCE(p.input_cost_per_token, 0)::float8  AS price_input,
 			COALESCE(p.output_cost_per_token, 0)::float8 AS price_output,
 			COALESCE(p.confirmed_at, m.created_at)       AS confirmed_at,
+			p.last_verified_at                            AS last_verified_at,
 			COALESCE(src.name, '')                        AS source
 		FROM models m
 		LEFT JOIN LATERAL (
-			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, source_id
+			SELECT input_cost_per_token, output_cost_per_token, confirmed_at, last_verified_at, source_id
 			FROM prices
 			WHERE model_id = m.id
 			ORDER BY confirmed_at DESC
@@ -1271,7 +1281,7 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 		if err := rows.Scan(
 			&r.ID, &r.Provider, &r.Name, &r.Slug, &r.Modality,
 			&r.ContextWindow, &r.PriceInput, &r.PriceOutput,
-			&r.ConfirmedAt, &r.Source,
+			&r.ConfirmedAt, &r.LastVerifiedAt, &r.Source,
 		); err != nil {
 			return nil, fmt.Errorf("recommend models scan: %w", err)
 		}
@@ -1292,7 +1302,7 @@ func (s *pgxStore) RecommendModels(ctx context.Context, filter RecommendFilter) 
 			return nil, fmt.Errorf("recommend models history batch: %w", err)
 		}
 		for i := range models {
-			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID])
+			models[i].Meta = api.ComputeTrustMeta(historyBatch[models[i].ID], models[i].LastVerifiedAt)
 		}
 	}
 

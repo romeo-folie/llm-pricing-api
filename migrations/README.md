@@ -35,6 +35,12 @@ migrations/
   000012_create_identity_tables.up.sql # Identity/signup tables (api_identities,
                                        # magic_link_tokens, api_keys_registry)
   000012_create_identity_tables.down.sql
+  000013_create_benchmarks.up.sql      # Benchmark catalogue
+  000014_create_model_benchmark_scores.up.sql      # Per-model benchmark scores
+  000015_create_model_capability_scores.up.sql     # Per-model capability scores
+  000016_seed_benchmark_scores.up.sql  # Seed benchmark/capability data
+  000017_add_last_verified_at.up.sql   # Adds prices.last_verified_at (freshness anchor)
+  000017_add_last_verified_at.down.sql
   README.md                            # This file
 ```
 

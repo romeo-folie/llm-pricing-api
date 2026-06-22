@@ -14,13 +14,16 @@ import (
 // --- mock WorkerStore ---
 
 type mockStore struct {
-	models       []models.Model
-	prices       []models.Price
-	modelsErr    error
-	pricesErr    error
-	ensureErr    error
-	pricesSource string // last sourceName passed to FetchPricesBySource
-	ensuredSlugs []string
+	models        []models.Model
+	prices        []models.Price
+	modelsErr     error
+	pricesErr     error
+	ensureErr     error
+	markVerifyErr error
+	pricesSource  string // last sourceName passed to FetchPricesBySource
+	ensuredSlugs  []string
+	markedSlugs   []string
+	markedSource  string
 }
 
 func (m *mockStore) FetchModels(_ context.Context) ([]models.Model, error) {
@@ -37,6 +40,12 @@ func (m *mockStore) EnsureModels(_ context.Context, scraped []scraper.ScrapedMod
 		m.ensuredSlugs = append(m.ensuredSlugs, s.Slug)
 	}
 	return m.ensureErr
+}
+
+func (m *mockStore) MarkVerified(_ context.Context, sourceName string, slugs []string) error {
+	m.markedSource = sourceName
+	m.markedSlugs = append(m.markedSlugs, slugs...)
+	return m.markVerifyErr
 }
 
 // --- mock scraper.Scraper ---
@@ -103,6 +112,34 @@ func TestRunPipeline_HappyPath(t *testing.T) {
 
 	if err := h.runPipeline(context.Background(), TaskOpenRouterScrape, "openrouter", s); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Every scraped model must be stamped as verified for this source.
+	if store.markedSource != "openrouter" {
+		t.Errorf("MarkVerified source = %q; want openrouter", store.markedSource)
+	}
+	if len(store.markedSlugs) != 1 || store.markedSlugs[0] != "openai/gpt-4o" {
+		t.Errorf("MarkVerified slugs = %v; want [openai/gpt-4o]", store.markedSlugs)
+	}
+}
+
+// TestRunPipeline_MarkVerifiedError_DoesNotFailPipeline verifies that a failure
+// to stamp last_verified_at is swallowed: prices are already reconciled, so the
+// scrape is still a success.
+func TestRunPipeline_MarkVerifiedError_DoesNotFailPipeline(t *testing.T) {
+	store := &mockStore{
+		models:        []models.Model{{ID: 1, Slug: "openai/gpt-4o"}},
+		prices:        []models.Price{},
+		markVerifyErr: errors.New("db timeout"),
+	}
+	h := newTestHandlers(store)
+
+	s := &mockScraper{result: []scraper.ScrapedModel{
+		{Slug: "openai/gpt-4o", SourceName: "openrouter", InputCostPerToken: 5e-6, OutputCostPerToken: 15e-6},
+	}}
+
+	if err := h.runPipeline(context.Background(), TaskOpenRouterScrape, "openrouter", s); err != nil {
+		t.Fatalf("MarkVerified error must not fail the pipeline, got: %v", err)
 	}
 }
 

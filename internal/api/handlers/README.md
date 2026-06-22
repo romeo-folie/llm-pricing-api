@@ -59,7 +59,7 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 
 ### Trust metadata
 
-Every model response includes a `meta` field with `confirmed_at`, `source`, `confidence`, `age_hours`, and `change_velocity`. These are computed by `api.ComputeTrustMeta()` from the model's `price_history` rows, which are fetched for each model via `store.GetPriceHistory()`.
+Every model response includes a `meta` field with `confirmed_at`, `last_verified_at`, `source`, `confidence`, `age_hours`, and `change_velocity`. These are computed by `api.ComputeTrustMeta()` from the model's `price_history` rows, which are fetched for each model via `store.GetPriceHistory()`.
 
 List endpoints aggregate metadata by choosing the most recently confirmed model's meta as the envelope-level meta value.
 

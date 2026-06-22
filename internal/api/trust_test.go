@@ -15,7 +15,7 @@ var now = time.Now().UTC()
 // TestComputeTrustMeta_Empty verifies that an empty slice returns a zero-value
 // TrustMeta with ConfidenceLow.
 func TestComputeTrustMeta_Empty(t *testing.T) {
-	meta := api.ComputeTrustMeta(nil)
+	meta := api.ComputeTrustMeta(nil, nil)
 	if meta.Confidence != models.ConfidenceLow {
 		t.Errorf("Confidence: got %q, want %q", meta.Confidence, models.ConfidenceLow)
 	}
@@ -26,9 +26,58 @@ func TestComputeTrustMeta_Empty(t *testing.T) {
 
 // TestComputeTrustMeta_EmptySlice covers the empty slice (non-nil) case.
 func TestComputeTrustMeta_EmptySlice(t *testing.T) {
-	meta := api.ComputeTrustMeta([]api.PriceHistoryRow{})
+	meta := api.ComputeTrustMeta([]api.PriceHistoryRow{}, nil)
 	if meta.Confidence != models.ConfidenceLow {
 		t.Errorf("Confidence: got %q, want %q", meta.Confidence, models.ConfidenceLow)
+	}
+}
+
+// TestComputeTrustMeta_LastVerifiedAt_DrivesFreshness verifies that when a price
+// is stale by change-time (confirmed long ago) but was re-verified recently, the
+// freshness (AgeHours, medium-confidence window) is measured from last_verified_at,
+// while ConfirmedAt still reports the last actual change.
+func TestComputeTrustMeta_LastVerifiedAt_DrivesFreshness(t *testing.T) {
+	confirmedAt := now.Add(-100 * 24 * time.Hour) // last changed ~100 days ago
+	verifiedAt := now.Add(-2 * time.Hour)         // re-verified 2h ago
+	rows := []api.PriceHistoryRow{
+		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "openrouter", ConfirmedAt: confirmedAt, RecordedAt: confirmedAt},
+	}
+
+	meta := api.ComputeTrustMeta(rows, &verifiedAt)
+
+	if meta.Confidence != models.ConfidenceMedium {
+		t.Errorf("Confidence: got %q, want medium (single source, recently verified)", meta.Confidence)
+	}
+	if meta.AgeHours > 3 {
+		t.Errorf("AgeHours: got %.1f, want ~2 (measured from last_verified_at)", meta.AgeHours)
+	}
+	if !almostEqual(meta.ConfirmedAt.Unix(), confirmedAt.Unix(), 1) {
+		t.Errorf("ConfirmedAt should report the last change, got %v", meta.ConfirmedAt)
+	}
+	if !almostEqual(meta.LastVerifiedAt.Unix(), verifiedAt.Unix(), 1) {
+		t.Errorf("LastVerifiedAt: got %v, want %v", meta.LastVerifiedAt, verifiedAt)
+	}
+}
+
+// TestComputeTrustMeta_LastVerifiedAt_NilFallsBackToConfirmedAt verifies that a
+// nil last_verified_at (legacy row) preserves the original behaviour: freshness
+// is measured from the last change.
+func TestComputeTrustMeta_LastVerifiedAt_NilFallsBackToConfirmedAt(t *testing.T) {
+	confirmedAt := now.Add(-100 * 24 * time.Hour)
+	rows := []api.PriceHistoryRow{
+		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "openrouter", ConfirmedAt: confirmedAt, RecordedAt: confirmedAt},
+	}
+
+	meta := api.ComputeTrustMeta(rows, nil)
+
+	if meta.Confidence != models.ConfidenceLow {
+		t.Errorf("Confidence: got %q, want low (single source, last changed long ago, no verification)", meta.Confidence)
+	}
+	if meta.AgeHours < 24 {
+		t.Errorf("AgeHours: got %.1f, want large (measured from old confirmed_at)", meta.AgeHours)
+	}
+	if !almostEqual(meta.LastVerifiedAt.Unix(), confirmedAt.Unix(), 1) {
+		t.Errorf("LastVerifiedAt should fall back to ConfirmedAt, got %v", meta.LastVerifiedAt)
 	}
 }
 
@@ -41,7 +90,7 @@ func TestComputeTrustMeta_HighConfidence(t *testing.T) {
 		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "litellm", ConfirmedAt: confirmedAt.Add(-30 * time.Minute), RecordedAt: confirmedAt},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	if meta.Confidence != models.ConfidenceHigh {
 		t.Errorf("Confidence: got %q, want %q", meta.Confidence, models.ConfidenceHigh)
@@ -62,7 +111,7 @@ func TestComputeTrustMeta_MediumConfidence_Recent(t *testing.T) {
 		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "openrouter", ConfirmedAt: confirmedAt, RecordedAt: confirmedAt},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	if meta.Confidence != models.ConfidenceMedium {
 		t.Errorf("Confidence: got %q, want %q", meta.Confidence, models.ConfidenceMedium)
@@ -83,7 +132,7 @@ func TestComputeTrustMeta_LowConfidence_OldSingle(t *testing.T) {
 		{InputCostPerToken: 0.003, OutputCostPerToken: 0.006, Source: "litellm", ConfirmedAt: confirmedAt, RecordedAt: confirmedAt},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	if meta.Confidence != models.ConfidenceLow {
 		t.Errorf("Confidence: got %q, want %q", meta.Confidence, models.ConfidenceLow)
@@ -103,7 +152,7 @@ func TestComputeTrustMeta_LatestRowChosen(t *testing.T) {
 		{InputCostPerToken: 0.0015, OutputCostPerToken: 0.003, Source: "openrouter", ConfirmedAt: newer, RecordedAt: newer},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	// openrouter is the latest, so it should be the source.
 	if meta.Source != "openrouter" {
@@ -119,7 +168,7 @@ func TestComputeTrustMeta_ChangeVelocity_SingleValue(t *testing.T) {
 		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "openrouter", ConfirmedAt: confirmedAt, RecordedAt: confirmedAt},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	expected := 1.0 / 30.0
 	if math.Abs(meta.ChangeVelocity-expected) > 1e-9 {
@@ -136,7 +185,7 @@ func TestComputeTrustMeta_ChangeVelocity_MultipleValues(t *testing.T) {
 		{InputCostPerToken: 0.003, OutputCostPerToken: 0.006, Source: "openrouter", ConfirmedAt: now.Add(-10 * time.Hour), RecordedAt: now.Add(-10 * time.Hour)},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	expected := 3.0 / 30.0
 	if math.Abs(meta.ChangeVelocity-expected) > 1e-9 {
@@ -153,7 +202,7 @@ func TestComputeTrustMeta_ChangeVelocity_OldRecordsExcluded(t *testing.T) {
 		{InputCostPerToken: 0.005, OutputCostPerToken: 0.010, Source: "openrouter", ConfirmedAt: now.AddDate(0, 0, -31), RecordedAt: now.AddDate(0, 0, -31)},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	// Only 1 distinct value within 30 days.
 	expected := 1.0 / 30.0
@@ -171,7 +220,7 @@ func TestComputeTrustMeta_DuplicateSourcesNotDoubleCount(t *testing.T) {
 		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "openrouter", ConfirmedAt: confirmedAt.Add(-1 * time.Hour), RecordedAt: confirmedAt},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	// Two rows with the same price pair from the same source.
 	// Distinct values = 1, so velocity = 1/30.
@@ -197,7 +246,7 @@ func TestComputeTrustMeta_HighConfidence_TwoSourcesSamePrice(t *testing.T) {
 		{InputCostPerToken: 0.003, OutputCostPerToken: 0.006, Source: "openrouter", ConfirmedAt: confirmedAt.Add(-5 * time.Hour), RecordedAt: confirmedAt.Add(-5 * time.Hour)},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	if meta.Confidence != models.ConfidenceHigh {
 		t.Errorf("Confidence: got %q, want %q", meta.Confidence, models.ConfidenceHigh)
@@ -212,7 +261,7 @@ func TestComputeTrustMeta_AgeHoursAccuracy(t *testing.T) {
 		{InputCostPerToken: 0.001, OutputCostPerToken: 0.002, Source: "openrouter", ConfirmedAt: confirmedAt, RecordedAt: confirmedAt},
 	}
 
-	meta := api.ComputeTrustMeta(rows)
+	meta := api.ComputeTrustMeta(rows, nil)
 
 	// Allow ±0.1 hour (6 minutes) for execution time.
 	if math.Abs(meta.AgeHours-6.0) > 0.1 {

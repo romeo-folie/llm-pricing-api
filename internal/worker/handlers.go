@@ -109,6 +109,20 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 		return fmt.Errorf("%s: reconcile: %w", taskName, err)
 	}
 
+	// Stamp last_verified_at for every model this source reported, whether or not
+	// its price changed. This is the freshness signal the API reads: a stable
+	// price re-seen on schedule is "verified current now", even though the
+	// reconciler (which only fires on a change) left confirmed_at untouched.
+	// Best-effort: a stamp failure must not fail an otherwise-successful scrape,
+	// since prices have already been reconciled.
+	slugs := make([]string, len(scraped))
+	for i, m := range scraped {
+		slugs[i] = m.Slug
+	}
+	if err := h.store.MarkVerified(ctx, sourceName, slugs); err != nil {
+		h.logger.Warn().Str("task", taskName).Err(err).Msg("handler: mark verified failed")
+	}
+
 	h.logger.Info().Str("task", taskName).Int("model_count", len(scraped)).Msg("handler: done")
 	status = "success"
 	return nil

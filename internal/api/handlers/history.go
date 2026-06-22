@@ -102,7 +102,11 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 			RecordedAt:         r.RecordedAt,
 		}
 	}
-	meta := api.ComputeTrustMeta(trustRows)
+	// The history endpoint is the change-timeline view and does not load the
+	// current price row, so it has no last_verified_at to supply; freshness here
+	// falls back to the last actual change. The list/detail endpoints carry the
+	// re-verification timestamp.
+	meta := api.ComputeTrustMeta(trustRows, nil)
 
 	return api.OK(c, items, meta)
 }
