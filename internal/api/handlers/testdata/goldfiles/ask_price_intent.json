@@ -15,6 +15,7 @@
     "change_velocity": 0,
     "confidence": "",
     "confirmed_at": "<timestamp>",
+    "last_verified_at": "<timestamp>",
     "source": ""
   }
 }

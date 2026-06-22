@@ -8,6 +8,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "text",
@@ -26,6 +27,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "multimodal",
@@ -44,6 +46,7 @@
         "change_velocity": 0.06666666666666667,
         "confidence": "high",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": "openrouter"
       },
       "modality": "text",
@@ -62,6 +65,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "text",
@@ -80,6 +84,7 @@
         "change_velocity": 0.06666666666666667,
         "confidence": "high",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": "openrouter"
       },
       "modality": "text",
@@ -98,6 +103,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "embedding",
@@ -116,6 +122,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "text",
@@ -134,6 +141,7 @@
         "change_velocity": 0.06666666666666667,
         "confidence": "high",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": "openrouter"
       },
       "modality": "multimodal",
@@ -152,6 +160,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "text",
@@ -170,6 +179,7 @@
         "change_velocity": 0,
         "confidence": "low",
         "confirmed_at": "<timestamp>",
+        "last_verified_at": "<timestamp>",
         "source": ""
       },
       "modality": "embedding",
@@ -186,6 +196,7 @@
     "change_velocity": 0.06666666666666667,
     "confidence": "high",
     "confirmed_at": "<timestamp>",
+    "last_verified_at": "<timestamp>",
     "source": "openrouter"
   }
 }
