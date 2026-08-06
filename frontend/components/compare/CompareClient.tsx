@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Model } from "@/lib/api"
-import FilterBar from "./FilterBar"
 import ModelPicker from "./ModelPicker"
 import CompareTable from "./CompareTable"
 import type { CompareScores } from "./CompareTable"
@@ -39,39 +38,6 @@ export default function CompareClient({ allModels }: CompareClientProps) {
       setSelectedSlugs(fromUrl)
     }
   }, [searchParams])
-  const [useCase, setUseCase] = useState<string | null>(null)
-  const [contextMin, setContextMin] = useState<number | null>(null)
-  const [requiresTools, setRequiresTools] = useState(false)
-  const [requiresStructuredOutput, setRequiresStructuredOutput] = useState(false)
-
-  // ── Scored slugs for soft-sort in picker ────────────────────────────────────
-  const [scoredSlugs, setScoredSlugs] = useState<Set<string>>(new Set())
-  const recAbort = useRef<AbortController | null>(null)
-
-  // Fetch recommend when useCase changes, to know which models have scores
-  useEffect(() => {
-    if (!useCase) {
-      setScoredSlugs(new Set())
-      return
-    }
-    recAbort.current?.abort()
-    const ctrl = new AbortController()
-    recAbort.current = ctrl
-    fetch(`/api/recommend?use_case=${encodeURIComponent(useCase)}&top_k=50`, {
-      signal: ctrl.signal,
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (!json) return
-        const items = (json?.data?.items ?? []) as { slug: string }[]
-        setScoredSlugs(new Set(items.map((i) => i.slug)))
-      })
-      .catch(() => {
-        /* abort or network error — fall back to unfiltered */
-      })
-    return () => ctrl.abort()
-  }, [useCase])
-
   // ── Compare scores (benchmark data) ────────────────────────────────────────
   const [compareScores, setCompareScores] = useState<CompareScores>({})
   const cmpAbort = useRef<AbortController | null>(null)
@@ -85,7 +51,6 @@ export default function CompareClient({ allModels }: CompareClientProps) {
     const ctrl = new AbortController()
     cmpAbort.current = ctrl
     const params = new URLSearchParams({ models: selectedSlugs.join(",") })
-    if (useCase) params.set("use_case", useCase)
     fetch(`/api/compare?${params.toString()}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
@@ -103,7 +68,7 @@ export default function CompareClient({ allModels }: CompareClientProps) {
         /* abort or network error */
       })
     return () => ctrl.abort()
-  }, [selectedSlugs, useCase])
+  }, [selectedSlugs])
 
   // ── URL sync ───────────────────────────────────────────────────────────────
   const syncUrl = useCallback(
@@ -141,14 +106,6 @@ export default function CompareClient({ allModels }: CompareClientProps) {
     syncUrl(selectedSlugs)
   }, [selectedSlugs, syncUrl])
 
-  // ── Client-side filters on the model list ─────────────────────────────────
-  const filteredModels = allModels.filter((m) => {
-    if (contextMin != null && m.context_window < contextMin) return false
-    // Tool calling and structured output: the Model type doesn't have these
-    // fields yet, so the checkboxes are UI-only placeholders for now.
-    return true
-  })
-
   // Resolve selected slugs to Model objects for the table
   const selectedModels = selectedSlugs
     .map((slug) => allModels.find((m) => m.slug === slug))
@@ -162,11 +119,11 @@ export default function CompareClient({ allModels }: CompareClientProps) {
           Compare Models
         </h1>
         <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
-          Pick up to 5 models to compare side by side. Optionally filter by use case to see benchmark scores.
+          Pick up to 5 models to compare pricing, context, trust, and available benchmark scores side by side.
         </p>
       </div>
 
-      {/* Controls card — FilterBar + ModelPicker */}
+      {/* Model picker */}
       <div
         className="animate-draw-border-box animate-wireframe-fade"
         style={{
@@ -180,15 +137,6 @@ export default function CompareClient({ allModels }: CompareClientProps) {
           gap: "16px",
         } as React.CSSProperties}
       >
-        <FilterBar
-          useCase={useCase}
-          onUseCaseChange={setUseCase}
-          requiresTools={requiresTools}
-          onRequiresToolsChange={setRequiresTools}
-          requiresStructuredOutput={requiresStructuredOutput}
-          onRequiresStructuredOutputChange={setRequiresStructuredOutput}
-        />
-
         <div>
           <div
             className="font-orbitron text-xs tracking-wide"
@@ -197,12 +145,11 @@ export default function CompareClient({ allModels }: CompareClientProps) {
             Add Models
           </div>
           <ModelPicker
-            models={filteredModels}
+            models={allModels}
             selected={selectedSlugs}
             onSelect={handleSelect}
             onRemove={handleRemove}
             max={5}
-            scoredSlugs={scoredSlugs.size > 0 ? scoredSlugs : undefined}
           />
           {selectedSlugs.length > 0 && (
             <div
