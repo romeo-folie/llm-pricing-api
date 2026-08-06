@@ -171,8 +171,14 @@ func TestExtractModelFromTags(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "multiple model tags returns first",
+			name:   "multiple distinct model tags are ambiguous",
 			tags:   []string{"Model: gpt-4o", "Model: o3-mini"},
+			want:   "",
+			wantOK: false,
+		},
+		{
+			name:   "duplicate model tags remain unambiguous",
+			tags:   []string{"Model: gpt-4o", "Model: gpt-4o"},
 			want:   "gpt-4o",
 			wantOK: true,
 		},

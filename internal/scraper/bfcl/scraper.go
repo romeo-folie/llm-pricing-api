@@ -89,14 +89,25 @@ type resolvedEntry struct {
 	evaluatedAt     time.Time
 }
 
-// extractModelFromTags returns the first "Model: <value>" tag value, or ("", false).
+// extractModelFromTags returns a model only when the submission identifies one
+// unambiguous base model. Multi-model agent systems are skipped because their
+// system-level score cannot be attributed safely to any one component model.
 func extractModelFromTags(tags []string) (string, bool) {
+	var model string
 	for _, tag := range tags {
-		if strings.HasPrefix(tag, "Model: ") {
-			return strings.TrimPrefix(tag, "Model: "), true
+		if !strings.HasPrefix(tag, "Model: ") {
+			continue
 		}
+		candidate := strings.TrimSpace(strings.TrimPrefix(tag, "Model: "))
+		if candidate == "" {
+			continue
+		}
+		if model != "" && candidate != model {
+			return "", false
+		}
+		model = candidate
 	}
-	return "", false
+	return model, model != ""
 }
 
 // betterResolvedEntry defines the order-independent SWE-bench selection

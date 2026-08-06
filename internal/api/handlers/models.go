@@ -92,6 +92,7 @@ func (h *Handlers) ListModels(c *fiber.Ctx) error {
 
 	models, total, err := h.store.ListModels(c.Context(), filter)
 	if err != nil {
+		log.Error().Err(err).Msg("list models failed")
 		return api.NewInternalError("failed to list models")
 	}
 
