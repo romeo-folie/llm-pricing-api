@@ -63,6 +63,8 @@ func TestResolve_NoMatch(t *testing.T) {
 		"some-unknown-model",
 		"",
 		"random-text-123",
+		"claude-sonnet-4-5unknown",
+		"gpt-4oish",
 	}
 	for _, input := range unknowns {
 		t.Run(input, func(t *testing.T) {
@@ -71,6 +73,40 @@ func TestResolve_NoMatch(t *testing.T) {
 				t.Errorf("Resolve(%q) returned ok=true; want false", input)
 			}
 		})
+	}
+}
+
+func TestResolve_DoesNotCrossClaudeGenerations(t *testing.T) {
+	unknowns := []string{
+		"claude-4-opus",
+		"claude-4-opus-20250514",
+		"claude-opus-4",
+		"claude-opus-4-20250514",
+		"claude-opus-4-20250514_nothink",
+		"claude-4-sonnet",
+		"claude-4-sonnet-20250522",
+		"claude-sonnet-4",
+		"claude-sonnet-4-20250514",
+		"claude-sonnet-4-20250514_nothink",
+	}
+	for _, input := range unknowns {
+		t.Run(input, func(t *testing.T) {
+			if slug, ok := Resolve(input); ok {
+				t.Fatalf("Resolve(%q) = %q; cross-generation attribution must be rejected", input, slug)
+			}
+		})
+	}
+
+	controls := map[string]string{
+		"claude-sonnet-4-5": "anthropic/claude-sonnet-4-5",
+		"claude-opus-4-5":   "anthropic/claude-opus-4-5",
+		"claude-sonnet-4-6": "anthropic/claude-sonnet-4-6",
+		"claude-opus-4-6":   "anthropic/claude-opus-4-6",
+	}
+	for input, want := range controls {
+		if got, ok := Resolve(input); !ok || got != want {
+			t.Errorf("Resolve(%q) = (%q, %v); want (%q, true)", input, got, ok, want)
+		}
 	}
 }
 

@@ -43,19 +43,29 @@ const huggingFaceScrapeTimeout = 80 * time.Second
 // Each handler instantiates its own scraper on every invocation so there is no
 // shared HTTP state between runs.
 type Handlers struct {
-	store      WorkerStore
-	reconciler *reconciler.Reconciler
-	db         *pgxpool.Pool // direct pool for benchmark scrapers & intelligence queries
-	logger     zerolog.Logger
+	store                 WorkerStore
+	reconciler            *reconciler.Reconciler
+	db                    *pgxpool.Pool // direct pool for benchmark scrapers & intelligence queries
+	recomputeCapabilities func(context.Context) error
+	logger                zerolog.Logger
 }
 
 // NewHandlers returns a Handlers wired with the given store, reconciler, and
 // DB pool. The db pool is used by benchmark scraper handlers and intelligence
 // recomputation tasks that call the intelligence package directly.
-// Capability score recomputation runs on the daily cron cycle.
+// Real benchmark scrapes synchronously recompute capability scores before the
+// task succeeds; the daily recomputation remains a safety net.
 // The logger defaults to zerolog.Nop(); call SetLogger to configure one.
 func NewHandlers(store WorkerStore, rec *reconciler.Reconciler, db *pgxpool.Pool) *Handlers {
-	return &Handlers{store: store, reconciler: rec, db: db, logger: zerolog.Nop()}
+	return &Handlers{
+		store:      store,
+		reconciler: rec,
+		db:         db,
+		recomputeCapabilities: func(ctx context.Context) error {
+			return intelligence.ComputeAllCapabilityScores(ctx, db)
+		},
+		logger: zerolog.Nop(),
+	}
 }
 
 // SetLogger configures the zerolog.Logger used by the Handlers.
@@ -176,45 +186,53 @@ func (h *Handlers) HandleGeminiScrape(ctx context.Context, _ *asynq.Task) error 
 // Benchmark scraper handlers
 // ---------------------------------------------------------------------------
 
-// HandleBFCLScrape runs the BFCL V3 leaderboard scraper.
-// Capability score recomputation runs on the daily cron cycle.
+func (h *Handlers) runBenchmarkScrape(ctx context.Context, taskName string, s scraper.BenchmarkScraper) error {
+	if err := s.Scrape(ctx); err != nil {
+		return fmt.Errorf("%s: %w", taskName, err)
+	}
+	if err := h.recomputeCapabilities(ctx); err != nil {
+		return fmt.Errorf("%s: recompute capabilities: %w", taskName, err)
+	}
+	return nil
+}
+
+// HandleBFCLScrape runs the SWE-bench Verified leaderboard scraper. The legacy
+// task/package name is retained to avoid breaking already queued jobs.
 func (h *Handlers) HandleBFCLScrape(ctx context.Context, _ *asynq.Task) error {
-	h.logger.Info().Msg("handler: starting BFCL scrape")
+	h.logger.Info().Msg("handler: starting SWE-bench scrape")
 	s := bfcl.New(h.db, nil)
 	s.SetLogger(h.logger)
-	if err := s.Scrape(ctx); err != nil {
-		return fmt.Errorf("benchmark:bfcl: %w", err)
+	if err := h.runBenchmarkScrape(ctx, TaskBFCLScrape, s); err != nil {
+		return err
 	}
-	h.logger.Info().Msg("handler: BFCL scrape complete")
+	h.logger.Info().Msg("handler: SWE-bench scrape and capability recompute complete")
 	return nil
 }
 
-// HandleHuggingFaceLLMScrape runs the HuggingFace Open LLM Leaderboard scraper.
-// Capability score recomputation runs on the daily cron cycle.
+// HandleHuggingFaceLLMScrape runs the LiveCodeBench scraper. The legacy
+// task/package name is retained to avoid breaking already queued jobs.
 func (h *Handlers) HandleHuggingFaceLLMScrape(ctx context.Context, _ *asynq.Task) error {
-	h.logger.Info().Msg("handler: starting HuggingFace LLM scrape")
+	h.logger.Info().Msg("handler: starting LiveCodeBench scrape")
 	s := huggingface_llm.New(h.db, nil)
 	s.SetLogger(h.logger)
-	if err := s.Scrape(ctx); err != nil {
-		return fmt.Errorf("benchmark:huggingface_llm: %w", err)
+	if err := h.runBenchmarkScrape(ctx, TaskHuggingFaceLLMScrape, s); err != nil {
+		return err
 	}
-	h.logger.Info().Msg("handler: HuggingFace LLM scrape complete")
+	h.logger.Info().Msg("handler: LiveCodeBench scrape and capability recompute complete")
 	return nil
 }
 
-// HandleChatbotArenaScrape runs the Chatbot Arena ELO scraper.
-// Capability score recomputation runs on the daily cron cycle.
+// HandleChatbotArenaScrape retains compatibility with already queued tasks.
+// Arena has no working public source, so it explicitly skips without claiming
+// that evidence or capability scores were updated.
 func (h *Handlers) HandleChatbotArenaScrape(ctx context.Context, _ *asynq.Task) error {
-	h.logger.Info().Msg("handler: starting Chatbot Arena scrape")
 	s := chatbot_arena.New(h.db, nil)
 	s.SetLogger(h.logger)
 	if err := s.Scrape(ctx); err != nil {
 		return fmt.Errorf("benchmark:chatbot_arena: %w", err)
 	}
-	h.logger.Info().Msg("handler: Chatbot Arena scrape complete")
 	return nil
 }
-
 
 // ---------------------------------------------------------------------------
 // Intelligence recomputation handlers
@@ -224,58 +242,16 @@ func (h *Handlers) HandleChatbotArenaScrape(ctx context.Context, _ *asynq.Task) 
 // that have benchmark data. This is run daily and after each benchmark scrape.
 func (h *Handlers) HandleRecomputeCapabilityScores(ctx context.Context, _ *asynq.Task) error {
 	h.logger.Info().Msg("handler: recomputing all capability scores")
-	if err := intelligence.ComputeAllCapabilityScores(ctx, h.db); err != nil {
+	if err := h.recomputeCapabilities(ctx); err != nil {
 		return fmt.Errorf("intelligence:recompute: %w", err)
 	}
 	h.logger.Info().Msg("handler: capability scores recomputed")
 	return nil
 }
 
-// HandleStalenessCheck flags capability scores as stale when their oldest
-// contributing benchmark score is older than 90 days, and resets stale→fresh
-// when all contributing scores are within the threshold.
+// HandleStalenessCheck is a compatibility alias for old queued tasks. Freshness
+// is calculated per dimension by the exact recomputation path; the former
+// model-wide SQL incorrectly let stale evidence in one dimension taint others.
 func (h *Handlers) HandleStalenessCheck(ctx context.Context, _ *asynq.Task) error {
-	h.logger.Info().Msg("handler: running staleness check")
-
-	// Flag fresh → stale per (model, dimension) where any benchmark contributing
-	// to that specific dimension is older than 90 days.
-	// The JOIN was removed — the dimension mapping lives in application code
-	// (DimensionBenchmarks), not in the DB schema, so we approximate by checking
-	// whether any benchmark score for the model is stale. This is conservative:
-	// a model with one stale benchmark is flagged even if other dimensions are fresh.
-	// Per-dimension staleness requires materializing DimensionBenchmarks into the DB.
-	staleTag, err := h.db.Exec(ctx, `
-		UPDATE model_capability_scores mcs
-		SET freshness = 'stale'
-		WHERE freshness = 'fresh'
-		  AND EXISTS (
-		    SELECT 1
-		    FROM model_benchmark_scores mbs
-		    WHERE mbs.model_id = mcs.model_id
-		      AND mbs.evaluated_at < NOW() - INTERVAL '90 days'
-		  )
-	`)
-	if err != nil {
-		return fmt.Errorf("intelligence:staleness_check: mark stale: %w", err)
-	}
-	h.logger.Info().Int64("stale_rows", staleTag.RowsAffected()).Msg("handler: marked stale")
-
-	// Reset stale → fresh where all contributing scores are within 90 days.
-	freshTag, err := h.db.Exec(ctx, `
-		UPDATE model_capability_scores mcs
-		SET freshness = 'fresh'
-		WHERE freshness = 'stale'
-		  AND NOT EXISTS (
-		    SELECT 1
-		    FROM model_benchmark_scores mbs
-		    WHERE mbs.model_id = mcs.model_id
-		      AND mbs.evaluated_at < NOW() - INTERVAL '90 days'
-		  )
-	`)
-	if err != nil {
-		return fmt.Errorf("intelligence:staleness_check: reset fresh: %w", err)
-	}
-	h.logger.Info().Int64("fresh_rows", freshTag.RowsAffected()).Msg("handler: reset to fresh")
-
-	return nil
+	return h.HandleRecomputeCapabilityScores(ctx, nil)
 }

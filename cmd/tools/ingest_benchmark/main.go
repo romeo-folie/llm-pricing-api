@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"os"
@@ -106,16 +107,19 @@ func run() error {
 
 	raw := *score
 	norm := *score
+	versionPayload := fmt.Sprintf("%s\x00%.17g\x00%s\x00%s", evalTime.Format("2006-01-02"), *score, *source, *confidence)
+	versionHash := sha256.Sum256([]byte(versionPayload))
 
 	if err := intelligence.UpsertBenchmarkScore(ctx, db, intelligence.BenchmarkScore{
 		ModelID:          modelID,
 		BenchmarkID:      benchmarkID,
 		RawScore:         &raw,
 		NormalizedScore:  &norm,
-		BenchmarkVersion: "manual-" + evalTime.Format("2006-01-02"),
+		BenchmarkVersion: fmt.Sprintf("manual-%s-%x", evalTime.Format("2006-01-02"), versionHash[:8]),
 		SourceURL:        *source,
 		Confidence:       *confidence,
 		EvaluatedAt:      evalTime,
+		LastObservedAt:   time.Now().UTC(),
 	}); err != nil {
 		return fmt.Errorf("upsert benchmark score: %w", err)
 	}

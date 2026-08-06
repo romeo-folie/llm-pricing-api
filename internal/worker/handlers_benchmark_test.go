@@ -2,60 +2,100 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/hibiken/asynq"
 )
 
-// TestHandleRecomputeCapabilityScores verifies the handler calls
-// intelligence.ComputeAllCapabilityScores. Without a real DB pool the pgx
-// pool panics on nil dereference — we recover and confirm the handler reached
-// the intelligence code path.
+type fakeBenchmarkScraper struct {
+	scrape func(context.Context) error
+}
+
+func (f fakeBenchmarkScraper) Scrape(ctx context.Context) error { return f.scrape(ctx) }
+
 func TestHandleRecomputeCapabilityScores(t *testing.T) {
-	store := &mockStore{}
-	h := newTestHandlers(store)
-	// db is nil; pgxpool.Pool.Query panics on nil receiver.
-	panicked := invokePanics(func() {
-		_ = h.HandleRecomputeCapabilityScores(context.Background(), asynq.NewTask(TaskRecomputeCapabilityScores, nil))
-	})
-	if !panicked {
-		t.Fatal("expected panic from nil DB pool — handler may not be calling intelligence.ComputeAllCapabilityScores")
+	h := newTestHandlers(&mockStore{})
+	called := 0
+	h.recomputeCapabilities = func(context.Context) error {
+		called++
+		return nil
+	}
+	if err := h.HandleRecomputeCapabilityScores(context.Background(), asynq.NewTask(TaskRecomputeCapabilityScores, nil)); err != nil {
+		t.Fatalf("HandleRecomputeCapabilityScores() error = %v", err)
+	}
+	if called != 1 {
+		t.Fatalf("recompute called %d times; want 1", called)
 	}
 }
 
-// TestHandleStalenessCheck verifies the staleness check handler executes SQL.
 func TestHandleStalenessCheck(t *testing.T) {
-	store := &mockStore{}
-	h := newTestHandlers(store)
-	panicked := invokePanics(func() {
-		_ = h.HandleStalenessCheck(context.Background(), asynq.NewTask(TaskStalenessCheck, nil))
-	})
-	if !panicked {
-		t.Fatal("expected panic from nil DB pool — handler may not be executing SQL")
+	h := newTestHandlers(&mockStore{})
+	called := 0
+	h.recomputeCapabilities = func(context.Context) error {
+		called++
+		return nil
+	}
+	if err := h.HandleStalenessCheck(context.Background(), asynq.NewTask(TaskStalenessCheck, nil)); err != nil {
+		t.Fatalf("HandleStalenessCheck() error = %v", err)
+	}
+	if called != 1 {
+		t.Fatalf("compatibility handler called recompute %d times; want 1", called)
 	}
 }
 
-// TestHandleBFCLScrape verifies the BFCL handler creates a scraper and calls Scrape.
-func TestHandleBFCLScrape(t *testing.T) {
-	store := &mockStore{}
-	h := newTestHandlers(store)
-	panicked := invokePanics(func() {
-		_ = h.HandleBFCLScrape(context.Background(), asynq.NewTask(TaskBFCLScrape, nil))
-	})
-	if !panicked {
-		t.Fatal("expected panic from nil DB pool — handler may not be calling scraper.Scrape")
+func TestRunBenchmarkScrape_Success(t *testing.T) {
+	h := newTestHandlers(&mockStore{})
+	var calls []string
+	h.recomputeCapabilities = func(context.Context) error {
+		calls = append(calls, "recompute")
+		return nil
+	}
+	s := fakeBenchmarkScraper{scrape: func(context.Context) error {
+		calls = append(calls, "scrape")
+		return nil
+	}}
+
+	if err := h.runBenchmarkScrape(context.Background(), TaskBFCLScrape, s); err != nil {
+		t.Fatalf("runBenchmarkScrape() error = %v", err)
+	}
+	if len(calls) != 2 || calls[0] != "scrape" || calls[1] != "recompute" {
+		t.Fatalf("call order = %v; want [scrape recompute]", calls)
 	}
 }
 
-// TestHandleHuggingFaceLLMScrape verifies the handler creates a scraper and calls Scrape.
-func TestHandleHuggingFaceLLMScrape(t *testing.T) {
-	store := &mockStore{}
-	h := newTestHandlers(store)
-	panicked := invokePanics(func() {
-		_ = h.HandleHuggingFaceLLMScrape(context.Background(), asynq.NewTask(TaskHuggingFaceLLMScrape, nil))
-	})
-	if !panicked {
-		t.Fatal("expected panic from nil DB pool — handler may not be calling scraper.Scrape")
+func TestRunBenchmarkScrape_ScrapeFailureSkipsRecompute(t *testing.T) {
+	h := newTestHandlers(&mockStore{})
+	scrapeErr := errors.New("scrape failed")
+	recomputeCalls := 0
+	h.recomputeCapabilities = func(context.Context) error {
+		recomputeCalls++
+		return nil
+	}
+	s := fakeBenchmarkScraper{scrape: func(context.Context) error { return scrapeErr }}
+
+	err := h.runBenchmarkScrape(context.Background(), TaskBFCLScrape, s)
+	if !errors.Is(err, scrapeErr) {
+		t.Fatalf("error = %v; want wrapped scrape error", err)
+	}
+	if recomputeCalls != 0 {
+		t.Fatalf("recompute called %d times after scrape failure; want 0", recomputeCalls)
+	}
+}
+
+func TestRunBenchmarkScrape_RecomputeFailureFailsTask(t *testing.T) {
+	h := newTestHandlers(&mockStore{})
+	recomputeErr := errors.New("recompute failed")
+	h.recomputeCapabilities = func(context.Context) error { return recomputeErr }
+	s := fakeBenchmarkScraper{scrape: func(context.Context) error { return nil }}
+
+	err := h.runBenchmarkScrape(context.Background(), TaskBFCLScrape, s)
+	if !errors.Is(err, recomputeErr) {
+		t.Fatalf("error = %v; want wrapped recompute error", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), TaskBFCLScrape+": recompute capabilities") {
+		t.Fatalf("error = %v; want task and recompute context", err)
 	}
 }
 
@@ -90,15 +130,4 @@ func TestBenchmarkTaskConstants(t *testing.T) {
 		}
 		seen[task] = true
 	}
-}
-
-// invokePanics runs fn and returns true if it panicked.
-func invokePanics(fn func()) (panicked bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			panicked = true
-		}
-	}()
-	fn()
-	return false
 }

@@ -10,8 +10,8 @@ func TestAggregate_WeightedAverage(t *testing.T) {
 	recent := now.Add(-24 * time.Hour)
 
 	scores := map[string]scoreEntry{
-		"MMLU-Pro":     {Normalized: 80, EvaluatedAt: recent},
-		"GPQA Diamond": {Normalized: 60, EvaluatedAt: recent},
+		"MMLU-Pro":     {Normalized: 80, EvaluatedAt: recent, Confidence: "high"},
+		"GPQA Diamond": {Normalized: 60, EvaluatedAt: recent, Confidence: "high"},
 	}
 
 	result := Aggregate("quality", DimensionBenchmarks["quality"], scores, now)
@@ -35,7 +35,7 @@ func TestAggregate_SingleBenchmark_LowConfidence(t *testing.T) {
 	// tool_use only has one benchmark (BFCL V3), so even with it present
 	// confidence should be "high" since count == len(weights).
 	scores := map[string]scoreEntry{
-		"BFCL V3": {Normalized: 90, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 90, EvaluatedAt: recent, Confidence: "high"},
 	}
 
 	result := Aggregate("tool_use", DimensionBenchmarks["tool_use"], scores, now)
@@ -54,7 +54,7 @@ func TestAggregate_SingleBenchmark_LowConfidence(t *testing.T) {
 
 	// Provide one reasoning benchmark.
 	reasoningScores := map[string]scoreEntry{
-		"MATH-500": {Normalized: 75, EvaluatedAt: recent},
+		"MATH-500": {Normalized: 75, EvaluatedAt: recent, Confidence: "high"},
 	}
 	result = Aggregate("reasoning", DimensionBenchmarks["reasoning"], reasoningScores, now)
 	if result == nil {
@@ -74,9 +74,9 @@ func TestAggregate_AllBenchmarks_HighConfidence(t *testing.T) {
 
 	// Provide all 3 reasoning benchmarks.
 	scores := map[string]scoreEntry{
-		"GPQA Diamond": {Normalized: 60, EvaluatedAt: recent},
-		"MATH-500":     {Normalized: 80, EvaluatedAt: recent},
-		"AIME 2025":    {Normalized: 40, EvaluatedAt: recent},
+		"GPQA Diamond": {Normalized: 60, EvaluatedAt: recent, Confidence: "high"},
+		"MATH-500":     {Normalized: 80, EvaluatedAt: recent, Confidence: "high"},
+		"AIME 2025":    {Normalized: 40, EvaluatedAt: recent, Confidence: "high"},
 	}
 
 	result := Aggregate("reasoning", DimensionBenchmarks["reasoning"], scores, now)
@@ -102,8 +102,8 @@ func TestAggregate_MediumConfidence(t *testing.T) {
 
 	// 2 of 3 reasoning benchmarks → "medium".
 	scores := map[string]scoreEntry{
-		"GPQA Diamond": {Normalized: 70, EvaluatedAt: recent},
-		"MATH-500":     {Normalized: 90, EvaluatedAt: recent},
+		"GPQA Diamond": {Normalized: 70, EvaluatedAt: recent, Confidence: "high"},
+		"MATH-500":     {Normalized: 90, EvaluatedAt: recent, Confidence: "high"},
 	}
 
 	result := Aggregate("reasoning", DimensionBenchmarks["reasoning"], scores, now)
@@ -121,8 +121,8 @@ func TestAggregate_Staleness(t *testing.T) {
 	// Score older than 90 days → stale.
 	staleDate := now.Add(-100 * 24 * time.Hour)
 	scores := map[string]scoreEntry{
-		"MMLU-Pro":     {Normalized: 80, EvaluatedAt: staleDate},
-		"GPQA Diamond": {Normalized: 60, EvaluatedAt: now.Add(-24 * time.Hour)},
+		"MMLU-Pro":     {Normalized: 80, EvaluatedAt: staleDate, Confidence: "high"},
+		"GPQA Diamond": {Normalized: 60, EvaluatedAt: now.Add(-24 * time.Hour), Confidence: "high"},
 	}
 
 	result := Aggregate("quality", DimensionBenchmarks["quality"], scores, now)
@@ -135,8 +135,8 @@ func TestAggregate_Staleness(t *testing.T) {
 
 	// Both recent → fresh.
 	freshScores := map[string]scoreEntry{
-		"MMLU-Pro":     {Normalized: 80, EvaluatedAt: now.Add(-24 * time.Hour)},
-		"GPQA Diamond": {Normalized: 60, EvaluatedAt: now.Add(-48 * time.Hour)},
+		"MMLU-Pro":     {Normalized: 80, EvaluatedAt: now.Add(-24 * time.Hour), Confidence: "high"},
+		"GPQA Diamond": {Normalized: 60, EvaluatedAt: now.Add(-48 * time.Hour), Confidence: "high"},
 	}
 	result = Aggregate("quality", DimensionBenchmarks["quality"], freshScores, now)
 	if result == nil {
@@ -163,8 +163,8 @@ func TestAggregate_UnequalWeights(t *testing.T) {
 
 	// structured_output: BFCL V3 (0.5) + IFEval (0.5)
 	scores := map[string]scoreEntry{
-		"BFCL V3": {Normalized: 80, EvaluatedAt: recent},
-		"IFEval":  {Normalized: 60, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 80, EvaluatedAt: recent, Confidence: "high"},
+		"IFEval":  {Normalized: 60, EvaluatedAt: recent, Confidence: "high"},
 	}
 
 	result := Aggregate("structured_output", DimensionBenchmarks["structured_output"], scores, now)
@@ -184,7 +184,7 @@ func TestAggregate_AsymmetricWeights(t *testing.T) {
 	// agentic: SWE-bench Verified (0.5) + BFCL V3 (0.5)
 	// Only one present → score = that benchmark's value.
 	scores := map[string]scoreEntry{
-		"BFCL V3": {Normalized: 90, EvaluatedAt: recent},
+		"BFCL V3": {Normalized: 90, EvaluatedAt: recent, Confidence: "high"},
 	}
 
 	result := Aggregate("agentic", DimensionBenchmarks["agentic"], scores, now)
@@ -198,5 +198,39 @@ func TestAggregate_AsymmetricWeights(t *testing.T) {
 	// 1 of 2 benchmarks → low confidence.
 	if result.Confidence != "low" {
 		t.Errorf("expected confidence 'low', got %q", result.Confidence)
+	}
+}
+
+func TestAggregate_ConfidenceCappedByEvidence(t *testing.T) {
+	now := time.Now()
+	scores := map[string]scoreEntry{
+		"SWE-bench Verified": {Normalized: 80, EvaluatedAt: now, Confidence: "low"},
+		"LiveCodeBench":      {Normalized: 70, EvaluatedAt: now, Confidence: "high"},
+	}
+
+	result := Aggregate("coding", DimensionBenchmarks["coding"], scores, now)
+	if result == nil {
+		t.Fatal("expected coding result")
+	}
+	if result.Confidence != "low" {
+		t.Fatalf("confidence = %q; want low", result.Confidence)
+	}
+}
+
+func TestLowerConfidence(t *testing.T) {
+	tests := []struct {
+		a, b, want string
+	}{
+		{"high", "high", "high"},
+		{"high", "medium", "medium"},
+		{"high", "low", "low"},
+		{"medium", "high", "medium"},
+		{"low", "high", "low"},
+		{"high", "", "low"},
+	}
+	for _, tc := range tests {
+		if got := lowerConfidence(tc.a, tc.b); got != tc.want {
+			t.Errorf("lowerConfidence(%q, %q) = %q; want %q", tc.a, tc.b, got, tc.want)
+		}
 	}
 }

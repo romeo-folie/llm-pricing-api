@@ -121,3 +121,59 @@ func TestPass1_AlreadyPercentage(t *testing.T) {
 		t.Errorf("pass@1 value %f out of expected 0-100 range", val)
 	}
 }
+
+func TestSelectBestResolvedModels_OrderIndependent(t *testing.T) {
+	candidates := []resolvedModel{
+		{modelID: 1, repr: "z-repr", modelName: "model-z", average: 99, count: 10},
+		{modelID: 1, repr: "b-repr", modelName: "model-b", average: 70, count: 20},
+		{modelID: 1, repr: "a-repr", modelName: "model-a", average: 60, count: 20},
+		{modelID: 2, repr: "other", modelName: "other", average: 50, count: 5},
+	}
+
+	var visit func(int)
+	visit = func(index int) {
+		if index == len(candidates) {
+			selected := selectBestResolvedModels(candidates)
+			if len(selected) != 2 {
+				t.Fatalf("selected %d models; want 2", len(selected))
+			}
+			winner := selected[1]
+			if winner.repr != "a-repr" || winner.average != 60 || winner.count != 20 {
+				t.Fatalf("unexpected winner: %+v", winner)
+			}
+			return
+		}
+		for i := index; i < len(candidates); i++ {
+			candidates[index], candidates[i] = candidates[i], candidates[index]
+			visit(index + 1)
+			candidates[index], candidates[i] = candidates[i], candidates[index]
+		}
+	}
+	visit(0)
+}
+
+func TestModelNamesByRepresentation_OrderIndependent(t *testing.T) {
+	models := []lcbModel{
+		{ModelRepr: "same", ModelName: "z-model"},
+		{ModelRepr: "same", ModelName: "a-model"},
+	}
+	forward := modelNamesByRepresentation(models)
+	reverse := modelNamesByRepresentation([]lcbModel{models[1], models[0]})
+	if forward["same"] != "a-model" || reverse["same"] != "a-model" {
+		t.Fatalf("duplicate representation is order-dependent: forward=%q reverse=%q", forward["same"], reverse["same"])
+	}
+}
+
+func TestEvidenceVersion_IsContentAddressed(t *testing.T) {
+	base := resolvedModel{modelName: "model", repr: "repr", average: 75, count: 10}
+	firstVersion := evidenceVersion(base)
+	secondVersion := evidenceVersion(base)
+	if firstVersion != secondVersion {
+		t.Fatal("identical evidence produced different versions")
+	}
+	changed := base
+	changed.average = 76
+	if evidenceVersion(base) == evidenceVersion(changed) {
+		t.Fatal("changed score reused the same evidence version")
+	}
+}

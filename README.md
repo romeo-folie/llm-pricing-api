@@ -2,7 +2,7 @@
 
 A reconciled, multi-source pricing and capability data API for large language models.
 
-The API aggregates token pricing from OpenRouter, LiteLLM, and provider documentation pages, reconciles discrepancies across sources, stores an immutable change history in TimescaleDB, and serves it through a versioned REST API with tier-based access control. It also ingests benchmark scores from BFCL, HuggingFace Open LLM Leaderboard, and Chatbot Arena to power capability-aware model recommendations.
+The API aggregates token pricing from OpenRouter, LiteLLM, and provider documentation pages, reconciles discrepancies across sources, stores an immutable change history in TimescaleDB, and serves it through a versioned REST API with tier-based access control. It also ingests SWE-bench Verified and LiveCodeBench evidence to support capability-aware model comparisons.
 
 **The differentiator is price history, change tracking, and capability scoring.** Every competing resource gives a pricing snapshot; this gives the full timeline with source attribution, confidence metadata, a real-time SSE stream of changes, and benchmark-grounded capability scores that let you find the right model — not just the cheapest one.
 
@@ -42,14 +42,12 @@ The system has two parallel data pipelines feeding a shared store, served throug
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Benchmark Pipeline (asynq workers, daily cron)                      │
 │                                                                      │
-│  BFCL V4 ──────────┐                                                 │
-│  HuggingFace LLM ──┼──► slugmap.Resolve() ──► UpsertBenchmarkScore() │
-│  Chatbot Arena ────┘          ↕                                      │
+│  SWE-bench Verified ─┐                                               │
+│  LiveCodeBench ──────┴──► slugmap.Resolve() ──► benchmark history    │
 │  Manual CLI ──────────────────┘  → model_benchmark_scores            │
 │                                                                      │
-│  Daily recompute job → ComputeAllCapabilityScores()                  │
-│                      → model_capability_scores (with freshness)      │
-│  Daily staleness job → flags scores older than 90 days               │
+│  Synchronous + daily recompute → exact capability replacement        │
+│                                → per-dimension freshness             │
 └──────────────────────────────────────────────────────────────────────┘
          │
          ▼
@@ -182,14 +180,14 @@ Railway was chosen for hosting because it supports Nixpacks (builds the Go binar
 │   ├── scraper/
 │   │   ├── openrouter/         # OpenRouter /v1/models scraper (runs every 6 hours)
 │   │   ├── litellm/            # LiteLLM GitHub JSON scraper (runs every 24 hours)
-│   │   ├── bfcl/               # BFCL V4 leaderboard scraper (runs daily)
-│   │   ├── huggingface_llm/    # HuggingFace Open LLM Leaderboard scraper (MMLU-Pro, GPQA, IFEval; daily)
-│   │   ├── chatbot_arena/      # Chatbot Arena ELO scraper → min-max normalised 0-100 (daily)
+│   │   ├── bfcl/               # SWE-bench Verified scraper (legacy package name; runs daily)
+│   │   ├── huggingface_llm/    # LiveCodeBench scraper (legacy package name; runs daily)
+│   │   ├── chatbot_arena/      # Disabled compatibility stub; no working public source
 │   │   ├── benchmark_scraper.go # BenchmarkScraper interface
-│   │   └── slugmap/            # Leaderboard name → canonical DB slug resolver (exact + prefix fallback)
+│   │   └── slugmap/            # Allowlisted identity + delimited variant → canonical DB slug
 │   ├── webhooks/               # Webhook domain types
 │   └── worker/                 # asynq task handlers: scraper pipeline, benchmark jobs, webhook delivery
-├── migrations/                 # SQL schema (13 migrations, golang-migrate)
+├── migrations/                 # SQL schema migrations (golang-migrate)
 ├── docker-compose.yml          # Local postgres + redis
 ├── Makefile                    # Dev workflow targets
 ├── railway.json                # Railway build/deploy/health-check config
@@ -321,8 +319,10 @@ make migrate-down
 | 000005 | `price_history` TimescaleDB hypertable (7-day chunks, deduplication index) |
 | 000006 | `review_queue` table |
 | 000007 | `webhooks` table |
-| 000008–000012 | Intelligence layer tables (`model_intelligence`, `model_capability_scores`, UC Phase 1 schema) |
-| 000013 | `benchmarks` table (12 core benchmarks seeded: BFCL, MMLU-Pro, GPQA Diamond, Chatbot Arena, etc.) + `model_benchmark_scores` table |
+| 000008–000012 | Source restoration and API identity tables |
+| 000013–000016 | Benchmark catalogue, benchmark evidence, capability scores, and seed evidence |
+| 000017 | Price verification freshness anchor |
+| 000018 | Benchmark upstream provenance and active-evidence lookup index |
 
 ---
 
@@ -374,21 +374,22 @@ The test suite uses mock implementations of every storage and external interface
 
 ## Benchmark Ingestion
 
-Three leaderboards are scraped daily by background workers and fed into the capability scoring pipeline:
+Two working benchmark feeds are scraped daily by background workers:
 
 | Leaderboard | Dimensions | Normalisation |
 |---|---|---|
-| BFCL V4 (Berkeley Function Calling) | `tool_use` | Raw AST accuracy score (0–100) |
-| HuggingFace Open LLM Leaderboard | `quality` (MMLU-Pro), `reasoning` (GPQA Diamond), `instruction` (IFEval) | 0–1 scores multiplied by 100 |
-| Chatbot Arena | `preference` | ELO rating → min-max normalised 0–100 across the current leaderboard |
+| SWE-bench Verified | `coding`, `agentic` | Resolved percentage (0–100); best reported agent-system submission per model, stored with low base-model confidence |
+| LiveCodeBench | `coding` | Mean pass@1 percentage (0–100) |
 
-All scrapers go through `slugmap.Resolve()`, which maps leaderboard display names (e.g. `"GPT-4o-2024-11-20"`) to canonical DB model slugs using exact match with a prefix fallback. Unresolved names are logged and skipped — no silent data corruption.
+Chatbot Arena currently has no working public ingestion source. Its compatibility handler logs an explicit skip and is not scheduled. Seed rows for other benchmarks remain readable but are not presented as live feeds.
+
+Both live scrapers go through `slugmap.Resolve()`, which maps allowlisted leaderboard identities and clearly delimited date/variant suffixes to canonical DB model slugs. Unknown or ambiguous generations are logged and skipped; the resolver does not attach one model generation to another.
 
 ### Capability recompute
 
-After each scraper run (and once daily as a standalone job), `ComputeAllCapabilityScores()` aggregates raw benchmark scores into per-dimension capability scores stored in `model_capability_scores`. These scores feed the `/v1/recommend` endpoint, which returns a `freshness` map per model indicating how recently each dimension's scores were updated.
+After each successful live scrape, `ComputeAllCapabilityScores()` runs synchronously. If recomputation fails, the scrape task fails and is retried. A daily recomputation remains as a safety net and freshness update.
 
-A separate daily staleness job flags any score older than 90 days as stale, preventing outdated benchmark data from silently influencing recommendations.
+Live evidence uses content-derived versions, so unchanged retries preserve immutable evidence while advancing only `last_observed_at`; changed scores or provenance append history. Recomputation selects the most recently observed row per model and benchmark, with evaluation time and stable evidence content as tie-breakers; it never interprets version strings as dates. Each model is serialized and replaced transactionally: supported dimensions are upserted, obsolete dimensions are deleted, and freshness is calculated from immutable evaluation dates only. Evidence older than 90 days is marked stale; consumers decide how to use that state.
 
 ### Manual ingestion
 
@@ -396,10 +397,10 @@ For one-off score insertions (e.g. internal evaluations, private benchmarks):
 
 ```bash
 go run ./cmd/tools/ingest_benchmark \
-  --model gpt-4o \
-  --benchmark "BFCL V4" \
+  --model openai/gpt-4o \
+  --benchmark "LiveCodeBench" \
   --score 91.3 \
-  --source-url https://gorilla.cs.berkeley.edu/leaderboard.html
+  --source https://livecodebench.github.io/leaderboard.html
 ```
 
 The CLI inserts the score and triggers a capability recompute for the affected model.

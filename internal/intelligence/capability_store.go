@@ -22,7 +22,7 @@ type CapabilityScore struct {
 
 // UpsertCapabilityScore inserts or updates a capability score row, matching on
 // the (model_id, dimension) unique constraint.
-func UpsertCapabilityScore(ctx context.Context, db *pgxpool.Pool, s CapabilityScore) error {
+func UpsertCapabilityScore(ctx context.Context, db DBTX, s CapabilityScore) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO model_capability_scores
 		  (model_id, dimension, score, confidence, benchmark_count, freshness, computed_at)

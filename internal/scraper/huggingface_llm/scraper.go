@@ -6,6 +6,7 @@ package huggingface_llm
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -81,6 +82,57 @@ type modelAgg struct {
 	count int
 }
 
+type resolvedModel struct {
+	modelID   int
+	slug      string
+	modelName string
+	repr      string
+	average   float64
+	count     int
+}
+
+// betterResolvedModel avoids score cherry-picking when multiple upstream
+// aliases resolve to one canonical model. Prefer the entry backed by the most
+// questions, then stable upstream identity ordering.
+func betterResolvedModel(a, b resolvedModel) bool {
+	if a.count != b.count {
+		return a.count > b.count
+	}
+	if a.repr != b.repr {
+		return a.repr < b.repr
+	}
+	return a.modelName < b.modelName
+}
+
+func selectBestResolvedModels(candidates []resolvedModel) map[int]resolvedModel {
+	selected := make(map[int]resolvedModel)
+	for _, candidate := range candidates {
+		current, exists := selected[candidate.modelID]
+		if !exists || betterResolvedModel(candidate, current) {
+			selected[candidate.modelID] = candidate
+		}
+	}
+	return selected
+}
+
+func modelNamesByRepresentation(models []lcbModel) map[string]string {
+	reprToName := make(map[string]string, len(models))
+	for _, model := range models {
+		current, exists := reprToName[model.ModelRepr]
+		if !exists || model.ModelName < current {
+			reprToName[model.ModelRepr] = model.ModelName
+		}
+	}
+	return reprToName
+}
+
+func evidenceVersion(candidate resolvedModel) string {
+	payload := fmt.Sprintf("%s\x00%s\x00%.17g\x00%d",
+		candidate.modelName, candidate.repr, candidate.average, candidate.count)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("lcb-%x", sum[:8])
+}
+
 // Scrape fetches the LiveCodeBench data, aggregates per-model average pass@1,
 // resolves model names to canonical slugs, and upserts benchmark scores.
 func (s *Scraper) Scrape(ctx context.Context) error {
@@ -95,10 +147,7 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 	}
 
 	// Build a map from model_repr → model_name for slug resolution.
-	reprToName := make(map[string]string, len(data.Models))
-	for _, m := range data.Models {
-		reprToName[m.ModelRepr] = m.ModelName
-	}
+	reprToName := modelNamesByRepresentation(data.Models)
 
 	// Aggregate performances per model (keyed by model_repr).
 	aggs := make(map[string]*modelAgg, len(data.Models))
@@ -114,9 +163,8 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 	}
 
 	now := time.Now().UTC()
-	version := "lcb-" + now.Format("2006-01")
-
-	var matched, skipped int
+	var skipped int
+	candidates := make([]resolvedModel, 0, len(aggs))
 	for repr, agg := range aggs {
 		if agg.count == 0 {
 			continue
@@ -142,27 +190,45 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			continue
 		}
 
+		candidate := resolvedModel{
+			modelID:   modelID,
+			slug:      slug,
+			modelName: modelName,
+			repr:      repr,
+			average:   avgPass1,
+			count:     agg.count,
+		}
+		candidates = append(candidates, candidate)
+	}
+	selected := selectBestResolvedModels(candidates)
+
+	for _, candidate := range selected {
 		// pass@1 is already 0–100.
-		raw := avgPass1
-		norm := avgPass1
+		raw := candidate.average
+		norm := candidate.average
+		sourceModelName := candidate.modelName
+		sourceEntryName := candidate.repr
 		if err := intelligence.UpsertBenchmarkScore(ctx, s.db, intelligence.BenchmarkScore{
-			ModelID:          modelID,
+			ModelID:          candidate.modelID,
 			BenchmarkID:      benchmarkID,
 			RawScore:         &raw,
 			NormalizedScore:  &norm,
-			BenchmarkVersion: version,
+			BenchmarkVersion: evidenceVersion(candidate),
 			SourceURL:        sourceURL,
+			SourceModelName:  &sourceModelName,
+			SourceEntryName:  &sourceEntryName,
 			Confidence:       "high",
 			EvaluatedAt:      now,
+			LastObservedAt:   now,
 		}); err != nil {
-			return fmt.Errorf("livecodebench: upsert score for %s: %w", slug, err)
+			return fmt.Errorf("livecodebench: upsert score for %s: %w", candidate.slug, err)
 		}
-		matched++
 	}
 
 	s.logger.Info().
-		Int("matched", matched).
+		Int("matched", len(selected)).
 		Int("skipped", skipped).
+		Int("duplicate_aliases", len(aggs)-skipped-len(selected)).
 		Int("total_models", len(data.Models)).
 		Int("total_performances", len(data.Performances)).
 		Msg("livecodebench: scrape complete")
