@@ -250,16 +250,19 @@ describe("getProviders", () => {
 })
 
 describe("getCompare", () => {
-  it("sends comma-separated model IDs", async () => {
-    mockOk(envelope([rawModel({ id: 1 }), rawModel({ id: 2 })]))
-    await getCompare(["1", "2"])
+  it("sends comma-separated, encoded model slugs", async () => {
+    mockOk(envelope({ items: [] }))
+    await getCompare(["nvidia/nemotron", "deepseek/v4-flash"])
     const url = mockFetch.mock.calls[0][0] as string
-    expect(url).toContain("models=1,2")
+    expect(url).toContain("models=nvidia%2Fnemotron,deepseek%2Fv4-flash")
   })
 
-  it("transforms all returned models", async () => {
-    mockOk(envelope([rawModel({ id: 1 }), rawModel({ id: 2 })]))
-    const models = await getCompare(["1", "2"])
+  it("transforms models from the nested compare response", async () => {
+    mockOk(envelope({
+      items: [rawModel({ id: 1 }), rawModel({ id: 2 })],
+      warnings: ["Limited benchmark coverage"],
+    }))
+    const models = await getCompare(["nvidia/nemotron", "deepseek/v4-flash"])
     expect(models).toHaveLength(2)
     expect(models[0].id).toBe("1")
     expect(models[1].id).toBe("2")

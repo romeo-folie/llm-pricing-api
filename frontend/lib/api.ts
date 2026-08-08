@@ -106,6 +106,11 @@ interface RawProvider {
   model_count: number
 }
 
+interface RawCompareData {
+  items: RawModel[]
+  warnings?: string[]
+}
+
 interface RawEnvelope<T> {
   data: T
   meta: RawTrustMeta
@@ -353,10 +358,12 @@ export interface CompareFilter {
 }
 
 export async function getCompare(models: string[]): Promise<Model[]> {
-  // Backend expects comma-separated integer IDs: ?models=1,2,3
+  // The backend accepts comma-separated slugs or legacy integer IDs and wraps
+  // comparison rows in data.items so result-level warnings can live alongside
+  // them.
   const qs = `models=${models.map(encodeURIComponent).join(",")}`
-  const res = await apiFetch<RawEnvelope<RawModel[]>>(`/v1/compare?${qs}`)
-  return res.data.map(toModel)
+  const res = await apiFetch<RawEnvelope<RawCompareData>>(`/v1/compare?${qs}`)
+  return res.data.items.map(toModel)
 }
 
 export interface ChangesFilter {

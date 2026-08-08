@@ -94,9 +94,16 @@
             "type": "number",
             "format": "float",
             "description": "Output cost per token."
+          },
+          "underlying_provider": {
+            "type": ["string", "null"],
+            "description": "Underlying inference provider when different from the listed provider."
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TrustMeta"
           }
         },
-        "required": ["id", "provider", "name", "slug", "modality", "price_input", "price_output"]
+        "required": ["id", "provider", "name", "slug", "modality", "price_input", "price_output", "underlying_provider", "meta"]
       },
       "ModelEnvelope": {
         "type": "object",
@@ -122,6 +129,51 @@
           "meta": {
             "$ref": "#/components/schemas/TrustMeta"
           }
+        },
+        "required": ["data", "meta"]
+      },
+      "CompareModelResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ModelResponse" },
+          {
+            "type": "object",
+            "properties": {
+              "scores": {
+                "type": "object",
+                "additionalProperties": { "type": "number" }
+              },
+              "freshness": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              },
+              "rationale": { "type": "string" },
+              "warnings": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        ]
+      },
+      "CompareData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompareModelResponse" }
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["items"]
+      },
+      "CompareEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": { "$ref": "#/components/schemas/CompareData" },
+          "meta": { "$ref": "#/components/schemas/TrustMeta" }
         },
         "required": ["data", "meta"]
       },
@@ -687,7 +739,7 @@
             "name": "models",
             "in": "query",
             "required": true,
-            "description": "Comma-separated list of model IDs (max 5).",
+            "description": "Comma-separated list of model slugs or legacy integer IDs (max 5).",
             "schema": { "type": "string" }
           }
         ],
@@ -697,13 +749,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelListEnvelope"
+                  "$ref": "#/components/schemas/CompareEnvelope"
                 }
               }
             }
           },
           "400": {
-            "description": "Bad request (e.g. too many models, invalid IDs).",
+            "description": "Bad request (e.g. too many models or invalid identifiers).",
             "content": {
               "application/problem+json": {
                 "schema": { "$ref": "#/components/schemas/ProblemDetail" }
