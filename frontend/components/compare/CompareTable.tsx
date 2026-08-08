@@ -27,6 +27,12 @@ const ROWS: { label: string; key: string; render: (m: Model) => string }[] = [
 
 const numericKeys = new Set(["input_price", "output_price", "context_window"])
 
+function formatBenchmarkCategory(category: string) {
+  return category
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 export default function CompareTable({ models, onRemove, scores }: CompareTableProps) {
   if (models.length < 2) return null
 
@@ -199,17 +205,19 @@ export default function CompareTable({ models, onRemove, scores }: CompareTableP
                           <span
                             key={dim}
                             style={{
-                              display: "inline-flex",
+                              display: "flex",
                               alignItems: "center",
-                              gap: "4px",
-                              padding: "2px 6px",
+                              justifyContent: "space-between",
+                              gap: "12px",
+                              width: "100%",
+                              padding: "4px 8px",
                               border: "1px solid var(--border)",
                               backgroundColor: "var(--surfaceLo)",
-                              fontSize: "0.68rem",
+                              fontSize: "0.8rem",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            <span style={{ color: "var(--dim)" }}>{dim}</span>
+                            <span style={{ color: "var(--dim)" }}>{formatBenchmarkCategory(dim)}</span>
                             <span className="font-orbitron" style={{ color: "var(--ink)", fontWeight: 600 }}>
                               {typeof score === "number" ? score.toFixed(1) : "\u2014"}
                             </span>

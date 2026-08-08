@@ -10,10 +10,12 @@ func TestResolve_ExactMatch(t *testing.T) {
 		{"gpt-4o", "openai/gpt-4o"},
 		{"GPT-4o", "openai/gpt-4o"},
 		{"gpt-4o-mini", "openai/gpt-4o-mini"},
-		{"claude-3-5-sonnet-20241022", "anthropic/claude-3.5-sonnet"},
-		{"claude-3.5-sonnet", "anthropic/claude-3.5-sonnet"},
-		{"claude-opus-4-6", "anthropic/claude-opus-4-6"},
-		{"claude-sonnet-4-6", "anthropic/claude-sonnet-4-6"},
+		{"claude-3-5-sonnet-20241022", "anthropic/claude-3-5-sonnet"},
+		{"claude-3.5-sonnet", "anthropic/claude-3-5-sonnet"},
+		{"claude-opus-4-6", "anthropic/claude-opus-4.6"},
+		{"claude-sonnet-4-6", "anthropic/claude-sonnet-4.6"},
+		{"claude-sonnet-4-20250514", "anthropic/claude-sonnet-4"},
+		{"claude-opus-4-20250514", "anthropic/claude-opus-4"},
 		{"gemini-2.0-flash", "google/gemini-2.0-flash"},
 		{"gemini-2.5-pro", "google/gemini-2.5-pro"},
 		{"llama-3.3-70b-instruct", "meta-llama/llama-3.3-70b-instruct"},
@@ -39,7 +41,7 @@ func TestResolve_PrefixFallback(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"claude-3-5-sonnet-20250101", "anthropic/claude-3.5-sonnet"},
+		{"claude-3-5-sonnet-20250101", "anthropic/claude-3-5-sonnet"},
 		{"gpt-4o-2025-01-01", "openai/gpt-4o"},
 		{"gemini-2.5-pro-exp-0827", "google/gemini-2.5-pro"},
 		{"llama-3.3-70b-instruct-turbo", "meta-llama/llama-3.3-70b-instruct"},
@@ -63,6 +65,8 @@ func TestResolve_NoMatch(t *testing.T) {
 		"some-unknown-model",
 		"",
 		"random-text-123",
+		"claude-sonnet-4-5unknown",
+		"gpt-4oish",
 	}
 	for _, input := range unknowns {
 		t.Run(input, func(t *testing.T) {
@@ -71,6 +75,40 @@ func TestResolve_NoMatch(t *testing.T) {
 				t.Errorf("Resolve(%q) returned ok=true; want false", input)
 			}
 		})
+	}
+}
+
+func TestResolve_DoesNotCrossClaudeGenerations(t *testing.T) {
+	unknowns := []string{
+		"claude-4-opus",
+		"claude-opus-4",
+		"claude-opus-4-20250514_nothink",
+		"claude-4-sonnet",
+		"claude-4-sonnet-20250522",
+		"claude-sonnet-4",
+		"claude-sonnet-4-20250514_nothink",
+	}
+	for _, input := range unknowns {
+		t.Run(input, func(t *testing.T) {
+			if slug, ok := Resolve(input); ok {
+				t.Fatalf("Resolve(%q) = %q; cross-generation attribution must be rejected", input, slug)
+			}
+		})
+	}
+
+	controls := map[string]string{
+		"claude-4-opus-20250514":   "anthropic/claude-opus-4",
+		"claude-opus-4-20250514":   "anthropic/claude-opus-4",
+		"claude-sonnet-4-20250514": "anthropic/claude-sonnet-4",
+		"claude-sonnet-4-5":        "anthropic/claude-sonnet-4.5",
+		"claude-opus-4-5":          "anthropic/claude-opus-4.5",
+		"claude-sonnet-4-6":        "anthropic/claude-sonnet-4.6",
+		"claude-opus-4-6":          "anthropic/claude-opus-4.6",
+	}
+	for input, want := range controls {
+		if got, ok := Resolve(input); !ok || got != want {
+			t.Errorf("Resolve(%q) = (%q, %v); want (%q, true)", input, got, ok, want)
+		}
 	}
 }
 

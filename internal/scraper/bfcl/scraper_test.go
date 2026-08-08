@@ -6,7 +6,78 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+func TestSelectBestEntries_OrderIndependent(t *testing.T) {
+	date := func(value string) time.Time {
+		tm, err := time.Parse("2006-01-02", value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	entries := []resolvedEntry{
+		{entry: leaderboardEntry{Name: "z-agent", Resolved: 80}, sourceModelName: "model-b", modelID: 1, evaluatedAt: date("2025-05-01")},
+		{entry: leaderboardEntry{Name: "b-agent", Resolved: 90}, sourceModelName: "model-a", modelID: 1, evaluatedAt: date("2025-04-01")},
+		{entry: leaderboardEntry{Name: "a-agent", Resolved: 90}, sourceModelName: "model-z", modelID: 1, evaluatedAt: date("2025-05-01")},
+		{entry: leaderboardEntry{Name: "only-agent", Resolved: 70}, sourceModelName: "other-model", modelID: 2, evaluatedAt: date("2025-01-01")},
+	}
+
+	forEachPermutation(entries, func(permutation []resolvedEntry) {
+		selected := selectBestEntries(permutation)
+		if len(selected) != 2 {
+			t.Fatalf("selected %d models; want 2", len(selected))
+		}
+		winner := selected[1]
+		if winner.entry.Name != "a-agent" || winner.entry.Resolved != 90 || winner.sourceModelName != "model-z" {
+			t.Fatalf("unexpected winner: %+v", winner)
+		}
+	})
+}
+
+func TestBetterResolvedEntry_TieBreaksBySourceModel(t *testing.T) {
+	when := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := resolvedEntry{entry: leaderboardEntry{Name: "agent", Resolved: 90}, sourceModelName: "model-a", evaluatedAt: when}
+	b := resolvedEntry{entry: leaderboardEntry{Name: "agent", Resolved: 90}, sourceModelName: "model-b", evaluatedAt: when}
+	if !betterResolvedEntry(a, b) || betterResolvedEntry(b, a) {
+		t.Fatal("source model tie-break is not deterministic")
+	}
+}
+
+func TestEvidenceVersion_IsContentAddressed(t *testing.T) {
+	base := resolvedEntry{
+		entry:           leaderboardEntry{Name: "agent", Date: "2025-01-02", Resolved: 80},
+		sourceModelName: "model",
+	}
+	firstVersion := evidenceVersion(base)
+	secondVersion := evidenceVersion(base)
+	if firstVersion != secondVersion {
+		t.Fatal("identical evidence produced different versions")
+	}
+	changed := base
+	changed.entry.Resolved = 81
+	if evidenceVersion(base) == evidenceVersion(changed) {
+		t.Fatal("changed score reused the same evidence version")
+	}
+}
+
+func forEachPermutation(entries []resolvedEntry, check func([]resolvedEntry)) {
+	var visit func(int)
+	visit = func(index int) {
+		if index == len(entries) {
+			candidate := append([]resolvedEntry(nil), entries...)
+			check(candidate)
+			return
+		}
+		for i := index; i < len(entries); i++ {
+			entries[index], entries[i] = entries[i], entries[index]
+			visit(index + 1)
+			entries[index], entries[i] = entries[i], entries[index]
+		}
+	}
+	visit(0)
+}
 
 func TestFetchVerifiedEntries_ParsesEntries(t *testing.T) {
 	lf := leaderboardFile{
@@ -100,8 +171,14 @@ func TestExtractModelFromTags(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "multiple model tags returns first",
+			name:   "multiple distinct model tags are ambiguous",
 			tags:   []string{"Model: gpt-4o", "Model: o3-mini"},
+			want:   "",
+			wantOK: false,
+		},
+		{
+			name:   "duplicate model tags remain unambiguous",
+			tags:   []string{"Model: gpt-4o", "Model: gpt-4o"},
 			want:   "gpt-4o",
 			wantOK: true,
 		},

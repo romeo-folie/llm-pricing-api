@@ -57,6 +57,7 @@ func (a *asynqLogger) Debug(args ...any) { a.l.Debug().Msgf("%v", args) }
 func (a *asynqLogger) Info(args ...any)  { a.l.Info().Msgf("%v", args) }
 func (a *asynqLogger) Warn(args ...any)  { a.l.Warn().Msgf("%v", args) }
 func (a *asynqLogger) Error(args ...any) { a.l.Error().Msgf("%v", args) }
+
 // Fatal logs at FatalLevel (so downstream log processors and alerting rules
 // still see a fatal-severity event) without calling zerolog.Logger.Fatal,
 // which invokes os.Exit and would bypass all deferred cleanup in run().
@@ -133,10 +134,6 @@ func run() error {
 	rec := reconciler.New(db)
 	rec.SetLogger(log)
 	rec.SetRedisClient(redisClient)
-	// asynqClient is used by Handlers to enqueue follow-up tasks (e.g. recompute
-	// capability scores after a benchmark scrape completes).
-	asynqClient := asynq.NewClient(redisOpt)
-	defer asynqClient.Close()
 	h := worker.NewHandlers(store, rec, db)
 	h.SetLogger(log)
 
@@ -208,18 +205,9 @@ func run() error {
 		log.Error().Err(err).Msg("scheduler: register huggingface_llm")
 		return err
 	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskChatbotArenaScrape, nil)); err != nil {
-		log.Error().Err(err).Msg("scheduler: register chatbot_arena")
-		return err
-	}
-
-	// Intelligence recomputation cron schedules — daily.
+	// Daily recomputation is a safety net and refreshes per-dimension freshness.
 	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskRecomputeCapabilityScores, nil)); err != nil {
 		log.Error().Err(err).Msg("scheduler: register recompute_capability_scores")
-		return err
-	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskStalenessCheck, nil)); err != nil {
-		log.Error().Err(err).Msg("scheduler: register staleness_check")
 		return err
 	}
 
@@ -261,10 +249,8 @@ func run() error {
 		// Benchmark scrapers — initial run on startup.
 		{worker.TaskBFCLScrape, "bfcl", nil},
 		{worker.TaskHuggingFaceLLMScrape, "huggingface_llm", nil},
-		{worker.TaskChatbotArenaScrape, "chatbot_arena", nil},
 		// Intelligence tasks — initial run on startup.
 		{worker.TaskRecomputeCapabilityScores, "recompute_capability_scores", nil},
-		{worker.TaskStalenessCheck, "staleness_check", nil},
 	}
 	for _, t := range initialTasks {
 		opts := append([]asynq.Option{asynq.Unique(24 * time.Hour)}, t.opts...)

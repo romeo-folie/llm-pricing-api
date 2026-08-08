@@ -6,7 +6,7 @@ Stores and aggregates model benchmark scores into per-dimension capability score
 
 This package is the data layer for the "Use-Case Intelligence" feature. It manages:
 
-1. **Benchmark scores** — raw and normalised results from public LLM benchmarks (MMLU-Pro, SWE-bench, Chatbot Arena, etc.), stored per model.
+1. **Benchmark scores** — raw and normalised evidence from public benchmarks, stored as history with nullable upstream model and entry identities.
 2. **Capability scores** — aggregated per-dimension scores (quality, coding, reasoning, …) derived from benchmark data via a weighted-average formula.
 
 It sits between the scraper/ingestion layer (which feeds benchmark data in) and the API/recommendation layer (which reads capability scores out).
@@ -26,20 +26,21 @@ internal/intelligence/
 
 ### Types
 
-- **`BenchmarkScore`** — mirrors a `model_benchmark_scores` row. Fields: model ID, benchmark ID, raw/normalised score, confidence, source URL, evaluation date.
+- **`BenchmarkScore`** — mirrors a `model_benchmark_scores` row, including source URL, exact upstream model/entry names, confidence, immutable evaluation date, and latest source-observation time.
 - **`CapabilityScore`** — mirrors a `model_capability_scores` row. Fields: model ID, dimension, aggregated score, confidence, benchmark count, freshness.
 - **`AggregatedResult`** — intermediate output of the pure `Aggregate` function before DB upsert.
 
 ### Store Functions
 
-- `UpsertBenchmarkScore` / `GetBenchmarkScores` — write and read benchmark scores by model.
+- `UpsertBenchmarkScore` — idempotently inserts immutable, content-versioned benchmark history; identical retries update only `last_observed_at`.
+- `GetActiveBenchmarkScores` — reads one row per benchmark using source observation time, evaluation time, then stable evidence-content tie-breakers. Benchmark version strings are not parsed as recency signals.
 - `UpsertCapabilityScore` / `GetCapabilityScores` — write and read capability scores by model.
 
 ### Aggregation
 
-- `Aggregate(dimension, weights, scores, now)` — pure function that computes a weighted average for one dimension. Determines confidence (low/medium/high based on benchmark coverage) and freshness (stale if oldest score > 90 days).
-- `ComputeCapabilityScores(ctx, db, modelID)` — orchestrates: fetch benchmark scores → resolve benchmark names → aggregate per dimension → upsert results.
-- `ComputeAllCapabilityScores(ctx, db)` — iterates all models with benchmark data and recomputes.
+- `Aggregate(dimension, weights, scores, now)` — computes a weighted average, caps confidence by the contributing evidence, and marks the dimension stale when its oldest contributing score exceeds 90 days.
+- `ComputeCapabilityScores(ctx, db, modelID)` — transactionally replaces a model's supported capability dimensions and deletes obsolete dimensions.
+- `ComputeAllCapabilityScores(ctx, db)` — recomputes models appearing in either raw evidence or derived capability rows, so models that lose all evidence are cleaned up.
 
 ### Configuration
 
@@ -62,6 +63,8 @@ err := intelligence.UpsertBenchmarkScore(ctx, db, intelligence.BenchmarkScore{
     NormalizedScore:  &norm,
     BenchmarkVersion: "2024",
     SourceURL:        "https://example.com/leaderboard",
+    SourceModelName:  &upstreamModel,
+    SourceEntryName:  &upstreamEntry,
     Confidence:       "high",
     EvaluatedAt:      time.Now(),
 })

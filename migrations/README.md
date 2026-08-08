@@ -41,6 +41,8 @@ migrations/
   000016_seed_benchmark_scores.up.sql  # Seed benchmark/capability data
   000017_add_last_verified_at.up.sql   # Adds prices.last_verified_at (freshness anchor)
   000017_add_last_verified_at.down.sql
+  000018_add_benchmark_provenance.up.sql   # Upstream identities + active-evidence index
+  000018_add_benchmark_provenance.down.sql
   README.md                            # This file
 ```
 

@@ -7,6 +7,7 @@ package bfcl
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,14 +79,69 @@ type leaderboardEntry struct {
 	Tags     []string `json:"tags"`
 }
 
-// extractModelFromTags returns the first "Model: <value>" tag value, or ("", false).
+// resolvedEntry is a valid upstream agent-system result attached to a known
+// canonical model. Multiple submissions can use the same base model.
+type resolvedEntry struct {
+	entry           leaderboardEntry
+	sourceModelName string
+	slug            string
+	modelID         int
+	evaluatedAt     time.Time
+}
+
+// extractModelFromTags returns a model only when the submission identifies one
+// unambiguous base model. Multi-model agent systems are skipped because their
+// system-level score cannot be attributed safely to any one component model.
 func extractModelFromTags(tags []string) (string, bool) {
+	var model string
 	for _, tag := range tags {
-		if strings.HasPrefix(tag, "Model: ") {
-			return strings.TrimPrefix(tag, "Model: "), true
+		if !strings.HasPrefix(tag, "Model: ") {
+			continue
+		}
+		candidate := strings.TrimSpace(strings.TrimPrefix(tag, "Model: "))
+		if candidate == "" {
+			continue
+		}
+		if model != "" && candidate != model {
+			return "", false
+		}
+		model = candidate
+	}
+	return model, model != ""
+}
+
+// betterResolvedEntry defines the order-independent SWE-bench selection
+// policy: best resolved percentage, then newest evaluation, then stable
+// upstream identity tie-breakers.
+func betterResolvedEntry(a, b resolvedEntry) bool {
+	if a.entry.Resolved != b.entry.Resolved {
+		return a.entry.Resolved > b.entry.Resolved
+	}
+	if !a.evaluatedAt.Equal(b.evaluatedAt) {
+		return a.evaluatedAt.After(b.evaluatedAt)
+	}
+	if a.entry.Name != b.entry.Name {
+		return a.entry.Name < b.entry.Name
+	}
+	return a.sourceModelName < b.sourceModelName
+}
+
+func selectBestEntries(entries []resolvedEntry) map[int]resolvedEntry {
+	selected := make(map[int]resolvedEntry)
+	for _, candidate := range entries {
+		current, ok := selected[candidate.modelID]
+		if !ok || betterResolvedEntry(candidate, current) {
+			selected[candidate.modelID] = candidate
 		}
 	}
-	return "", false
+	return selected
+}
+
+func evidenceVersion(candidate resolvedEntry) string {
+	payload := fmt.Sprintf("%s\x00%s\x00%s\x00%.17g",
+		candidate.entry.Date, candidate.sourceModelName, candidate.entry.Name, candidate.entry.Resolved)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("swebench-%s-%x", candidate.entry.Date, sum[:8])
 }
 
 // Scrape fetches the SWE-bench Verified leaderboard, resolves model names to
@@ -100,11 +156,10 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("swebench: %w", err)
 	}
+	observedAt := time.Now().UTC()
 
-	now := time.Now().UTC()
-	version := fmt.Sprintf("swebench-%s", now.Format("2006-01"))
-
-	var matched, skipped, noTag int
+	var skipped, noTag, invalidDate int
+	resolved := make([]resolvedEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.Resolved <= 0 {
 			skipped++
@@ -131,36 +186,54 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			continue
 		}
 
-		// Resolved is already 0–100 percentage.
-		raw := e.Resolved
-		norm := e.Resolved
-
-		evaluatedAt := now
-		if e.Date != "" {
-			if t, parseErr := time.Parse("2006-01-02", e.Date); parseErr == nil {
-				evaluatedAt = t
-			}
+		evaluatedAt, parseErr := time.Parse("2006-01-02", e.Date)
+		if parseErr != nil {
+			s.logger.Debug().Str("entry", e.Name).Str("date", e.Date).Msg("swebench: invalid evaluation date — skipping")
+			invalidDate++
+			continue
 		}
 
+		resolved = append(resolved, resolvedEntry{
+			entry:           e,
+			sourceModelName: modelName,
+			slug:            slug,
+			modelID:         modelID,
+			evaluatedAt:     evaluatedAt,
+		})
+	}
+
+	selected := selectBestEntries(resolved)
+	for _, candidate := range selected {
+		// Resolved is already a 0–100 percentage. It is an official score for
+		// an agent system, but only indirect evidence about the base model.
+		raw := candidate.entry.Resolved
+		norm := candidate.entry.Resolved
+		sourceModelName := candidate.sourceModelName
+		sourceEntryName := candidate.entry.Name
+
 		if err := intelligence.UpsertBenchmarkScore(ctx, s.db, intelligence.BenchmarkScore{
-			ModelID:          modelID,
+			ModelID:          candidate.modelID,
 			BenchmarkID:      benchmarkID,
 			RawScore:         &raw,
 			NormalizedScore:  &norm,
-			BenchmarkVersion: version,
+			BenchmarkVersion: evidenceVersion(candidate),
 			SourceURL:        sourceURL,
-			Confidence:       "high",
-			EvaluatedAt:      evaluatedAt,
+			SourceModelName:  &sourceModelName,
+			SourceEntryName:  &sourceEntryName,
+			Confidence:       "low",
+			EvaluatedAt:      candidate.evaluatedAt,
+			LastObservedAt:   observedAt,
 		}); err != nil {
-			return fmt.Errorf("swebench: upsert score for %s: %w", slug, err)
+			return fmt.Errorf("swebench: upsert score for %s: %w", candidate.slug, err)
 		}
-		matched++
 	}
 
 	s.logger.Info().
-		Int("matched", matched).
+		Int("matched", len(selected)).
 		Int("skipped", skipped).
 		Int("no_model_tag", noTag).
+		Int("invalid_date", invalidDate).
+		Int("duplicate_submissions", len(resolved)-len(selected)).
 		Int("total_entries", len(entries)).
 		Msg("swebench: scrape complete")
 	return nil

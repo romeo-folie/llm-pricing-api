@@ -3,6 +3,7 @@ package intelligence
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +34,7 @@ const StalenessThresholdDays = 90
 type scoreEntry struct {
 	Normalized  float64
 	EvaluatedAt time.Time
+	Confidence  string
 }
 
 // AggregatedResult holds the computed capability score for one dimension.
@@ -50,6 +52,7 @@ type AggregatedResult struct {
 func Aggregate(dimension string, weights map[string]float64, scores map[string]scoreEntry, now time.Time) *AggregatedResult {
 	var weightedSum, totalWeight float64
 	var oldestEval time.Time
+	evidenceConfidence := "high"
 	count := 0
 
 	for benchName, weight := range weights {
@@ -60,6 +63,7 @@ func Aggregate(dimension string, weights map[string]float64, scores map[string]s
 		weightedSum += entry.Normalized * weight
 		totalWeight += weight
 		count++
+		evidenceConfidence = lowerConfidence(evidenceConfidence, entry.Confidence)
 		if oldestEval.IsZero() || entry.EvaluatedAt.Before(oldestEval) {
 			oldestEval = entry.EvaluatedAt
 		}
@@ -83,6 +87,10 @@ func Aggregate(dimension string, weights map[string]float64, scores map[string]s
 	if float64(count) >= float64(len(weights)) {
 		confidence = "high"
 	}
+	// Coverage cannot make a capability more trustworthy than its underlying
+	// evidence. This is especially important for SWE-bench, whose public scores
+	// describe complete agent systems rather than isolated base-model ability.
+	confidence = lowerConfidence(confidence, evidenceConfidence)
 
 	return &AggregatedResult{
 		Dimension:      dimension,
@@ -91,6 +99,25 @@ func Aggregate(dimension string, weights map[string]float64, scores map[string]s
 		BenchmarkCount: count,
 		Freshness:      freshness,
 	}
+}
+
+func lowerConfidence(a, b string) string {
+	normalize := func(value string) (string, int) {
+		switch value {
+		case "high":
+			return "high", 2
+		case "medium":
+			return "medium", 1
+		default:
+			return "low", 0
+		}
+	}
+	normalizedA, rankA := normalize(a)
+	normalizedB, rankB := normalize(b)
+	if rankB < rankA {
+		return normalizedB
+	}
+	return normalizedA
 }
 
 // benchmarkInfo holds the id-to-name mapping fetched from the benchmarks table.
@@ -141,7 +168,19 @@ func computeCapabilityScoresWithBenchmarks(
 	modelID int,
 	benchmarksByID map[string]benchmarkInfo,
 ) error {
-	scores, err := GetBenchmarkScores(ctx, db, modelID)
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin capability replacement: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Each live scraper triggers a full recomputation. Serialize replacement per
+	// model so an overlapping transaction cannot commit results derived from an
+	// older evidence snapshot after a newer replacement.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(1280068944, $1)`, modelID); err != nil {
+		return fmt.Errorf("lock model capability replacement: %w", err)
+	}
+
+	scores, err := GetActiveBenchmarkScores(ctx, tx, modelID)
 	if err != nil {
 		return err
 	}
@@ -158,16 +197,24 @@ func computeCapabilityScoresWithBenchmarks(
 		scoreByName[b.name] = scoreEntry{
 			Normalized:  *s.NormalizedScore,
 			EvaluatedAt: s.EvaluatedAt,
+			Confidence:  s.Confidence,
 		}
 	}
 
 	now := time.Now()
-	for dimension, weights := range DimensionBenchmarks {
+	activeDimensions := make([]string, 0, len(DimensionBenchmarks))
+	dimensions := make([]string, 0, len(DimensionBenchmarks))
+	for dimension := range DimensionBenchmarks {
+		dimensions = append(dimensions, dimension)
+	}
+	sort.Strings(dimensions)
+	for _, dimension := range dimensions {
+		weights := DimensionBenchmarks[dimension]
 		result := Aggregate(dimension, weights, scoreByName, now)
 		if result == nil {
 			continue
 		}
-		if err := UpsertCapabilityScore(ctx, db, CapabilityScore{
+		if err := UpsertCapabilityScore(ctx, tx, CapabilityScore{
 			ModelID:        modelID,
 			Dimension:      result.Dimension,
 			Score:          &result.Score,
@@ -177,6 +224,18 @@ func computeCapabilityScoresWithBenchmarks(
 		}); err != nil {
 			return err
 		}
+		activeDimensions = append(activeDimensions, result.Dimension)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM model_capability_scores
+		WHERE model_id = $1 AND NOT (dimension = ANY($2::text[]))
+	`, modelID, activeDimensions); err != nil {
+		return fmt.Errorf("delete obsolete capability scores: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit capability replacement: %w", err)
 	}
 	return nil
 }
@@ -191,7 +250,13 @@ func ComputeAllCapabilityScores(ctx context.Context, db *pgxpool.Pool) error {
 		return fmt.Errorf("fetch benchmarks: %w", err)
 	}
 
-	rows, err := db.Query(ctx, `SELECT DISTINCT model_id FROM model_benchmark_scores`)
+	// Include models that only have derived rows so deleted evidence removes
+	// their obsolete capability scores on the next batch recomputation.
+	rows, err := db.Query(ctx, `
+		SELECT model_id FROM model_benchmark_scores
+		UNION
+		SELECT model_id FROM model_capability_scores
+	`)
 	if err != nil {
 		return err
 	}
@@ -208,6 +273,7 @@ func ComputeAllCapabilityScores(ctx context.Context, db *pgxpool.Pool) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	rows.Close()
 
 	for _, id := range modelIDs {
 		if err := ctx.Err(); err != nil {
