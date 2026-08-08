@@ -80,10 +80,6 @@ const FAQ = [
     a: "You can ask natural language questions like 'Cheapest model for summarization?', 'Models under $1/M input?', or 'Which providers dropped prices recently?'.",
   },
   {
-    q: "How do GPT-4o and Claude 3.5 pricing compare?",
-    a: "GPT-4o is currently more aggressive on input pricing ($2.50 vs $3.00 per 1M tokens), while output costs are highly competitive across both. Use our comparison tool for live deltas.",
-  },
-  {
     q: "Are webhook payloads signed?",
     a: "Yes. Webhook events are signed with HMAC-SHA256 using your secret key so recipients can verify they originated from LLMRates.",
   },
