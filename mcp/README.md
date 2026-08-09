@@ -52,14 +52,14 @@ npx @llmrates/mcp
 
 ## Tools
 
-| Tool | Description | Required params | Tier |
-|------|-------------|-----------------|------|
-| `get_cheapest_model` | Find the cheapest model matching your task requirements. Returns a ranked list with pricing and trust metadata. | `task` | Developer |
-| `compare_models` | Compare up to 5 models side-by-side with current pricing and trust metadata. | `models` (array, 2–5 IDs) | Free |
-| `get_price_history` | Retrieve the full pricing history for a specific model with timestamped records and source attribution. | `model_id` | Developer |
-| `get_recent_changes` | Get recent LLM pricing changes across all providers, optionally filtered by provider or time range. | — | Free |
-| `get_context_snapshot` | Get a ~2k-token pricing snapshot optimised for agent system prompts. Supports `json` and `markdown` output. | — | Developer |
-| `subscribe_to_changes` | Register an HTTPS webhook URL to receive real-time notifications when prices change. | `url` | Pro |
+| Tool | Description | Required params | Access |
+|------|-------------|-----------------|--------|
+| `get_cheapest_model` | Find the cheapest model matching your task requirements. Returns a ranked list with pricing and trust metadata. | `task` | API key |
+| `compare_models` | Compare up to 5 models side-by-side with current pricing and trust metadata. | `models` (array, 2–5 IDs) | API key |
+| `get_price_history` | Retrieve the full pricing history for a specific model with timestamped records and source attribution. | `model_id` | API key |
+| `get_recent_changes` | Get recent LLM pricing changes across all providers, optionally filtered by provider or time range. | — | API key |
+| `get_context_snapshot` | Get a ~2k-token pricing snapshot optimised for agent system prompts. Supports `json` and `markdown` output. | — | API key |
+| `subscribe_to_changes` | Register an HTTPS webhook URL to receive real-time notifications when prices change. | `url` | API key |
 
 ### Tool details
 
@@ -170,15 +170,17 @@ npx @llmrates/mcp
 
 ---
 
-## Tiers
+## Access
 
-| Tier | Price | Rate limit | Tools available |
-|------|-------|------------|-----------------|
-| Free | $0/month | 100 req/day | `compare_models`, `get_recent_changes` |
-| Developer | $14.99/month | 10,000 req/day | All tools except `subscribe_to_changes` |
-| Pro | $29.99/month | Unlimited | All tools including webhooks + SLA |
+**The API is free.** Every tool works with any valid API key — there is no paid plan, no per-tool
+entitlement, and no meaningful daily request cap.
 
-Tools that require a higher tier return a descriptive error message — no silent failures.
+Keys carry a `free` / `developer` / `pro` tier in their Unkey metadata, but nothing gates on it.
+All three behave identically, including for `subscribe_to_changes`.
+
+`subscribe_to_changes` only accepts `https` URLs, and rejects any URL resolving to a private or
+loopback address. Each API key may hold at most **5 active webhooks**; a 6th returns a conflict
+error. Unsubscribing frees a slot. All failures return a descriptive error — no silent failures.
 
 ---
 

@@ -52,7 +52,9 @@ Fiber middleware for the LLM Pricing API. This package provides authentication, 
 free  <  developer  <  pro
 ```
 
-`RequireTier("developer")` passes for `developer` and `pro` but returns `403` for `free`.
+**There is no tier gating.** `RequireTier` was removed once the API became free — no endpoint,
+including webhook registration, checks the tier. The tier constants remain because the rate limiter
+and the Prometheus `tier` label still read them.
 
 ### RFC 7807 error format
 
@@ -97,11 +99,17 @@ The SHA-256 hash is read from `c.Locals("key_hash")`, which is set by the `Auth`
 
 ### Tier limits
 
+**The API is free and daily limits are effectively unlimited.** The counters remain so that
+per-key usage is still tracked for abuse analytics.
+
 | Tier | Daily limit |
 | --- | --- |
-| `free` | 100 requests |
-| `developer` | 10,000 requests |
+| `free` | 1,000,000 requests (`rateLimitFree`) |
+| `developer` | 1,000,000 requests (`rateLimitDeveloper`) |
 | `pro` | unlimited (no counter touched) |
+
+`free` and `developer` are the same number — the distinction is currently meaningless. Only `pro`
+behaves differently, by skipping the counter entirely.
 
 ### Counter design
 
@@ -126,7 +134,7 @@ When the limit is exceeded:
   "type": "https://llmrates.live/errors/rate-limited",
   "title": "Too Many Requests",
   "status": 429,
-  "detail": "daily limit of 100 requests exceeded; resets at midnight UTC"
+  "detail": "daily limit of 1000000 requests exceeded; resets at midnight UTC"
 }
 ```
 
@@ -160,9 +168,8 @@ v1 := app.Group("/v1",
     middleware.RateLimit(redisClient),
 )
 
-// Per-route tier gating
-v1.Get("/models/:id/history", middleware.RequireTier(middleware.TierDeveloper), historyHandler)
-v1.Post("/webhooks", middleware.RequireTier(middleware.TierPro), webhookHandler)
+// No per-route tier gating — every /v1 route is reachable with any valid key
+v1.Post("/webhooks", webhookHandler)
 ```
 
 ## Configuration

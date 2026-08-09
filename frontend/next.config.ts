@@ -12,12 +12,12 @@ const ContentSecurityPolicy = `
   font-src 'self' data: https://fonts.scalar.com;
   img-src 'self' data: blob: https:;
   media-src 'self';
-  connect-src 'self' https://api.llmrates.live https://cdn.jsdelivr.net https://checkout.lemonsqueezy.com https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://*.analytics.google.com;
+  connect-src 'self' https://api.llmrates.live https://cdn.jsdelivr.net https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://*.analytics.google.com;
   worker-src 'self' blob:;
-  frame-src https://checkout.lemonsqueezy.com;
+  frame-src 'none';
   object-src 'none';
   base-uri 'self';
-  form-action 'self' https://checkout.lemonsqueezy.com;
+  form-action 'self';
   upgrade-insecure-requests;
 `.replace(/\s{2,}/g, " ").trim()
 

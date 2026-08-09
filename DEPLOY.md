@@ -134,24 +134,23 @@ curl -s "https://${RAILWAY_URL}/health" | jq .
 
 If status is `degraded`, check the database and Redis connection strings.
 
-### 8. Obtain a developer-tier (or higher) API key from Unkey
+### 8. Obtain an API key from Unkey
 
-Before running the load test you need a valid API key.
-**Important**: the load test sends 10,000 requests. A free-tier key allows only
-100 requests/day — using one would cause 429 responses after the first 100
-requests and produce meaningless p99 results. Use a developer-tier key (10k/day)
-or a pro-tier key (unlimited).
+Before running the load test you need a valid API key. Any tier works: the daily
+limit is 1,000,000 requests for both `free` and `developer` keys, and `pro` keys
+skip the counter entirely, so a 10,000-request load test will not hit a 429.
 
 1. Log in to https://app.unkey.com.
 2. Navigate to the API created for this project (`UNKEY_API_ID`).
-3. Create a new key with the `developer` (or `pro`) tier in the metadata.
+3. Create a new key. Set `pro` in the tier metadata only if you also need to
+   exercise the webhook endpoints — that is the only tier-gated route group.
 4. Copy the key — it will not be shown again.
 
 ### 9. Warm cache and run load test
 
 ```bash
 RAILWAY_URL=$(railway domain)
-DEV_KEY=<your-developer-or-pro-tier-api-key>
+DEV_KEY=<your-api-key>
 
 # Warm the cache with a single request
 curl -s -o /dev/null \
