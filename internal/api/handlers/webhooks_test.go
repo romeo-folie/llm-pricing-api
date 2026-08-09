@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"testing"
@@ -65,8 +66,8 @@ func newWebhookApp(store handlers.WebhookStore, tier, keyHash string, urlValidat
 
 	// Register only the webhook routes using the supplied mock store.
 	wh := &handlers.WebhookHandlerExport{Store: store, UrlValidator: urlValidator}
-	v1.Post("/webhooks", middleware.RequireTier("pro"), wh.Create)
-	v1.Delete("/webhooks/:id", middleware.RequireTier("pro"), wh.Delete)
+	v1.Post("/webhooks", wh.Create)
+	v1.Delete("/webhooks/:id", wh.Delete)
 
 	return app
 }
@@ -141,33 +142,56 @@ func TestCreateWebhook_MissingURL_Returns400(t *testing.T) {
 	}
 }
 
-func TestCreateWebhook_FreeTier_Returns403(t *testing.T) {
+// Webhook registration is no longer tier-gated: the API is free and any valid
+// API key may register a webhook. These two tests pin that — a regression that
+// re-introduced RequireTier would turn them red.
+func TestCreateWebhook_FreeTier_Succeeds(t *testing.T) {
 	app := newWebhookApp(&mockWebhookStore{}, "free", "testhash", noopURLValidator)
 
 	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
 	status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
 
-	if status != fiber.StatusForbidden {
-		t.Fatalf("expected 403 for free tier, got %d; body: %s", status, respBody)
+	if status != fiber.StatusCreated {
+		t.Fatalf("expected 201 for free tier, got %d; body: %s", status, respBody)
+	}
+}
+
+func TestCreateWebhook_DeveloperTier_Succeeds(t *testing.T) {
+	app := newWebhookApp(&mockWebhookStore{}, "developer", "testhash", noopURLValidator)
+
+	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
+	status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
+
+	if status != fiber.StatusCreated {
+		t.Fatalf("expected 201 for developer tier, got %d; body: %s", status, respBody)
+	}
+}
+
+// A key at the cap gets a 409 with the limit surfaced in the problem detail.
+func TestCreateWebhook_AtLimit_Returns409(t *testing.T) {
+	store := &mockWebhookStore{
+		createFunc: func(_ context.Context, _, _, _ string) (handlers.WebhookRecord, error) {
+			return handlers.WebhookRecord{}, handlers.ErrWebhookLimitReached
+		},
+	}
+	app := newWebhookApp(store, "free", "testhash", noopURLValidator)
+
+	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
+	status, respBody := doRequest(app, "POST", "/v1/webhooks", body)
+
+	if status != fiber.StatusConflict {
+		t.Fatalf("expected 409 at webhook limit, got %d; body: %s", status, respBody)
 	}
 
 	var pd api.ProblemDetail
 	if err := json.Unmarshal(respBody, &pd); err != nil {
 		t.Fatalf("unmarshal problem detail: %v", err)
 	}
-	if pd.Status != fiber.StatusForbidden {
-		t.Errorf("expected status=403 in problem detail, got %d", pd.Status)
+	if pd.Status != fiber.StatusConflict {
+		t.Errorf("expected status=409 in problem detail, got %d", pd.Status)
 	}
-}
-
-func TestCreateWebhook_DeveloperTier_Returns403(t *testing.T) {
-	app := newWebhookApp(&mockWebhookStore{}, "developer", "testhash", noopURLValidator)
-
-	body := bytes.NewBufferString(`{"url":"https://example.com/hook"}`)
-	status, _ := doRequest(app, "POST", "/v1/webhooks", body)
-
-	if status != fiber.StatusForbidden {
-		t.Fatalf("expected 403 for developer tier, got %d", status)
+	if got := pd.Extensions["max_webhooks"]; fmt.Sprintf("%v", got) != "5" {
+		t.Errorf("expected max_webhooks=5 extension, got %v", got)
 	}
 }
 

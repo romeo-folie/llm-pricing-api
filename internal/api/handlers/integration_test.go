@@ -268,7 +268,6 @@ func setupTestApp(t *testing.T) (*fiber.App, *pgxpool.Pool, *redis.Client) {
 		t.Fatalf("register SSE: %v", err)
 	}
 	handlers.RegisterDiscovery(app, db, rdb)
-	handlers.RegisterPublic(app, db, rdb)
 
 	return app, db, rdb
 }
@@ -410,58 +409,6 @@ func TestIntegrationFreeKey_ContextEndpoint_Returns200(t *testing.T) {
 
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
-	}
-}
-
-func TestIntegrationTierGating_FreeKey_WebhooksEndpoint_Returns403(t *testing.T) {
-	app, _, _ := setupTestApp(t)
-
-	status, body := apiPost(t, app, "/v1/webhooks", freeAuth, map[string]string{"url": "https://example.com/hook"})
-
-	assertTierGating403(t, status, body, middleware.TierPro)
-}
-
-// assertTierGating403 verifies the response is a 403 RFC 7807 problem detail
-// with a tier_required extension field set to the expected tier.
-func assertTierGating403(t *testing.T, status int, body []byte, expectedTier string) {
-	t.Helper()
-
-	if status != fiber.StatusForbidden {
-		t.Fatalf("expected 403, got %d; body: %s", status, body)
-	}
-
-	var problem struct {
-		Type       string         `json:"type"`
-		Title      string         `json:"title"`
-		Status     int            `json:"status"`
-		Detail     string         `json:"detail"`
-		Extensions map[string]any `json:"extensions"`
-	}
-	if err := json.Unmarshal(body, &problem); err != nil {
-		t.Fatalf("unmarshal problem: %v; body: %s", err, body)
-	}
-	if problem.Status != 403 {
-		t.Errorf("problem.status: expected 403, got %d", problem.Status)
-	}
-	if problem.Type == "" {
-		t.Error("problem.type must not be empty")
-	}
-	if problem.Title == "" {
-		t.Error("problem.title must not be empty")
-	}
-
-	// Verify tier_required extension field.
-	if problem.Extensions == nil {
-		t.Error("403 response must include extensions with tier_required")
-		return
-	}
-	tierRequired, ok := problem.Extensions["tier_required"]
-	if !ok {
-		t.Errorf("extensions must contain tier_required; got: %v", problem.Extensions)
-		return
-	}
-	if fmt.Sprintf("%v", tierRequired) != expectedTier {
-		t.Errorf("tier_required: expected %q, got %v", expectedTier, tierRequired)
 	}
 }
 
@@ -660,7 +607,9 @@ func TestIntegrationPagination_SecondPage_ReturnsCorrectSlice(t *testing.T) {
 		t.Fatalf("page 1: expected 200, got %d; body: %s", status1, body1)
 	}
 	var env1 struct {
-		Data []struct{ ID int `json:"id"` } `json:"data"`
+		Data []struct {
+			ID int `json:"id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body1, &env1); err != nil {
 		t.Fatalf("unmarshal page 1: %v", err)
@@ -686,7 +635,9 @@ func TestIntegrationPagination_SecondPage_ReturnsCorrectSlice(t *testing.T) {
 	}
 
 	var env2 struct {
-		Data []struct{ ID int `json:"id"` } `json:"data"`
+		Data []struct {
+			ID int `json:"id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body2, &env2); err != nil {
 		t.Fatalf("unmarshal page 2: %v", err)
@@ -986,14 +937,53 @@ func TestIntegrationWebhooks_ProKey_Delete_Returns204(t *testing.T) {
 	}
 }
 
-func TestIntegrationWebhooks_FreeKey_Create_Returns403(t *testing.T) {
+// Webhook registration is not tier-gated — a free-tier key can register one.
+func TestIntegrationWebhooks_FreeKey_Create_Returns201(t *testing.T) {
 	app, _, _ := setupTestApp(t)
 
 	status, body := apiPost(t, app, "/v1/webhooks", freeAuth, map[string]string{
 		"url": "https://example.com/webhook",
 	})
 
-	assertTierGating403(t, status, body, middleware.TierPro)
+	if status != fiber.StatusCreated {
+		t.Fatalf("expected 201 for free-tier key, got %d; body: %s", status, body)
+	}
+}
+
+// Exercises the cap in real SQL: the 6th active webhook for one key is refused.
+// This covers the conditional INSERT, which the handler-level unit test cannot.
+func TestIntegrationWebhooks_PerKeyCap_SixthReturns409(t *testing.T) {
+	app, _, _ := setupTestApp(t)
+
+	for i := 0; i < 5; i++ {
+		status, body := apiPost(t, app, "/v1/webhooks", freeAuth, map[string]string{
+			"url": fmt.Sprintf("https://example.com/hook-%d", i),
+		})
+		if status != fiber.StatusCreated {
+			t.Fatalf("webhook %d: expected 201, got %d; body: %s", i, status, body)
+		}
+	}
+
+	status, body := apiPost(t, app, "/v1/webhooks", freeAuth, map[string]string{
+		"url": "https://example.com/hook-overflow",
+	})
+	if status != fiber.StatusConflict {
+		t.Fatalf("6th webhook: expected 409, got %d; body: %s", status, body)
+	}
+
+	var problem struct {
+		Status     int            `json:"status"`
+		Extensions map[string]any `json:"extensions"`
+	}
+	if err := json.Unmarshal(body, &problem); err != nil {
+		t.Fatalf("unmarshal problem: %v; body: %s", err, body)
+	}
+	if problem.Status != fiber.StatusConflict {
+		t.Errorf("problem.status: expected 409, got %d", problem.Status)
+	}
+	if got := problem.Extensions["max_webhooks"]; fmt.Sprintf("%v", got) != "5" {
+		t.Errorf("expected max_webhooks=5, got %v", got)
+	}
 }
 
 // -----------------------------------------------------------------------

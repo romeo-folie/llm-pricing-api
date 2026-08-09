@@ -35,13 +35,6 @@ const (
 	LocalKeyHash = "key_hash"
 )
 
-// tierOrder defines the precedence of API key tiers (ascending).
-var tierOrder = map[string]int{
-	TierFree:      0,
-	TierDeveloper: 1,
-	TierPro:       2,
-}
-
 // UnkeyVerifier abstracts the Unkey key-verification call so the middleware
 // can be tested without hitting the real Unkey API.
 type UnkeyVerifier interface {
@@ -197,25 +190,4 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	c.Locals(LocalKeyTier, tier)
 	c.Locals(LocalKeyHash, hash)
 	return c.Next()
-}
-
-// RequireTier returns a middleware that enforces a minimum tier.
-// Tiers are ordered: free < developer < pro.
-// If the request's tier is below minTier the handler returns 403 with a
-// tier_required field in the RFC 7807 extensions.
-func RequireTier(minTier string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		actual, _ := c.Locals(LocalKeyTier).(string)
-		if !tierAtLeast(actual, minTier) {
-			pd := api.NewForbidden(fmt.Sprintf("this endpoint requires the %s tier or above", minTier))
-			pd.Extensions = map[string]any{"tier_required": minTier}
-			return pd
-		}
-		return c.Next()
-	}
-}
-
-// tierAtLeast returns true when actual >= required in the tier order.
-func tierAtLeast(actual, required string) bool {
-	return tierOrder[actual] >= tierOrder[required]
 }
