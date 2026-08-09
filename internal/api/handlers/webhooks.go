@@ -8,12 +8,14 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
@@ -41,6 +43,8 @@ type createWebhookResponse struct {
 type WebhookStore interface {
 	// CreateWebhook inserts a new webhook registration and returns the created record.
 	// secret is stored encrypted in the DB; the reconciler decrypts it before use.
+	// Returns ErrWebhookLimitReached when the key already holds maxWebhooksPerKey
+	// active webhooks.
 	CreateWebhook(ctx context.Context, apiKeyHash, webhookURL, secret string) (WebhookRecord, error)
 
 	// DeleteWebhook soft-deletes a webhook by ID, scoped to the given apiKeyHash
@@ -51,6 +55,16 @@ type WebhookStore interface {
 
 // ErrWebhookNotFound is returned by DeleteWebhook when no matching row is found.
 var ErrWebhookNotFound = fmt.Errorf("webhook not found")
+
+// ErrWebhookLimitReached is returned by CreateWebhook when the calling key
+// already holds maxWebhooksPerKey active webhooks.
+var ErrWebhookLimitReached = fmt.Errorf("webhook limit reached")
+
+// maxWebhooksPerKey caps how many active (non-deleted) webhooks a single API
+// key may hold. Registration is no longer tier-gated, so this is what bounds
+// delivery fan-out per key: every confirmed price change enqueues one delivery
+// job per active webhook.
+const maxWebhooksPerKey = 5
 
 // pgxWebhookStore is the PostgreSQL-backed implementation of WebhookStore.
 type pgxWebhookStore struct {
@@ -63,12 +77,23 @@ func NewWebhookStore(db *pgxpool.Pool) WebhookStore {
 }
 
 func (s *pgxWebhookStore) CreateWebhook(ctx context.Context, apiKeyHash, webhookURL, secret string) (WebhookRecord, error) {
+	// The cap is enforced inside the INSERT rather than as a separate SELECT
+	// count, so two concurrent registrations cannot both observe count == 4 and
+	// both insert. When the key is at the cap the SELECT yields no row, the
+	// INSERT affects nothing, and Scan reports pgx.ErrNoRows.
 	var rec WebhookRecord
 	err := s.db.QueryRow(ctx, `
 		INSERT INTO webhooks (api_key_hash, url, secret)
-		VALUES ($1, $2, $3)
+		SELECT $1, $2, $3
+		WHERE (
+			SELECT count(*) FROM webhooks
+			WHERE api_key_hash = $1 AND deleted_at IS NULL
+		) < $4
 		RETURNING id, url, created_at
-	`, apiKeyHash, webhookURL, secret).Scan(&rec.ID, &rec.URL, &rec.CreatedAt)
+	`, apiKeyHash, webhookURL, secret, maxWebhooksPerKey).Scan(&rec.ID, &rec.URL, &rec.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return WebhookRecord{}, ErrWebhookLimitReached
+	}
 	if err != nil {
 		return WebhookRecord{}, fmt.Errorf("create webhook: %w", err)
 	}
@@ -271,6 +296,13 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	}
 
 	rec, err := h.store.CreateWebhook(c.Context(), apiKeyHash, body.URL, secretToStore)
+	if errors.Is(err, ErrWebhookLimitReached) {
+		pd := api.NewConflict(fmt.Sprintf(
+			"this API key already has the maximum of %d active webhooks; delete one before registering another",
+			maxWebhooksPerKey))
+		pd.Extensions = map[string]any{"max_webhooks": maxWebhooksPerKey}
+		return pd
+	}
 	if err != nil {
 		return api.NewInternalError("failed to register webhook")
 	}
