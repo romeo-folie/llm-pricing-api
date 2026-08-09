@@ -19,9 +19,19 @@ const (
 
 	// Benchmark scraper tasks — daily cron jobs that fetch scores from
 	// external leaderboards and upsert into model_benchmark_scores.
-	TaskBFCLScrape           = "benchmark:bfcl"
-	TaskHuggingFaceLLMScrape = "benchmark:huggingface_llm"
-	TaskChatbotArenaScrape   = "benchmark:chatbot_arena"
+	TaskSWEBenchScrape      = "benchmark:swebench"
+	TaskLiveCodeBenchScrape = "benchmark:livecodebench"
+	TaskChatbotArenaScrape  = "benchmark:chatbot_arena"
+
+	// Deprecated task-type names. These are the wire values used before the
+	// bfcl → swebench and huggingface_llm → livecodebench renames. Handlers stay
+	// registered for them so that tasks already sitting in Redis at deploy time
+	// still dispatch instead of being archived as "handler not found".
+	//
+	// Safe to delete once no queued task predates the rename — one cron cycle
+	// (24h) after the deploy that introduced it.
+	TaskBFCLScrapeDeprecated           = "benchmark:bfcl"
+	TaskHuggingFaceLLMScrapeDeprecated = "benchmark:huggingface_llm"
 
 	// Intelligence recomputation tasks — run after benchmark scrapes
 	// to keep capability scores and freshness indicators current.
