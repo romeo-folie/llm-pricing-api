@@ -264,7 +264,7 @@ func newTestApp(store auth.Store, mailer auth.Mailer) *fiber.App {
 func newTestAppWithIssuer(store auth.Store, mailer auth.Mailer, issuer auth.KeyIssuer) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, issuer, testCfg, log)
+	h := auth.New(store, mailer, issuer, nil, testCfg, log)
 	authGroup := app.Group("/auth")
 	auth.Register(authGroup, h)
 	return app
@@ -502,7 +502,7 @@ func TestRequestLink_SignupDisabled_Returns503(t *testing.T) {
 	disabledCfg.SignupEnabled = false
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, &mockIssuer{}, disabledCfg, log)
+	h := auth.New(store, mailer, &mockIssuer{}, nil, disabledCfg, log)
 	authGroup := app.Group("/auth")
 	auth.Register(authGroup, h)
 
@@ -763,5 +763,72 @@ func TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew(t *testing.T) {
 		t.Error("expected RevokeKey to be called for old-prov-id, but it was not called")
 	} else if revoked[0] != "old-prov-id" {
 		t.Errorf("expected RevokeKey called with old-prov-id, got %v", revoked[0])
+	}
+}
+
+// ── AbuseGuard wiring ────────────────────────────────────────────────────────
+
+// stubGuard returns a fixed error from CheckRequestLink so the handler's
+// error-mapping can be exercised without Redis.
+type stubGuard struct {
+	requestErr    error
+	regenerateErr error
+}
+
+func (g *stubGuard) CheckRequestLink(_ context.Context, _, _ string) error { return g.requestErr }
+func (g *stubGuard) CheckRegenerateKey(_ context.Context, _ string) error  { return g.regenerateErr }
+
+func newTestAppWithGuard(store auth.Store, mailer auth.Mailer, guard auth.AbuseGuard) *fiber.App {
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	h := auth.New(store, mailer, &mockIssuer{}, guard, testCfg, zerolog.Nop())
+	auth.Register(app.Group("/auth"), h)
+	return app
+}
+
+func TestRequestLink_DisposableDomain_Returns400(t *testing.T) {
+	mailer := &mockMailer{}
+	app := newTestAppWithGuard(newMockStore(), mailer, &stubGuard{requestErr: signup.ErrDisposableDomain})
+
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"a@mailinator.com"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for disposable domain, got %d", resp.StatusCode)
+	}
+	if len(mailer.sendCalls) != 0 {
+		t.Errorf("no email should be sent for a blocked domain, got %d", len(mailer.sendCalls))
+	}
+}
+
+func TestRequestLink_RateLimited_Returns429(t *testing.T) {
+	mailer := &mockMailer{}
+	app := newTestAppWithGuard(newMockStore(), mailer, &stubGuard{requestErr: signup.ErrRateLimited})
+
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"a@example.com"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusTooManyRequests {
+		t.Fatalf("expected 429 when IP rate-limited, got %d", resp.StatusCode)
+	}
+	if len(mailer.sendCalls) != 0 {
+		t.Errorf("no email should be sent when rate-limited, got %d", len(mailer.sendCalls))
+	}
+}
+
+// The resend cooldown protects a third party's inbox, so it must be
+// indistinguishable from success — a 429 here would reveal that a link was
+// recently sent to this address. The send itself must still be suppressed.
+func TestRequestLink_ResendCooldown_LooksLikeSuccessButSendsNothing(t *testing.T) {
+	mailer := &mockMailer{}
+	app := newTestAppWithGuard(newMockStore(), mailer, &stubGuard{requestErr: signup.ErrResendCooldown})
+
+	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"victim@example.com"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200 during resend cooldown, got %d", resp.StatusCode)
+	}
+	if len(mailer.sendCalls) != 0 {
+		t.Fatalf("cooldown must suppress the email, but %d were sent", len(mailer.sendCalls))
 	}
 }

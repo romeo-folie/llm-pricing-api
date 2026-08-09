@@ -62,7 +62,7 @@ type Config struct {
 	MagicLinkPath           string
 	SignupSessionCookieName string
 	SignupSessionTTLHours   int
-	SignupSessionSecure      bool
+	SignupSessionSecure     bool
 	// SigningSecret is used both to sign session cookies (HMAC) and as the
 	// MAGIC_LINK_SIGNING_SECRET for any future token HMAC layer. Currently
 	// token hashing uses plain SHA-256 (see signup.HashToken in store.go).
@@ -72,18 +72,34 @@ type Config struct {
 	SignupEnabled bool
 }
 
+// AbuseGuard enforces the signup abuse controls. Implemented by
+// *signup.AbuseGuard; kept as an interface so tests can substitute or omit it.
+type AbuseGuard interface {
+	// CheckRequestLink applies the disposable-domain block, the per-IP hourly
+	// rate limit, and the per-email resend cooldown.
+	CheckRequestLink(ctx context.Context, ip, email string) error
+	// CheckRegenerateKey applies the per-identity regeneration cooldown.
+	CheckRegenerateKey(ctx context.Context, identityID string) error
+}
+
 // Handler handles magic-link auth endpoints.
 type Handler struct {
 	store  Store
 	mailer Mailer
 	issuer KeyIssuer
+	guard  AbuseGuard
 	cfg    Config
 	log    zerolog.Logger
 }
 
 // New constructs an auth Handler.
-func New(store Store, mailer Mailer, issuer KeyIssuer, cfg Config, log zerolog.Logger) *Handler {
-	return &Handler{store: store, mailer: mailer, issuer: issuer, cfg: cfg, log: log}
+//
+// guard may be nil, which disables every abuse control — acceptable in tests,
+// but production must pass one: /auth/signup/request-link emails an arbitrary
+// address, so without the per-email cooldown it can be used to mail-bomb a
+// third party.
+func New(store Store, mailer Mailer, issuer KeyIssuer, guard AbuseGuard, cfg Config, log zerolog.Logger) *Handler {
+	return &Handler{store: store, mailer: mailer, issuer: issuer, guard: guard, cfg: cfg, log: log}
 }
 
 // Register mounts the auth routes onto a Fiber router.
@@ -124,6 +140,27 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 	}
 
 	ctx := c.Context()
+
+	if h.guard != nil {
+		switch err := h.guard.CheckRequestLink(ctx, middleware.RealIP(c), email); {
+		case err == nil:
+			// allowed
+		case errors.Is(err, signup.ErrDisposableDomain):
+			// About the caller's own input, so it is safe to say so plainly.
+			return api.NewBadRequest(err.Error())
+		case errors.Is(err, signup.ErrRateLimited):
+			// About the caller, not the address — safe to surface.
+			return api.NewTooManyRequests(err.Error())
+		case errors.Is(err, signup.ErrResendCooldown):
+			// Deliberately indistinguishable from success: reporting the cooldown
+			// would reveal that a link was recently sent to this address, and the
+			// point of the cooldown is to protect that inbox. Skip the send.
+			log.Info().Str("email_hash", truncate(hashField(email), 12)).Msg("auth: resend cooldown active — suppressing send")
+			return genericOK(c)
+		default:
+			log.Error().Err(err).Msg("auth: abuse guard error — allowing request")
+		}
+	}
 
 	ipHash := hashField(middleware.RealIP(c))
 	uaHash := hashField(c.Get("User-Agent"))
@@ -352,6 +389,15 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 	}
 
 	log := logger.FromContext(c.Context(), h.log)
+
+	if h.guard != nil {
+		if err := h.guard.CheckRegenerateKey(c.Context(), session.IdentityID); err != nil {
+			if errors.Is(err, signup.ErrRegenerateCooldown) {
+				return api.NewTooManyRequests(err.Error())
+			}
+			log.Error().Err(err).Msg("auth: regenerate guard error — allowing request")
+		}
+	}
 
 	// Verify identity still exists.
 	if _, err := h.store.GetIdentityByID(c.Context(), session.IdentityID); err != nil {

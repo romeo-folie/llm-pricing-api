@@ -1,23 +1,15 @@
 package signup
 
-// token.go — Session signing helpers for the internal/auth magic-link flow.
+// token.go — magic-link token generation and session signing for the
+// internal/auth flow, the only signup HTTP layer that is mounted.
 //
-// NOTE: The signup package has two session implementations:
+//   - GenerateRawToken / BuildVerifyURL: the emailed one-time token and its URL.
+//     Only the raw token is emailed; store.go persists HashToken(raw).
+//   - SignSession / VerifySession: the session cookie, formatted as
+//     base64url(JSON).<hmac-sha256>, embedding email + issued-at + expires-at so
+//     the auth handler avoids a DB round-trip on every authenticated request.
 //
-//   - session.go: EncodeSession/DecodeSession — used by the signup self-service
-//     flow (internal/signup/handlers.go). Cookie format: base64url(identityID:expiresUnix).<hmac>.
-//
-//   - token.go (this file): SignSession/VerifySession — used by the separate
-//     auth magic-link flow (internal/auth/handlers.go). Cookie format:
-//     base64url(JSON).<hmac>, embedding email + issued-at + expires-at so the
-//     auth handler avoids a DB round-trip on every authenticated request.
-//
-// The two flows are intentionally distinct. Do not consolidate without
-// auditing both callers.
-//
-// Token hashing (for DB storage) lives in store.go.
-// Magic-link URL construction and raw token generation live in tokens.go.
-// Session HMAC signing and verification for the auth flow live in this file (token.go).
+// The payload is signed, not encrypted — never put a secret in it.
 
 import (
 	"crypto/hmac"
