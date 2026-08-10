@@ -23,6 +23,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -983,6 +985,65 @@ func TestIntegrationWebhooks_PerKeyCap_SixthReturns409(t *testing.T) {
 	}
 	if got := problem.Extensions["max_webhooks"]; fmt.Sprintf("%v", got) != "5" {
 		t.Errorf("expected max_webhooks=5, got %v", got)
+	}
+}
+
+// Concurrent registrations must serialize per API key. Without the advisory
+// transaction lock, every INSERT can observe the same count and exceed the cap.
+func TestIntegrationWebhooks_PerKeyCap_ConcurrentRegistrations(t *testing.T) {
+	_, db, _ := setupTestApp(t)
+
+	const attempts = 20
+	store := handlers.NewWebhookStore(db)
+	start := make(chan struct{})
+	results := make(chan error, attempts)
+
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, err := store.CreateWebhook(
+				context.Background(),
+				"concurrent-cap-test-key",
+				fmt.Sprintf("https://example.com/concurrent-%d", i),
+				fmt.Sprintf("secret-%d", i),
+			)
+			results <- err
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+	close(results)
+
+	created := 0
+	limited := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			created++
+		case errors.Is(err, handlers.ErrWebhookLimitReached):
+			limited++
+		default:
+			t.Fatalf("unexpected CreateWebhook error: %v", err)
+		}
+	}
+
+	if created != 5 || limited != attempts-5 {
+		t.Fatalf("created=%d limited=%d; want created=5 limited=%d", created, limited, attempts-5)
+	}
+
+	var active int
+	if err := db.QueryRow(context.Background(), `
+		SELECT count(*) FROM webhooks
+		WHERE api_key_hash = $1 AND deleted_at IS NULL
+	`, "concurrent-cap-test-key").Scan(&active); err != nil {
+		t.Fatalf("count active webhooks: %v", err)
+	}
+	if active != 5 {
+		t.Fatalf("active webhooks=%d; want 5", active)
 	}
 }
 

@@ -77,12 +77,24 @@ func NewWebhookStore(db *pgxpool.Pool) WebhookStore {
 }
 
 func (s *pgxWebhookStore) CreateWebhook(ctx context.Context, apiKeyHash, webhookURL, secret string) (WebhookRecord, error) {
-	// The cap is enforced inside the INSERT rather than as a separate SELECT
-	// count, so two concurrent registrations cannot both observe count == 4 and
-	// both insert. When the key is at the cap the SELECT yields no row, the
-	// INSERT affects nothing, and Scan reports pgx.ErrNoRows.
+	// Serialize registrations for the same API key before checking the cap.
+	// Under PostgreSQL's default READ COMMITTED isolation, putting count(*) in
+	// the INSERT alone is not sufficient: concurrent statements can share the
+	// same pre-insert view and all pass the limit. The separate lock statement
+	// also ensures the following statement receives a fresh snapshot after any
+	// preceding registration commits.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return WebhookRecord{}, fmt.Errorf("create webhook: begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, apiKeyHash); err != nil {
+		return WebhookRecord{}, fmt.Errorf("create webhook: lock API key: %w", err)
+	}
+
 	var rec WebhookRecord
-	err := s.db.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO webhooks (api_key_hash, url, secret)
 		SELECT $1, $2, $3
 		WHERE (
@@ -96,6 +108,9 @@ func (s *pgxWebhookStore) CreateWebhook(ctx context.Context, apiKeyHash, webhook
 	}
 	if err != nil {
 		return WebhookRecord{}, fmt.Errorf("create webhook: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return WebhookRecord{}, fmt.Errorf("create webhook: commit: %w", err)
 	}
 	return rec, nil
 }
@@ -214,8 +229,8 @@ func isWebhookURLSafe(ctx context.Context, rawURL string) error {
 // WebhookHandler handles POST /v1/webhooks and DELETE /v1/webhooks/:id.
 type WebhookHandler struct {
 	store        WebhookStore
-	secretKey    []byte                               // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
-	urlValidator func(context.Context, string) error  // nil → uses isWebhookURLSafe; overridden in tests
+	secretKey    []byte                              // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
+	urlValidator func(context.Context, string) error // nil → uses isWebhookURLSafe; overridden in tests
 }
 
 // WebhookHandlerExport is a test-visible alias that exposes the Store field so
