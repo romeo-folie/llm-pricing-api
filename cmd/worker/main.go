@@ -146,9 +146,15 @@ func run() error {
 
 	// Benchmark scraper handlers — daily cron jobs that fetch scores from
 	// external leaderboards and upsert into model_benchmark_scores.
-	mux.HandleFunc(worker.TaskBFCLScrape, h.HandleBFCLScrape)
-	mux.HandleFunc(worker.TaskHuggingFaceLLMScrape, h.HandleHuggingFaceLLMScrape)
+	mux.HandleFunc(worker.TaskSWEBenchScrape, h.HandleSWEBenchScrape)
+	mux.HandleFunc(worker.TaskLiveCodeBenchScrape, h.HandleLiveCodeBenchScrape)
 	mux.HandleFunc(worker.TaskChatbotArenaScrape, h.HandleChatbotArenaScrape)
+
+	// Drain tasks enqueued under the pre-rename type names. Nothing enqueues
+	// these any more; the registrations exist so in-flight tasks from before the
+	// deploy are not archived as "handler not found". Remove after one cron cycle.
+	mux.HandleFunc(worker.TaskBFCLScrapeDeprecated, h.HandleSWEBenchScrape)
+	mux.HandleFunc(worker.TaskHuggingFaceLLMScrapeDeprecated, h.HandleLiveCodeBenchScrape)
 
 	// Intelligence recomputation handlers.
 	mux.HandleFunc(worker.TaskRecomputeCapabilityScores, h.HandleRecomputeCapabilityScores)
@@ -197,12 +203,12 @@ func run() error {
 	}
 
 	// Benchmark scraper cron schedules — daily.
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskBFCLScrape, nil)); err != nil {
-		log.Error().Err(err).Msg("scheduler: register bfcl")
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskSWEBenchScrape, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register swebench")
 		return err
 	}
-	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskHuggingFaceLLMScrape, nil)); err != nil {
-		log.Error().Err(err).Msg("scheduler: register huggingface_llm")
+	if _, err := scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiveCodeBenchScrape, nil)); err != nil {
+		log.Error().Err(err).Msg("scheduler: register livecodebench")
 		return err
 	}
 	// Daily recomputation is a safety net and refreshes per-dimension freshness.
@@ -247,8 +253,8 @@ func run() error {
 		{worker.TaskAnthropicScrape, "anthropic", nil},
 		{worker.TaskGeminiScrape, "gemini", nil},
 		// Benchmark scrapers — initial run on startup.
-		{worker.TaskBFCLScrape, "bfcl", nil},
-		{worker.TaskHuggingFaceLLMScrape, "huggingface_llm", nil},
+		{worker.TaskSWEBenchScrape, "swebench", nil},
+		{worker.TaskLiveCodeBenchScrape, "livecodebench", nil},
 		// Intelligence tasks — initial run on startup.
 		{worker.TaskRecomputeCapabilityScores, "recompute_capability_scores", nil},
 	}

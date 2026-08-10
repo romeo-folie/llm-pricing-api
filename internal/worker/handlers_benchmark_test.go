@@ -57,7 +57,7 @@ func TestRunBenchmarkScrape_Success(t *testing.T) {
 		return nil
 	}}
 
-	if err := h.runBenchmarkScrape(context.Background(), TaskBFCLScrape, s); err != nil {
+	if err := h.runBenchmarkScrape(context.Background(), TaskSWEBenchScrape, s); err != nil {
 		t.Fatalf("runBenchmarkScrape() error = %v", err)
 	}
 	if len(calls) != 2 || calls[0] != "scrape" || calls[1] != "recompute" {
@@ -75,7 +75,7 @@ func TestRunBenchmarkScrape_ScrapeFailureSkipsRecompute(t *testing.T) {
 	}
 	s := fakeBenchmarkScraper{scrape: func(context.Context) error { return scrapeErr }}
 
-	err := h.runBenchmarkScrape(context.Background(), TaskBFCLScrape, s)
+	err := h.runBenchmarkScrape(context.Background(), TaskSWEBenchScrape, s)
 	if !errors.Is(err, scrapeErr) {
 		t.Fatalf("error = %v; want wrapped scrape error", err)
 	}
@@ -90,11 +90,11 @@ func TestRunBenchmarkScrape_RecomputeFailureFailsTask(t *testing.T) {
 	h.recomputeCapabilities = func(context.Context) error { return recomputeErr }
 	s := fakeBenchmarkScraper{scrape: func(context.Context) error { return nil }}
 
-	err := h.runBenchmarkScrape(context.Background(), TaskBFCLScrape, s)
+	err := h.runBenchmarkScrape(context.Background(), TaskSWEBenchScrape, s)
 	if !errors.Is(err, recomputeErr) {
 		t.Fatalf("error = %v; want wrapped recompute error", err)
 	}
-	if err == nil || !strings.Contains(err.Error(), TaskBFCLScrape+": recompute capabilities") {
+	if err == nil || !strings.Contains(err.Error(), TaskSWEBenchScrape+": recompute capabilities") {
 		t.Fatalf("error = %v; want task and recompute context", err)
 	}
 }
@@ -114,8 +114,8 @@ func TestHandleChatbotArenaScrape(t *testing.T) {
 // TestBenchmarkTaskConstants verifies task constants are non-empty and unique.
 func TestBenchmarkTaskConstants(t *testing.T) {
 	tasks := []string{
-		TaskBFCLScrape,
-		TaskHuggingFaceLLMScrape,
+		TaskSWEBenchScrape,
+		TaskLiveCodeBenchScrape,
 		TaskChatbotArenaScrape,
 		TaskRecomputeCapabilityScores,
 		TaskStalenessCheck,

@@ -141,7 +141,7 @@ func NewAskHandler(store Store) (*AskHandler, error) {
 }
 
 // Ask handles POST /v1/ask.
-// Developer+ only — enforced by RequireTier middleware at route registration.
+// Requires a valid API key like every /v1 route; no tier gating is applied.
 //
 // The handler parses the natural language query into one of four intents
 // (price, compare, history, recommend) using a deterministic regex cascade.

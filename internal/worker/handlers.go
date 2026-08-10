@@ -15,14 +15,14 @@ import (
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/anthropic"
-	"llm-pricing-api/internal/scraper/bfcl"
 	"llm-pricing-api/internal/scraper/chatbot_arena"
 	"llm-pricing-api/internal/scraper/gemini"
 	"llm-pricing-api/internal/scraper/huggingface"
-	"llm-pricing-api/internal/scraper/huggingface_llm"
 	"llm-pricing-api/internal/scraper/litellm"
+	"llm-pricing-api/internal/scraper/livecodebench"
 	"llm-pricing-api/internal/scraper/openai"
 	"llm-pricing-api/internal/scraper/openrouter"
+	"llm-pricing-api/internal/scraper/swebench"
 )
 
 // huggingFaceScrapeTimeout is the maximum wall-clock time allowed for a single
@@ -196,26 +196,24 @@ func (h *Handlers) runBenchmarkScrape(ctx context.Context, taskName string, s sc
 	return nil
 }
 
-// HandleBFCLScrape runs the SWE-bench Verified leaderboard scraper. The legacy
-// task/package name is retained to avoid breaking already queued jobs.
-func (h *Handlers) HandleBFCLScrape(ctx context.Context, _ *asynq.Task) error {
+// HandleSWEBenchScrape runs the SWE-bench Verified leaderboard scraper.
+func (h *Handlers) HandleSWEBenchScrape(ctx context.Context, _ *asynq.Task) error {
 	h.logger.Info().Msg("handler: starting SWE-bench scrape")
-	s := bfcl.New(h.db, nil)
+	s := swebench.New(h.db, nil)
 	s.SetLogger(h.logger)
-	if err := h.runBenchmarkScrape(ctx, TaskBFCLScrape, s); err != nil {
+	if err := h.runBenchmarkScrape(ctx, TaskSWEBenchScrape, s); err != nil {
 		return err
 	}
 	h.logger.Info().Msg("handler: SWE-bench scrape and capability recompute complete")
 	return nil
 }
 
-// HandleHuggingFaceLLMScrape runs the LiveCodeBench scraper. The legacy
-// task/package name is retained to avoid breaking already queued jobs.
-func (h *Handlers) HandleHuggingFaceLLMScrape(ctx context.Context, _ *asynq.Task) error {
+// HandleLiveCodeBenchScrape runs the LiveCodeBench scraper.
+func (h *Handlers) HandleLiveCodeBenchScrape(ctx context.Context, _ *asynq.Task) error {
 	h.logger.Info().Msg("handler: starting LiveCodeBench scrape")
-	s := huggingface_llm.New(h.db, nil)
+	s := livecodebench.New(h.db, nil)
 	s.SetLogger(h.logger)
-	if err := h.runBenchmarkScrape(ctx, TaskHuggingFaceLLMScrape, s); err != nil {
+	if err := h.runBenchmarkScrape(ctx, TaskLiveCodeBenchScrape, s); err != nil {
 		return err
 	}
 	h.logger.Info().Msg("handler: LiveCodeBench scrape and capability recompute complete")

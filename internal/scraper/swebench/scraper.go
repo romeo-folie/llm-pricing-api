@@ -1,9 +1,8 @@
-// TODO(refactor): rename package bfcl → swebench to match the implementation.
-// Package bfcl implements a benchmark scraper for SWE-bench Verified.
+// Package swebench implements a benchmark scraper for SWE-bench Verified.
 // It fetches resolved-percentage scores from the official SWE-bench
 // leaderboard JSON and upserts them into the model_benchmark_scores table
 // via the intelligence package.
-package bfcl
+package swebench
 
 import (
 	"context"

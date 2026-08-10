@@ -22,7 +22,7 @@ type historyItemResponse struct {
 }
 
 // GetModelHistory handles GET /v1/models/:id/history.
-// Developer+ only — enforced by RequireTier middleware at route registration.
+// Requires a valid API key like every /v1 route; no tier gating is applied.
 //
 // Optional query parameters:
 //   - from: ISO 8601 timestamp — include records confirmed at or after this time.

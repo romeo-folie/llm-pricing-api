@@ -143,7 +143,7 @@ func newE2EApp(t *testing.T, store auth.Store, mailer auth.Mailer, cfg auth.Conf
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, nopIssuer{}, cfg, log)
+	h := auth.New(store, mailer, nopIssuer{}, nil, cfg, log)
 	authGroup := app.Group("/auth")
 	if rc != nil {
 		authGroup.Use(middleware.IPRateLimit(rc, log))
@@ -158,7 +158,7 @@ func newE2EAppWithRLConfig(t *testing.T, store auth.Store, mailer auth.Mailer, c
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	log := zerolog.Nop()
-	h := auth.New(store, mailer, nopIssuer{}, cfg, log)
+	h := auth.New(store, mailer, nopIssuer{}, nil, cfg, log)
 	authGroup := app.Group("/auth")
 	if rc != nil {
 		authGroup.Use(middleware.IPRateLimitWithConfig(rc, log, rlCfg))

@@ -7,8 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
-
-	"llm-pricing-api/internal/middleware"
 )
 
 // Handlers holds shared dependencies used by all handler methods.
@@ -23,26 +21,13 @@ func New(store Store) *Handlers {
 	return &Handlers{store: store}
 }
 
-// RegisterPublic registers unauthenticated /v1 endpoints on the root Fiber app.
-// These routes serve the public Compare page and require no API key — they are
-// intentionally placed outside the auth-gated v1 group.
-//
-// Routes registered:
-//
-//	GET /v1/compare   — compare two models side-by-side
-//	GET /v1/recommend — return top-ranked models for a use case
-func RegisterPublic(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
-	store := NewPgxStore(db)
-	h := New(store)
-
-	pub := app.Group("/v1")
-	pub.Get("/compare", h.Compare)
-	pub.Get("/recommend", h.Recommend)
-}
-
 // RegisterFree registers all Free-tier GET endpoint handlers on the v1 router.
 // The db pool and rdb client are used to construct the production Store and are
 // not used directly by handler functions.
+//
+// "Free" describes the allowed operations, not unauthenticated access: like every
+// /v1 route, these require a valid API key. The v1 router carries the Auth,
+// Cache, and RateLimit middleware.
 //
 // Routes registered:
 //
@@ -51,6 +36,8 @@ func RegisterPublic(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 //	GET /v1/providers
 //	GET /v1/changes/summary
 //	GET /v1/changes
+//	GET /v1/compare   — compare up to 5 models side-by-side
+//	GET /v1/recommend — top-ranked models for a use case
 func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 	store := NewPgxStore(db)
 	h := New(store)
@@ -60,6 +47,8 @@ func RegisterFree(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) {
 	v1.Get("/providers", h.ListProviders)
 	v1.Get("/changes/summary", h.GetChangesSummary)
 	v1.Get("/changes", h.ListChanges)
+	v1.Get("/compare", h.Compare)
+	v1.Get("/recommend", h.Recommend)
 }
 
 // RegisterDev registers previously-Developer+ endpoint handlers on the v1 router.
@@ -120,9 +109,12 @@ func RegisterSSE(v1 fiber.Router, rdb *redis.Client) error {
 	return nil
 }
 
-// RegisterPro registers Pro-tier endpoint handlers on the v1 router.
-// All routes here are gated behind RequireTier("pro") so Free and Developer
-// tier keys receive RFC 7807 403 responses.
+// RegisterPro registers the webhook endpoints on the v1 router.
+//
+// No tier gating is applied. The name is historical: these routes were once
+// gated behind RequireTier("pro"), but the API is free and any valid API key
+// now reaches them. Registration is still protected by the URL validation in
+// WebhookHandler.Create (https-only, private/loopback addresses rejected).
 //
 // webhookSecretKey is the hex-encoded 32-byte AES-256-GCM key used to encrypt
 // webhook secrets at rest. Pass cfg.WebhookSecretKey from config; if empty a
@@ -143,6 +135,6 @@ func RegisterPro(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client, webhookSecr
 	ws := NewWebhookStore(db)
 	wh := &WebhookHandler{store: ws, secretKey: key}
 
-	v1.Post("/webhooks", middleware.RequireTier(middleware.TierPro), wh.Create)
-	v1.Delete("/webhooks/:id", middleware.RequireTier(middleware.TierPro), wh.Delete)
+	v1.Post("/webhooks", wh.Create)
+	v1.Delete("/webhooks/:id", wh.Delete)
 }

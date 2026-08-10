@@ -49,7 +49,7 @@ func estimateTokens(jsonBytes []byte) int {
 }
 
 // GetContext handles GET /v1/context.
-// Developer+ only — enforced by RequireTier middleware at route registration.
+// Requires a valid API key like every /v1 route; no tier gating is applied.
 // Caching (10-minute TTL) is applied by the Cache middleware registered at
 // the route level; this handler does not write cache headers itself.
 //

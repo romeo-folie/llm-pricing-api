@@ -1,4 +1,4 @@
-package huggingface_llm
+package livecodebench
 
 import (
 	"context"

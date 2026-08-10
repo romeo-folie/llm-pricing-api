@@ -12,20 +12,20 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `providers.go` | `GET /v1/providers` (providers with model counts) |
 | `compare.go` | `GET /v1/compare?models=slug1,slug2[&use_case=X]` (side-by-side pricing + capability scores, max 5 models by slug) |
 | `changes.go` | `GET /v1/changes` (recent price changes, 24h default window) |
-| `history.go` | `GET /v1/models/:id/history` (price history with date filters; Developer+ only) |
-| `recommend.go` | `GET /v1/recommend` (ranked model suggestions by task/context/price; Developer+ only) |
-| `context.go` | `GET /v1/context` (compact pricing snapshot ≤ 2 100 tokens; supports `?format=markdown`; returns `token_count` + `model_count` metadata; Developer+ only) |
-| `ask.go` | `POST /v1/ask` (deterministic NL parser → 4 intents: price/compare/history/recommend; `AskHandler` with OTel counter; Developer+ only) |
+| `history.go` | `GET /v1/models/:id/history` (price history with date filters) |
+| `recommend.go` | `GET /v1/recommend` (ranked model suggestions by task/context/price) |
+| `context.go` | `GET /v1/context` (compact pricing snapshot ≤ 2 100 tokens; supports `?format=markdown`; returns `token_count` + `model_count` metadata) |
+| `ask.go` | `POST /v1/ask` (deterministic NL parser → 4 intents: price/compare/history/recommend; `AskHandler` with OTel counter) |
 | `aliases.go` | `ModelAliases` map — ~50 common model name shortcuts → canonical slugs; used by `/v1/ask` parser |
 | `discovery.go` | `GET /openapi.json`, `GET /.well-known/ai-plugin.json`, `GET /llms.txt` (public) |
-| `sse.go` | `GET /v1/stream/changes` (SSE price-change stream; Developer+ only) |
-| `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (Pro only); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
+| `sse.go` | `GET /v1/stream/changes` (SSE price-change stream) |
+| `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (no tier gating); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
 | `handlers_test.go` | Unit tests for Free-tier handlers using Fiber's `app.Test()` and an in-memory mock store |
-| `dev_handlers_test.go` | Unit tests for Developer+ handlers (history, recommend, context + markdown/metadata) with tier-gate coverage |
+| `dev_handlers_test.go` | Unit tests for the `RegisterDev` handlers (history, recommend, context + markdown/metadata) |
 | `ask_test.go` | 46 unit tests for `/v1/ask`: intent classification, alias normalisation, param extraction, response shape |
 | `sse_test.go` | Unit tests for SSE stream handler |
 | `discovery_test.go` | Unit tests for discovery endpoints |
-| `webhooks_test.go` | Unit tests for Pro-tier webhook create/delete handlers with tier-gate and ownership coverage |
+| `webhooks_test.go` | Unit tests for webhook create/delete handlers: URL validation (https-only, private/loopback rejection), ownership, ungated access, and the 5-per-key cap |
 | `README.md` | This file |
 
 ## Key Components
@@ -39,7 +39,7 @@ store := handlers.NewPgxStore(db)   // production
 h := handlers.New(store)            // create Handlers
 ```
 
-The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProviders`, `CompareModels`, `CompareModelsBySlugs`, `ListChanges`, `GetPriceHistory`) as well as Developer+ methods (`GetModelHistory`, `ListModelsForContext`, `RecommendModels`) used by the history, context, and recommend handlers.
+The interface exposes the list/detail methods (`ListModels`, `GetModel`, `ListProviders`, `CompareModels`, `CompareModelsBySlugs`, `ListChanges`, `GetPriceHistory`) alongside `GetModelHistory`, `ListModelsForContext`, and `RecommendModels`, used by the history, context, and recommend handlers.
 
 ### Handlers struct
 
@@ -47,15 +47,19 @@ The interface exposes Free-tier methods (`ListModels`, `GetModel`, `ListProvider
 
 ### Registration helpers
 
-`RegisterFree(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client)` constructs the production store and wires all five Free-tier routes onto the supplied router group.
+`RegisterFree(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client)` constructs the production store and wires the seven ungated routes onto the supplied router group: `/v1/models`, `/v1/models/:id`, `/v1/providers`, `/v1/changes/summary`, `/v1/changes`, `/v1/compare`, and `/v1/recommend`.
 
-`RegisterDev(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client) error` wires the Developer+ routes (`/v1/models/:id/history`, `/v1/recommend`, `/v1/context`, `POST /v1/ask`) with `RequireTier("developer")` middleware applied. Returns an error if OTel instrument creation fails (e.g. for `AskHandler`). Free-tier API keys receive a RFC 7807 403.
+"Free" describes the allowed operations, not unauthenticated access — every `/v1` route requires an API key.
+
+`RegisterDev(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client) error` wires `/v1/models/:id/history`, `/v1/context`, and `POST /v1/ask`. Returns an error if OTel instrument creation fails (e.g. for `AskHandler`).
+
+**No tier gating is applied.** The name is historical: these were once Developer+ routes, but any valid API key now reaches them. `/v1/recommend` moved to `RegisterFree`.
 
 `RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client)` wires the three public discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`) on the root Fiber app (no auth required). `rdb` is passed to `DiscoveryHandler` for Redis-cached responses (e.g. `/llms.txt`).
 
-`RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (Developer+ only). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
+`RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (any valid API key). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
 
-`RegisterPro(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client, webhookSecretKey string, log zerolog.Logger)` wires webhook CRUD (`POST /v1/webhooks`, `DELETE /v1/webhooks/:id`) gated behind the Pro tier. `webhookSecretKey` is the hex-encoded 32-byte AES-256-GCM key for encrypting webhook secrets at rest; pass an empty string to use an ephemeral key (secrets will not survive restarts).
+`RegisterPro(v1 fiber.Router, db *pgxpool.Pool, rdb *redis.Client, webhookSecretKey string, log zerolog.Logger)` wires webhook CRUD (`POST /v1/webhooks`, `DELETE /v1/webhooks/:id`). **No tier gating is applied** — the name is historical. Registration is bounded instead by URL validation in the handler (https-only, private/loopback addresses rejected) and a cap of 5 active webhooks per API key, enforced atomically inside the INSERT (`ErrWebhookLimitReached` → `409`). `webhookSecretKey` is the hex-encoded 32-byte AES-256-GCM key for encrypting webhook secrets at rest; pass an empty string to use an ephemeral key (secrets will not survive restarts).
 
 ### Trust metadata
 

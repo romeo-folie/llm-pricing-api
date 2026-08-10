@@ -23,7 +23,7 @@ const (
 
 // Scraper is a no-op stub for the Chatbot Arena leaderboard.
 // db and client are retained to satisfy the constructor signature used by
-// handlers.go (bfcl.New(h.db, nil)) and are unused by the no-op Scrape method.
+// handlers.go (swebench.New(h.db, nil)) and are unused by the no-op Scrape method.
 type Scraper struct {
 	db     *pgxpool.Pool //nolint:unused // retained for constructor API consistency
 	client *http.Client  //nolint:unused // retained for constructor API consistency

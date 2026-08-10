@@ -19,9 +19,9 @@ import (
 )
 
 // newDevApp creates a Fiber app with the RFC 7807 error handler and registers
-// the three Developer+ routes WITHOUT the RequireTier middleware so that tests
-// can exercise handler logic directly. Tests that need to verify tier gating
-// use newDevAppWithTier.
+// the three history/recommend/context routes so tests can exercise handler
+// logic directly. These routes are not tier-gated; newDevAppWithTier is used
+// when a test needs the tier local populated.
 func newDevApp(store handlers.Store) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: api.ErrorHandler,
@@ -35,8 +35,8 @@ func newDevApp(store handlers.Store) *fiber.App {
 }
 
 // newDevAppWithTier creates a Fiber app that pre-seeds the "tier" local.
-// RequireTier is no longer applied to these routes (all tiers can access them);
-// the tier local is injected so that downstream metrics and logging still see it.
+// These routes are not tier-gated (any valid key reaches them); the tier local
+// is injected so that downstream metrics and logging still see it.
 func newDevAppWithTier(store handlers.Store, tier string) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: api.ErrorHandler,
@@ -1151,7 +1151,7 @@ func TestGetContext_JSONFormatUnchanged(t *testing.T) {
 	}
 }
 
-// DeveloperTier key should pass RequireTier on Developer+ endpoints.
+// A developer-tier key reaches these endpoints, same as any other tier.
 func TestDevEndpoints_DeveloperTier_Returns200(t *testing.T) {
 	store := &mockStore{
 		modelExists: func(_ context.Context, _ int) (bool, error) {

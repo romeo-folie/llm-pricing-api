@@ -8,12 +8,14 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
@@ -41,6 +43,8 @@ type createWebhookResponse struct {
 type WebhookStore interface {
 	// CreateWebhook inserts a new webhook registration and returns the created record.
 	// secret is stored encrypted in the DB; the reconciler decrypts it before use.
+	// Returns ErrWebhookLimitReached when the key already holds maxWebhooksPerKey
+	// active webhooks.
 	CreateWebhook(ctx context.Context, apiKeyHash, webhookURL, secret string) (WebhookRecord, error)
 
 	// DeleteWebhook soft-deletes a webhook by ID, scoped to the given apiKeyHash
@@ -51,6 +55,16 @@ type WebhookStore interface {
 
 // ErrWebhookNotFound is returned by DeleteWebhook when no matching row is found.
 var ErrWebhookNotFound = fmt.Errorf("webhook not found")
+
+// ErrWebhookLimitReached is returned by CreateWebhook when the calling key
+// already holds maxWebhooksPerKey active webhooks.
+var ErrWebhookLimitReached = fmt.Errorf("webhook limit reached")
+
+// maxWebhooksPerKey caps how many active (non-deleted) webhooks a single API
+// key may hold. Registration is no longer tier-gated, so this is what bounds
+// delivery fan-out per key: every confirmed price change enqueues one delivery
+// job per active webhook.
+const maxWebhooksPerKey = 5
 
 // pgxWebhookStore is the PostgreSQL-backed implementation of WebhookStore.
 type pgxWebhookStore struct {
@@ -63,14 +77,40 @@ func NewWebhookStore(db *pgxpool.Pool) WebhookStore {
 }
 
 func (s *pgxWebhookStore) CreateWebhook(ctx context.Context, apiKeyHash, webhookURL, secret string) (WebhookRecord, error) {
+	// Serialize registrations for the same API key before checking the cap.
+	// Under PostgreSQL's default READ COMMITTED isolation, putting count(*) in
+	// the INSERT alone is not sufficient: concurrent statements can share the
+	// same pre-insert view and all pass the limit. The separate lock statement
+	// also ensures the following statement receives a fresh snapshot after any
+	// preceding registration commits.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return WebhookRecord{}, fmt.Errorf("create webhook: begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, apiKeyHash); err != nil {
+		return WebhookRecord{}, fmt.Errorf("create webhook: lock API key: %w", err)
+	}
+
 	var rec WebhookRecord
-	err := s.db.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO webhooks (api_key_hash, url, secret)
-		VALUES ($1, $2, $3)
+		SELECT $1, $2, $3
+		WHERE (
+			SELECT count(*) FROM webhooks
+			WHERE api_key_hash = $1 AND deleted_at IS NULL
+		) < $4
 		RETURNING id, url, created_at
-	`, apiKeyHash, webhookURL, secret).Scan(&rec.ID, &rec.URL, &rec.CreatedAt)
+	`, apiKeyHash, webhookURL, secret, maxWebhooksPerKey).Scan(&rec.ID, &rec.URL, &rec.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return WebhookRecord{}, ErrWebhookLimitReached
+	}
 	if err != nil {
 		return WebhookRecord{}, fmt.Errorf("create webhook: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return WebhookRecord{}, fmt.Errorf("create webhook: commit: %w", err)
 	}
 	return rec, nil
 }
@@ -189,8 +229,8 @@ func isWebhookURLSafe(ctx context.Context, rawURL string) error {
 // WebhookHandler handles POST /v1/webhooks and DELETE /v1/webhooks/:id.
 type WebhookHandler struct {
 	store        WebhookStore
-	secretKey    []byte                               // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
-	urlValidator func(context.Context, string) error  // nil → uses isWebhookURLSafe; overridden in tests
+	secretKey    []byte                              // 32-byte AES-256-GCM key for encrypting webhook secrets at rest
+	urlValidator func(context.Context, string) error // nil → uses isWebhookURLSafe; overridden in tests
 }
 
 // WebhookHandlerExport is a test-visible alias that exposes the Store field so
@@ -271,6 +311,13 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	}
 
 	rec, err := h.store.CreateWebhook(c.Context(), apiKeyHash, body.URL, secretToStore)
+	if errors.Is(err, ErrWebhookLimitReached) {
+		pd := api.NewConflict(fmt.Sprintf(
+			"this API key already has the maximum of %d active webhooks; delete one before registering another",
+			maxWebhooksPerKey))
+		pd.Extensions = map[string]any{"max_webhooks": maxWebhooksPerKey}
+		return pd
+	}
 	if err != nil {
 		return api.NewInternalError("failed to register webhook")
 	}

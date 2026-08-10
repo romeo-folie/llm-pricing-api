@@ -33,8 +33,8 @@ func newAskApp(store handlers.Store) *fiber.App {
 	return app
 }
 
-// newAskAppWithTier injects a tier into Fiber locals before routing so
-// RequireTier middleware can be exercised in tests.
+// newAskAppWithTier injects a tier into Fiber locals before routing. /v1/ask is
+// not tier-gated; the local is seeded so downstream metrics and logging see it.
 func newAskAppWithTier(store handlers.Store, tier string) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	app.Use(func(c *fiber.Ctx) error {
@@ -46,7 +46,7 @@ func newAskAppWithTier(store handlers.Store, tier string) *fiber.App {
 		panic("newAskAppWithTier: " + err.Error())
 	}
 	v1 := app.Group("/v1")
-	v1.Post("/ask", middleware.RequireTier(middleware.TierDeveloper), ask.Ask)
+	v1.Post("/ask", ask.Ask)
 	return app
 }
 
@@ -218,17 +218,12 @@ func TestAsk_InvalidJSON_Returns400(t *testing.T) {
 	}
 }
 
-func TestAsk_FreeTier_Returns403(t *testing.T) {
-	app := newAskAppWithTier(&mockStore{}, middleware.TierFree)
-	req := httptest.NewRequest("POST", "/v1/ask", bytes.NewBufferString(`{"query":"how much does gpt4o cost"}`))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatalf("app.Test: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != fiber.StatusForbidden {
-		t.Fatalf("expected 403 for free tier, got %d", resp.StatusCode)
+// /v1/ask is not tier-gated — a free-tier key reaches it exactly like any other.
+func TestAsk_FreeTier_Returns200(t *testing.T) {
+	app := newAskAppWithTier(emptyRecommendStore(), middleware.TierFree)
+	status, body := askQuery(t, app, "recommend cheapest model")
+	if status != fiber.StatusOK {
+		t.Fatalf("expected 200 for free tier, got %d; body: %s", status, body)
 	}
 }
 

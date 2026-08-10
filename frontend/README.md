@@ -101,9 +101,7 @@ Copy `.env.example` to `.env.local` and fill in values:
 | Variable | Side | Purpose |
 |---|---|---|
 | `LLM_PRICING_API_BASE_URL` | Server | REST API base URL (default: `http://localhost:8080`) |
-| `LLM_PRICING_API_KEY` | Server | Dev-tier API key for history/recommend endpoints |
-| `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Client | Lemon Squeezy checkout URL (Developer plan) |
-| `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Client | Lemon Squeezy checkout URL (Pro plan) |
+| `LLM_PRICING_API_KEY` | Server | API key used for all server-side calls to the REST API |
 | `NEXT_PUBLIC_SITE_URL` | Client | Canonical site URL for OG tags / sitemap (default: `https://llmrates.live`) |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Client | GA4 measurement ID (e.g. `G-XXXXXXXXXX`). Leave blank to disable analytics. |
 
@@ -187,8 +185,6 @@ Vercel auto-detects Next.js and requires no build configuration. Import the `fro
 |---|---|---|
 | `LLM_PRICING_API_BASE_URL` | Production, Preview | REST API base URL |
 | `LLM_PRICING_API_KEY` | Production, Preview | Server-only — never expose to client |
-| `NEXT_PUBLIC_LS_CHECKOUT_DEV` | Production, Preview | Lemon Squeezy checkout URL |
-| `NEXT_PUBLIC_LS_CHECKOUT_PRO` | Production, Preview | Lemon Squeezy checkout URL |
 | `NEXT_PUBLIC_SITE_URL` | Production | Canonical URL (e.g. `https://llmrates.live`) |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Production | GA4 measurement ID (`G-XXXXXXXXXX`) |
 

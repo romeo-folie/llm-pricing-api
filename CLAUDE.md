@@ -346,17 +346,17 @@ Security is a first-class requirement, not a post-hoc concern. Every feature tha
 ### Hard Rules — Never Do These
 
 - **Never log API keys, tokens, or credentials** — not in error messages, not in debug output, not in structured logs. Redact them at the boundary before they reach the logger.
-- **Never bypass tier checks** — every endpoint that requires Dev+ or Pro must validate the tier via the Unkey middleware. There must be no code path that reaches business logic without passing through auth middleware.
+- **Never bypass auth** — every `/v1` endpoint must pass through the Unkey auth middleware. There must be no code path that reaches business logic without it. (There is no tier gating: the API is free and `RequireTier` has been removed.)
 - **Never build SQL with string formatting** — use parameterized queries via `pgx` / `sqlc` exclusively. `fmt.Sprintf` or string concatenation in a query is an automatic code review rejection.
-- **Never commit secrets** — `.env`, Unkey keys, DB connection strings, Redis URLs, and Lemon Squeezy signing secrets must never be committed. Verify `.gitignore` covers `.env` before touching any secret-adjacent code.
+- **Never commit secrets** — `.env`, Unkey keys, DB connection strings, and Redis URLs must never be committed. Verify `.gitignore` covers `.env` before touching any secret-adjacent code.
 - **Never expose internal error details in API responses** — DB errors, stack traces, and internal state must be logged server-side only. API responses use RFC 7807 with a stable `type` URI and a safe `detail` string.
 
-### Authentication & Tier Gating
+### Authentication
 
 - Unkey middleware validates API keys and attaches the tier to the Fiber context. All subsequent handlers read the tier from context — they never re-validate or re-parse the key themselves.
 - Cache Unkey validation results in Redis with a **30-second TTL maximum**. Do not extend this TTL; key revocations must propagate within one TTL window.
 - Rate limiting is enforced at the middleware layer, before any business logic executes. Do not implement per-handler rate limiting as a substitute.
-- Free-tier endpoints are still authenticated (key required) — "Free" refers to the allowed operations, not unauthenticated access.
+- Every `/v1` endpoint is authenticated (key required). The API is free, but free does not mean unauthenticated.
 
 ### External Data & Scraper Safety
 
@@ -370,6 +370,7 @@ Security is a first-class requirement, not a post-hoc concern. Every feature tha
 - Webhook URLs are user-supplied. Before enqueuing a delivery job, validate:
   - URL scheme is `https` only (no `http`, no `file://`, no other schemes)
   - Resolved hostname is not a private IP, loopback, or link-local address (SSRF prevention)
+- Registration is capped at 5 active webhooks per API key, enforced atomically inside the INSERT (never a read-then-write count, which races). Exceeding it returns RFC 7807 `409`.
 - Webhook delivery jobs must not include raw database row structs in their payload. Serialize only the fields explicitly defined in the webhook event schema.
 - If webhook signing secrets are added in future, store them hashed (HMAC-SHA256 key derivation) — never in plaintext.
 
@@ -381,7 +382,7 @@ Security is a first-class requirement, not a post-hoc concern. Every feature tha
 
 ### SSE Stream & Natural Language Endpoints
 
-- SSE connections at `/v1/stream/changes` require a valid API key (Dev+ tier). Unauthenticated connections must be rejected before the stream is opened.
+- SSE connections at `/v1/stream/changes` require a valid API key. Unauthenticated connections must be rejected before the stream is opened.
 - The `Last-Event-ID` reconnection header is user-controlled. Treat it as an opaque cursor, validate it matches the expected format (e.g. a UUID or integer), and never pass it directly into a SQL `WHERE` clause without parameterization.
 - The `/v1/ask` natural language endpoint must not reflect internal state, query plans, or error details back in its response. Log failures server-side; return a safe structured error to the caller.
 
@@ -416,47 +417,45 @@ Any high or critical finding must be resolved (upgrade, patch, or documented exc
 
 LLM Token Pricing Platform — a reconciled, multi-source pricing data API for LLM models. It aggregates pricing from OpenRouter, LiteLLM, and provider docs, reconciles discrepancies, stores immutable price history in TimescaleDB, and serves it through a versioned REST API and MCP server.
 
-The differentiator is **price history + change tracking**. Every competitor gives a snapshot; this gives the full timeline and sells reliable programmatic access to it.
+The differentiator is **price history + change tracking**. Every competitor gives a snapshot; this gives the full timeline and provides free, reliable programmatic access to it.
 
 ## Architecture Overview
 
-The system has six layers, built in this order:
+The system has five layers, built in this order:
 
-1. **Data Pipeline** — Go goroutines + asynq cron workers scrape three sources (OpenRouter every 6h, LiteLLM daily, provider docs daily). A diff engine compares incoming values against stored values. A reconciliation engine requires 2-source agreement to publish; discrepancies >5% are flagged to a review queue. Every confirmed change is written as an immutable timestamped record.
+1. **Data Pipeline** — Go goroutines + asynq cron workers scrape six sources (OpenRouter every 6h; LiteLLM, HuggingFace, and the OpenAI/Anthropic/Gemini pricing docs daily). A diff engine compares incoming values against stored values. A reconciliation engine requires 2-source agreement to publish; discrepancies >5% are flagged to a review queue. Every confirmed change is written as an immutable timestamped record.
 
 2. **Storage** — PostgreSQL + TimescaleDB for price history (immutable time-series records). Redis for job queue (asynq), response caching, and rate limiting.
 
-3. **REST API** — Go + Fiber serving `/v1/` endpoints. Auth via Unkey API keys with tier-based gating (Free/Developer/Pro). All responses use a consistent JSON envelope with trust metadata (`confirmed_at`, `source`, `confidence`, `age_hours`, `change_velocity`). Errors follow RFC 7807.
+3. **REST API** — Go + Fiber serving `/v1/` endpoints. Auth via Unkey API keys. The API is free: every valid key reaches every endpoint, with no tier gating. All responses use a consistent JSON envelope with trust metadata (`confirmed_at`, `source`, `confidence`, `age_hours`, `change_velocity`). Errors follow RFC 7807.
 
-4. **Agent Interface** — MCP server (`@llmpricing/mcp` on npm, TypeScript), SSE stream at `/v1/stream/changes`, natural language query at `/v1/ask`, context snapshot at `/v1/context` (~2k tokens), and discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`).
+4. **Agent Interface** — MCP server (`@llmrates/mcp` on npm, TypeScript), SSE stream at `/v1/stream/changes`, natural language query at `/v1/ask`, context snapshot at `/v1/context` (~2k tokens), and discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`).
 
 5. **Frontend** — Next.js with TypeScript and Tailwind. SSR for SEO. Comparison table, cost calculator, price history charts (Tremor or Recharts), model recommender UI.
 
-6. **Monetisation** — Lemon Squeezy as Merchant of Record. Three tiers: Free ($0, 100 req/day), Developer ($15, 10k req/day), Pro ($50, unlimited + webhooks + SLA).
-
 ## API Endpoints
 
-| Endpoint | Tier | Purpose |
+| Endpoint | Access | Purpose |
 | --- | --- | --- |
-| `GET /v1/models` | Free | List models with filters: `?provider=`, `?modality=`, `?min_context=` |
-| `GET /v1/models/:id` | Free | Single model detail |
-| `GET /v1/models/:id/history` | Dev+ | Price history with `?from=`, `?to=` |
-| `GET /v1/compare?models=` | Free | Compare up to 5 models |
-| `GET /v1/recommend` | Dev+ | Ranked models by task/context/price |
-| `GET /v1/providers` | Free | Provider list |
-| `GET /v1/changes` | Free | Recent price changes with `?since=`, `?provider=` |
-| `POST /v1/webhooks` | Pro | Register webhook |
-| `DELETE /v1/webhooks/:id` | Pro | Remove webhook |
-| `GET /v1/context` | Dev+ | ~2k token pricing snapshot for agent system prompts |
-| `POST /v1/ask` | Dev+ | NL query → structured response with `inferred_params` |
-| `GET /v1/stream/changes` | Dev+ | SSE stream with reconnection via `Last-Event-ID` |
+| `GET /v1/models` | API key | List models with filters: `?provider=`, `?modality=`, `?min_context=` |
+| `GET /v1/models/:id` | API key | Single model detail |
+| `GET /v1/models/:id/history` | API key | Price history with `?from=`, `?to=` |
+| `GET /v1/compare?models=` | API key | Compare up to 5 models |
+| `GET /v1/recommend` | API key | Ranked models by task/context/price |
+| `GET /v1/providers` | API key | Provider list |
+| `GET /v1/changes` | API key | Recent price changes with `?since=`, `?provider=` |
+| `POST /v1/webhooks` | API key | Register webhook |
+| `DELETE /v1/webhooks/:id` | API key | Remove webhook |
+| `GET /v1/context` | API key | ~2k token pricing snapshot for agent system prompts |
+| `POST /v1/ask` | API key | NL query → structured response with `inferred_params` |
+| `GET /v1/stream/changes` | API key | SSE stream with reconnection via `Last-Event-ID` |
 
 ## Key Technical Decisions
 
 - **Reconciliation before publishing**: price data is never written directly from a scraper. The reconciliation engine mediates all writes. Single-source changes require 2 consecutive matching fetches. Multi-source disagreements are held in a review queue.
 - **Immutable history**: `price_history` records are append-only. No in-place updates. Every record has source attribution.
 - **Trust metadata on every response**: `confirmed_at`, `source`, `confidence` (high/medium/low), `age_hours`, `change_velocity`. Agents use these to decide whether to trust a value.
-- **Tier gating via Unkey middleware**: Fiber middleware validates the API key, extracts the tier, and attaches it to the request context. Cache Unkey validation in Redis with 30s TTL.
+- **Auth via Unkey middleware**: Fiber middleware validates the API key, extracts the tier, and attaches it to the request context. Cache Unkey validation in Redis with 30s TTL. The tier is retained only for rate-limit selection and the Prometheus `tier` label — no endpoint gates on it.
 - **Webhook delivery**: via asynq jobs, at-least-once with 3 retries and exponential backoff.
 
 ## File Reading
@@ -548,7 +547,6 @@ npx @llmpricing/mcp
 | Charts | Tremor or Recharts |
 | MCP server | TypeScript + MCP SDK |
 | API key management | Unkey |
-| Payments | Lemon Squeezy |
 | Hosting | Railway |
 
 ## Data Sources

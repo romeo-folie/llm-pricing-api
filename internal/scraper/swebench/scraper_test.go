@@ -1,4 +1,4 @@
-package bfcl
+package swebench
 
 import (
 	"context"

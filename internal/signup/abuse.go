@@ -24,16 +24,51 @@ var ipRateLimitScript = redis.NewScript(`
   return count
 `)
 
+// AbuseConfig holds the abuse controls applied to the signup flow.
+// Use DefaultAbuseConfig for the production values.
+type AbuseConfig struct {
+	// SigningSecret keys the HMAC used to hash IPs and emails before they are
+	// used as Redis keys. Low-entropy values like IPs are enumerable, so an
+	// unkeyed digest would be reversible offline.
+	SigningSecret string
+	// MaxRequestsPerHour caps request-link calls per IP per hour. 0 disables.
+	MaxRequestsPerHour int
+	// ResendCooldown is the minimum interval between verification emails to the
+	// same address. This is what stops request-link being used to mail-bomb a
+	// third party. 0 disables.
+	ResendCooldown time.Duration
+	// RegenerateCooldown is the minimum interval between key regenerations for
+	// one identity. 0 disables.
+	RegenerateCooldown time.Duration
+	// BlockDisposable rejects known disposable email domains.
+	BlockDisposable bool
+}
+
+// DefaultAbuseConfig returns the production abuse controls, keyed with secret
+// (pass the magic-link signing secret).
+func DefaultAbuseConfig(secret string) AbuseConfig {
+	return AbuseConfig{
+		SigningSecret:      secret,
+		MaxRequestsPerHour: 5,
+		ResendCooldown:     60 * time.Second,
+		RegenerateCooldown: 60 * time.Second,
+		BlockDisposable:    true,
+	}
+}
+
 // AbuseGuard enforces rate-limiting and cooldown controls for the signup flow.
-// All limits are tracked in Redis.
+// All limits are tracked in Redis, and every control fails open on a Redis
+// error so a cache outage cannot block legitimate signups.
 type AbuseGuard struct {
 	rdb *redis.Client
-	cfg *HandlerConfig
+	cfg AbuseConfig
 	log zerolog.Logger
 }
 
 // NewAbuseGuard creates an AbuseGuard backed by the given Redis client.
-func NewAbuseGuard(rdb *redis.Client, cfg *HandlerConfig, log zerolog.Logger) *AbuseGuard {
+// A nil client disables every Redis-backed control; the disposable-domain block
+// still applies.
+func NewAbuseGuard(rdb *redis.Client, cfg AbuseConfig, log zerolog.Logger) *AbuseGuard {
 	return &AbuseGuard{rdb: rdb, cfg: cfg, log: log}
 }
 

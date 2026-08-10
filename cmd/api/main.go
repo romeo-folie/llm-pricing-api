@@ -220,7 +220,16 @@ func main() {
 	signupStore := signup.NewStore(db)
 	ml := mailer.New(cfg.ResendAPIKey, cfg.EmailFrom)
 	unkeyIssuer := signup.NewUnkeyIssuer(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
-	authHandler := auth.New(signupStore, ml, unkeyIssuer, auth.Config{
+	// Abuse controls for the signup flow. request-link emails an arbitrary
+	// address, so the per-email cooldown is what prevents it being used to
+	// mail-bomb a third party; the per-IP limit and disposable-domain block
+	// bound free-key farming. Every control fails open on a Redis error.
+	abuseGuard := signup.NewAbuseGuard(
+		redisClient,
+		signup.DefaultAbuseConfig(cfg.MagicLinkSigningSecret),
+		log,
+	)
+	authHandler := auth.New(signupStore, ml, unkeyIssuer, abuseGuard, auth.Config{
 		SigningSecret:           cfg.MagicLinkSigningSecret,
 		MagicLinkTTLMinutes:     cfg.MagicLinkTTLMinutes,
 		MagicLinkBaseURL:        cfg.MagicLinkBaseURL,
@@ -239,11 +248,11 @@ func main() {
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)
 
-	// Register public /v1 routes outside the auth group (no API key required).
-	// These serve the Compare page and are safe to expose unauthenticated.
-	handlers.RegisterPublic(app, db, redisClient)
-
-	// Register all /v1/ endpoint groups.
+	// Register all /v1/ endpoint groups. Every /v1 route is authenticated —
+	// /v1/compare and /v1/recommend are free-tier but still require an API key,
+	// and the frontend reaches them via server-side Next.js route handlers that
+	// attach the key. Registering them on a separate app.Group("/v1") would not
+	// bypass auth in any case: the USE /v1 middleware above matches by prefix.
 	handlers.RegisterFree(v1, db, redisClient)
 	if err := handlers.RegisterDev(v1, db, redisClient); err != nil {
 		log.Fatal().Err(err).Msg("failed to register dev handlers")
