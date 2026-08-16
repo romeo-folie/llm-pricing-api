@@ -116,10 +116,10 @@ export default function CompareClient({ allModels }: CompareClientProps) {
       {/* Page header */}
       <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.2s" }}>
         <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
-          Compare Models
+          Compare LLM Pricing
         </h1>
         <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
-          Pick up to 5 models to compare pricing, context, trust, and available benchmark scores side by side.
+          Compare AI model costs, token prices, context, trust, and available benchmark scores side by side.
         </p>
       </div>
 

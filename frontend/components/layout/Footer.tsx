@@ -2,12 +2,12 @@ import Link from "next/link"
 import CopyrightYear from "./CopyrightYear"
 
 const PRODUCT_LINKS = [
-  { href: "/models",     label: "Model Browser" },
-  { href: "/compare",    label: "Compare"       },
-  { href: "/calculator", label: "Calculator"    },
-  { href: "/changes",    label: "Price Changes" },
-  { href: "/why",        label: "Why LLMRates?" },
-  { href: "/pricing",    label: "Features"      },
+  { href: "/models", label: "Model Browser" },
+  { href: "/compare", label: "Compare" },
+  { href: "/calculator", label: "LLM Price Calculator" },
+  { href: "/changes", label: "Price Changes" },
+  { href: "/why", label: "Why LLMRates?" },
+  { href: "/pricing", label: "Features" },
 ] as const
 
 // openapi.json is a rewrite to the Go API — use `native: true` to render a

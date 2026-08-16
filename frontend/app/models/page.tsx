@@ -10,20 +10,18 @@ import Pagination from "@/components/ui/Pagination"
 import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 
 export const metadata: Metadata = {
-  title: "AI Model Pricing — GPT-4o, Claude, Gemini, Grok Token Costs | LLMRates",
+  title: "AI Model Pricing | Compare LLM Token Costs",
   description:
-    "Browse token pricing for 300+ AI models: GPT-4o, Claude 3.5, Gemini 1.5, Grok, Mistral, and more. " +
-    "Compare input/output costs per 1M tokens, filter by provider and context window. " +
-    "Reconciled from multiple sources and updated every 5 minutes.",
+    "Browse current AI model pricing across providers. Compare LLM input and output token prices, API costs per million tokens, context windows, and source data.",
   keywords:
-    "ai model pricing, llm pricing, gpt-4o price, claude pricing, gemini pricing, grok pricing, " +
-    "mistral pricing, openai token cost, anthropic api price, llm api cost comparison, " +
-    "cost per 1000 tokens, cheapest llm, ai api pricing 2025",
+    "ai model pricing, llm pricing, llm prices, llm costs, token pricing, token prices, " +
+    "input token cost, output token cost, ai api pricing, ai api costs, price per million tokens, " +
+    "llm pricing comparison, cheapest llm api",
   alternates: { canonical: "/models" },
   openGraph: {
     title: "AI Model Pricing Browser — Compare LLM Token Costs",
     description:
-      "Browse reconciled pricing for 300+ AI models. Compare GPT-4o, Claude 3.5, Gemini, Grok token costs.",
+      "Browse current AI model pricing and compare input and output token costs across providers.",
   },
 }
 
@@ -105,12 +103,12 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             className="font-outfit text-2xl font-bold"
             style={{ color: "var(--ink)" }}
           >
-            Model Browser
+            AI Model Pricing
           </h1>
           <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
             {apiUnavailable
               ? "API unavailable"
-              : `${total} models tracked · updated every 5 minutes`}
+              : `Compare token prices and API costs across ${total} models · source timestamps included`}
           </p>
         </div>
 

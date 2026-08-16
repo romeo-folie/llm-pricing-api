@@ -9,20 +9,19 @@ import { getModels, getProviders, getChanges } from "@/lib/api"
 
 export const metadata: Metadata = {
   title: {
-    absolute: "LLMRates — LLM Token Pricing Tracker | Compare GPT, Claude, Gemini Costs",
+    absolute: "LLMRates | LLM Pricing, Token Costs & AI Model Comparison",
   },
   description:
-    "Track and compare AI model pricing across OpenAI, Anthropic, Google, xAI, and Mistral. " +
-    "Reconciled token costs with full price history, real-time change feed, and agent-optimized APIs. " +
-    "See how much GPT-4o, Claude 3.5, Gemini, Grok cost per 1M tokens.",
+    "Compare LLM pricing, AI model costs, and input and output token prices across providers. " +
+    "Explore price history, real-time changes, calculators, and APIs.",
   keywords:
-    "llm pricing, ai model cost, gpt-4o pricing, claude 3.5 pricing, gemini pricing, grok pricing, " +
-    "token cost comparison, ai api price tracker, openai pricing, anthropic pricing, " +
-    "llm cost calculator, compare ai models, price per 1000 tokens",
+    "llm pricing, llm prices, llm costs, ai model pricing, ai model costs, ai api pricing, " +
+    "token pricing, token prices, token costs, llm pricing comparison, llm cost comparison, " +
+    "llm price calculator, llm cost calculator, ai token cost calculator, ai api price tracker",
   openGraph: {
-    title: "LLMRates — Compare AI Model Pricing & Track Cost Changes",
+    title: "LLMRates | Compare LLM Pricing & Track AI Model Costs",
     description:
-      "Compare GPT-4o, Claude 3.5, Gemini, and Grok pricing side by side. Full price history, real-time changes, and agent-native APIs.",
+      "Compare AI model pricing and token costs across providers. Explore full price history, real-time changes, and agent-native APIs.",
     type: "website",
     images: [
       {
@@ -190,9 +189,9 @@ export default async function Home() {
                   className="font-outfit text-lg leading-relaxed"
                   style={{ color: "var(--muted)" }}
                 >
-                  Multi-source verified token pricing with full history, real-time change
-                  feed, and agent-native endpoints. Replace manual spreadsheets with a
-                  single trusted API.
+                  Compare AI model pricing, API costs, and input and output token prices
+                  across providers. Replace manual spreadsheets with multi-source verified
+                  price history, real-time changes, and one trusted API.
                 </p>
 
                 {/* CTAs — sharp corners */}
@@ -209,14 +208,14 @@ export default async function Home() {
                     Browse Models
                   </a>
                   <a
-                    href="/pricing"
+                    href="/calculator"
                     className="font-outfit text-sm font-semibold px-6 py-3"
                     style={{
                       color: "var(--text)",
                       border: "1px solid var(--border)",
                     }}
                   >
-                    View Features
+                    Calculate LLM Costs
                   </a>
                 </div>
 

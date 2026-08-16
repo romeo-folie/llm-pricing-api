@@ -78,10 +78,10 @@ export default function CalculatorClient({ allModels }: CalculatorClientProps) {
     <div>
       <div className="animate-wireframe-fade" style={{ marginBottom: "24px", animationDelay: "1.2s" }}>
         <h1 className="font-outfit text-2xl font-bold" style={{ color: "var(--ink)" }}>
-          Cost Calculator
+          LLM Price Calculator
         </h1>
         <p className="font-outfit text-sm" style={{ color: "var(--muted)", marginTop: "4px" }}>
-          Estimate your LLM API costs by token volume
+          Compare AI model pricing and estimate API costs by token volume
         </p>
       </div>
 

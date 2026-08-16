@@ -35,32 +35,39 @@ const organizationJsonLd = {
 
 export const metadata: Metadata = {
   title: {
-    default: "LLMRates — AI Model Pricing API & Cost Comparison",
-    template: "%s — LLMRates",
+    default: "LLMRates | LLM Pricing, Token Costs & Model Comparison",
+    template: "%s | LLMRates",
   },
   description:
-    "Compare AI model pricing across OpenAI, Anthropic, Google, and Mistral. Reconciled LLM token costs with full price history, real-time change tracking, and agent-optimized APIs.",
+    "Compare LLM pricing and AI API costs across providers. Explore current input and output token prices, price history, cost calculators, and developer APIs.",
   keywords: [
     "LLM pricing",
-    "AI model pricing",
-    "AI API cost",
-    "GPT pricing",
-    "Claude pricing",
+    "LLM prices",
+    "LLM costs",
+    "LLM pricing comparison",
     "LLM cost comparison",
+    "AI model pricing",
+    "AI model costs",
+    "AI API pricing",
+    "AI API costs",
     "token pricing",
-    "AI token calculator",
+    "token prices",
+    "token costs",
+    "price per million tokens",
+    "LLM price calculator",
+    "LLM cost calculator",
+    "AI API cost calculator",
+    "AI token cost calculator",
     "LLM price tracker",
-    "machine learning model cost",
-    "OpenAI pricing",
-    "Anthropic pricing",
+    "AI model price tracker",
   ],
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"),
   openGraph: {
     type: "website",
     siteName: "LLMRates",
-    title: "LLMRates — AI Model Pricing API & Cost Comparison",
+    title: "LLMRates | LLM Pricing, Token Costs & Model Comparison",
     description:
-      "Compare AI model pricing across providers. Reconciled LLM token costs with full price history. Built for agents and developers.",
+      "Compare LLM pricing and AI API costs across providers with current token prices, full price history, and developer APIs.",
     images: [
       {
         url: `${SITE_URL}/og-image.png`,
@@ -72,9 +79,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "LLMRates — AI Model Pricing API & Cost Comparison",
+    title: "LLMRates | LLM Pricing, Token Costs & Model Comparison",
     description:
-      "Compare AI model pricing across providers. Multi-source verified LLM token costs with full price history and agent APIs.",
+      "Compare AI model pricing, token costs, and price history across LLM providers.",
     images: [`${SITE_URL}/og-image.png`],
   },
   alternates: {

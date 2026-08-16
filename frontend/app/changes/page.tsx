@@ -9,7 +9,7 @@ import ApiUnavailableBanner from "@/components/ui/ApiUnavailableBanner"
 export const metadata: Metadata = {
   title: "AI Model Price Changes — Real-Time LLM Pricing Updates",
   description:
-    "Track AI model price changes in real time. See when GPT, Claude, Gemini, and Mistral pricing changes. Updated every 5 minutes from OpenRouter, LiteLLM, and Hugging Face.",
+    "Track AI model price changes across providers. Monitor LLM pricing updates, input and output token costs, API rate changes, and source confirmation times.",
   alternates: { canonical: "/changes" },
   openGraph: {
     title: "AI Model Price Changes — Live LLM Pricing Feed",

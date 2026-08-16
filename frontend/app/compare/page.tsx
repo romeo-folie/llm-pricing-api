@@ -4,9 +4,9 @@ import { getModels } from "@/lib/api"
 import CompareClient from "@/components/compare/CompareClient"
 
 export async function generateMetadata(): Promise<Metadata> {
-  const title = "Compare AI Models | LLMRates"
+  const title = "LLM Pricing Comparison | Compare AI Model Costs"
   const description =
-    "Compare GPT-4, Claude, Gemini, and Mistral pricing side by side. See input/output token costs, context windows, and capability scores across AI providers."
+    "Compare LLM pricing and AI model costs side by side. Evaluate input and output token prices, context windows, trust data, and capability scores across providers."
 
   return {
     title,
