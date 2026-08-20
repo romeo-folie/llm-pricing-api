@@ -13,7 +13,7 @@ interface PageProps {
 // ─── SEO keyword generation ───────────────────────────────────────────────────
 
 function buildProviderSeo(slug: string, displayName: string, modelCount: number) {
-  const title = `${displayName} AI Model Pricing — All ${modelCount} Models & Token Costs | LLMRates`
+  const title = `${displayName} AI Model Pricing — All ${modelCount} Models & Token Costs`
 
   const description =
     `Compare all ${modelCount} ${displayName} AI model prices. ` +
@@ -165,7 +165,7 @@ export default async function ProviderPage({ params }: PageProps) {
                 style={{ textDecoration: "none" }}
               >
                 <div
-                  className="font-outfit"
+                  className="provider-model-row font-outfit"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 80px 130px 130px 70px",
@@ -173,11 +173,8 @@ export default async function ProviderPage({ params }: PageProps) {
                     padding: "12px 16px",
                     borderBottom: "1px solid var(--border)",
                     backgroundColor: "var(--surface)",
-                    transition: "background-color 0.1s",
                     alignItems: "center",
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--surfaceLo)" }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "var(--surface)" }}
                 >
                   <div>
                     <div className="text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{m.name}</div>

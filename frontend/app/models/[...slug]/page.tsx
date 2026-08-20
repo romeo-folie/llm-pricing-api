@@ -3,6 +3,7 @@ import { notFound, permanentRedirect } from "next/navigation"
 import { getModel, getModelHistory } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
 import { formatPrice, formatContext, formatSourceName } from "@/lib/format"
+import { decodeSlugParts } from "@/lib/routes"
 import PriceHistoryChart from "@/components/model/PriceHistoryChart"
 
 export const dynamic = "force-dynamic"
@@ -29,7 +30,7 @@ function buildModelSeo(model: {
   const inputPer1k  = (model.input_price_per_m  / 1000).toFixed(6).replace(/\.?0+$/, "")
   const outputPer1k = (model.output_price_per_m / 1000).toFixed(6).replace(/\.?0+$/, "")
 
-  const title = `${model.name} Pricing — ${inputFmt}/1M input tokens | LLMRates`
+  const title = `${model.name} Pricing — ${inputFmt}/1M input tokens`
 
   const description =
     `${model.name} API pricing: ${inputFmt} per 1M input tokens, ` +
@@ -59,7 +60,7 @@ function buildModelSeo(model: {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug: slugParts } = await params
-  const slug = slugParts.join("/")
+  const slug = decodeSlugParts(slugParts)
   // Numeric IDs get a redirect in the page component; return minimal metadata here
   if (/^\d+$/.test(slug)) return { title: "Model", robots: { index: false, follow: true } }
   const model = await getModel(slug).catch(() => null)
@@ -83,7 +84,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function ModelDetailPage({ params }: PageProps) {
   const { slug: slugParts } = await params
-  const slug = slugParts.join("/")
+  const slug = decodeSlugParts(slugParts)
 
   // Legacy numeric-ID URLs (e.g. /models/42) → 308 permanent redirect to slug.
   // Only getModel() is wrapped; permanentRedirect() throws a Next.js internal

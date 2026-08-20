@@ -239,6 +239,14 @@ body {
   color: var(--accent);
 }
 
+/* Provider rows render in a Server Component, so hover belongs in CSS. */
+.provider-model-row {
+  transition: background-color 0.1s;
+}
+.provider-model-row:hover {
+  background-color: var(--surfaceLo) !important;
+}
+
 /* ─── Hero diagram animations ────────────────────────────────────────────── */
 
 @keyframes hero-breathe {
