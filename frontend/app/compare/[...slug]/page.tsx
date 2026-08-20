@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { getModel } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
 import { formatPrice, formatContext, formatProviderName } from "@/lib/format"
+import { decodeSlugParts } from "@/lib/routes"
 import type { Model } from "@/lib/api"
 
 export const dynamic = "force-dynamic"
@@ -28,7 +29,7 @@ function parseSlugs(slug: string): [string, string] | null {
 // ─── SEO keyword generation ───────────────────────────────────────────────────
 
 function buildCompareSeo(a: Model, b: Model) {
-  const title = `${a.name} vs ${b.name} — Token Cost Comparison | LLMRates`
+  const title = `${a.name} vs ${b.name} — Token Cost Comparison`
 
   const description =
     `Compare ${a.name} vs ${b.name} pricing side by side. ` +
@@ -57,7 +58,7 @@ function buildCompareSeo(a: Model, b: Model) {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug: slugParts } = await params
-  const slug = slugParts.join("/")
+  const slug = decodeSlugParts(slugParts)
   const slugs = parseSlugs(slug)
   if (!slugs) return { title: "Compare Models" }
 
@@ -81,7 +82,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function CompareStaticPage({ params }: PageProps) {
   const { slug: slugParts } = await params
-  const slug = slugParts.join("/")
+  const slug = decodeSlugParts(slugParts)
   const slugs = parseSlugs(slug)
   if (!slugs) notFound()
 
