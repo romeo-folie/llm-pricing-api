@@ -55,8 +55,13 @@ describe("sitemap comparison URLs", () => {
           slug: "anthropic/claude-sonnet-4",
           provider: "anthropic",
         }),
+        model({
+          id: "3",
+          slug: "fireworks_ai/accounts/fireworks/models/ssd-1b",
+          provider: "fireworks_ai",
+        }),
       ],
-      total: 2,
+      total: 3,
     })
     getProvidersMock.mockResolvedValue([])
 
@@ -67,6 +72,9 @@ describe("sitemap comparison URLs", () => {
     )
     expect(entries.map((entry) => entry.url)).not.toContain(
       "https://llmrates.live/compare/openai/gpt-4o-vs-anthropic/claude-sonnet-4",
+    )
+    expect(entries.map((entry) => entry.url)).not.toContain(
+      "https://llmrates.live/models/fireworks_ai/accounts/fireworks/models/ssd-1b",
     )
   })
 })

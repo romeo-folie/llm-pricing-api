@@ -3,7 +3,8 @@ import { notFound, permanentRedirect } from "next/navigation"
 import { getModel, getModelHistory } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
 import { formatPrice, formatContext, formatSourceName } from "@/lib/format"
-import { decodeSlugParts } from "@/lib/routes"
+import { decodeSlugParts, encodeSlugPath } from "@/lib/routes"
+import { isCanonicalPublicSlug } from "@/lib/sitemap"
 import PriceHistoryChart from "@/components/model/PriceHistoryChart"
 
 export const dynamic = "force-dynamic"
@@ -67,12 +68,25 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!model) return { title: "Model Not Found" }
 
   const { title, description, keywords } = buildModelSeo(model)
+  const canonicalPath = `/models/${encodeSlugPath(model.slug)}`
+
+  // Deep resource paths and bare upstream IDs are useful catalog records but
+  // poor search landing pages. Keep them available to product users while
+  // preventing them from diluting discovery signals for canonical model URLs.
+  if (!isCanonicalPublicSlug(model.slug)) {
+    return {
+      title,
+      description,
+      robots: { index: false, follow: true },
+      alternates: { canonical: canonicalPath },
+    }
+  }
 
   return {
     title,
     description,
     keywords,
-    alternates: { canonical: `/models/${model.slug}` },
+    alternates: { canonical: canonicalPath },
     openGraph: {
       title: `${model.name} API Pricing — Token Cost & Price History`,
       description,

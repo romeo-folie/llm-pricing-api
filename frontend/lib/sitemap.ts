@@ -12,11 +12,18 @@ const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 /** Curate discovery URLs instead of publishing every catalogue record. */
 export function isCanonicalPublicSlug(slug: string): boolean {
-  // Colon variants currently do not resolve as frontend pages, while tilde
-  // records are aliases rather than canonical public model identities.
+  // Bare upstream IDs and deep provider resource paths (for example,
+  // `fireworks_ai/accounts/fireworks/models/ssd-1b`) are still available in
+  // the product, but are not useful standalone search landing pages. Keep
+  // qualified region/tier variants eligible because they can be distinct SKUs.
   if (!slug || slug.includes(":") || slug.includes("~")) return false
 
-  return slug.split("/").every((segment) => SAFE_SEGMENT.test(segment))
+  const segments = slug.split("/")
+  if (segments.length < 2 || !segments.every((segment) => SAFE_SEGMENT.test(segment))) return false
+
+  const accountsIndex = segments.indexOf("accounts")
+  const modelsIndex = segments.indexOf("models", accountsIndex + 1)
+  return accountsIndex < 0 || modelsIndex < 0 || modelsIndex === segments.length - 1
 }
 
 export function selectSitemapModels(

@@ -42,10 +42,17 @@ describe("isCanonicalPublicSlug", () => {
     "openai/gpt-4o:batch",
     "qwen/qwen-plus:thinking",
     "~openai/gpt-latest",
+    "eu.anthropic.claude-sonnet-5",
+    "fireworks_ai/accounts/fireworks/models/ssd-1b",
     "openai/model name",
     "openai//model",
-  ])("rejects non-canonical or unsafe slug %s", (slug) => {
+  ])("rejects non-canonical, raw, or unsafe slug %s", (slug) => {
     expect(isCanonicalPublicSlug(slug)).toBe(false)
+  })
+
+  it("accepts qualified variants that may represent distinct SKUs", () => {
+    expect(isCanonicalPublicSlug("anthropic/us/claude-sonnet-5")).toBe(true)
+    expect(isCanonicalPublicSlug("anthropic/fast/us/claude-sonnet-5")).toBe(true)
   })
 })
 
