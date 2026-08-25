@@ -1,4 +1,7 @@
 import type { Model } from "@/lib/api"
+import { encodeSlugPath } from "@/lib/routes"
+
+export { encodeSlugPath } from "@/lib/routes"
 
 export const SITEMAP_MODEL_MAX_AGE_DAYS = 90
 export const MAX_SITEMAP_MODELS = 500
@@ -14,10 +17,6 @@ export function isCanonicalPublicSlug(slug: string): boolean {
   if (!slug || slug.includes(":") || slug.includes("~")) return false
 
   return slug.split("/").every((segment) => SAFE_SEGMENT.test(segment))
-}
-
-export function encodeSlugPath(slug: string): string {
-  return slug.split("/").map(encodeURIComponent).join("/")
 }
 
 export function selectSitemapModels(

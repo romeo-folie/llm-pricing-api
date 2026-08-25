@@ -7,7 +7,10 @@ export const metadata: Metadata = {
   title: "Free API Key — LLMRates",
   description:
     "Get a free API key for LLMRates. No credit card. Verify your email and start querying live LLM pricing data.",
-  robots: { index: true, follow: true },
+  // Signup is a transactional flow, not a search landing page. Declare a
+  // page-level canonical as well so it cannot inherit the homepage canonical.
+  robots: { index: false, follow: true },
+  alternates: { canonical: "/signup/free" },
 }
 
 export default function SignupPage() {

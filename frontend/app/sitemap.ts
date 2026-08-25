@@ -6,6 +6,7 @@ import {
   encodeSlugPath,
   selectSitemapModels,
 } from "@/lib/sitemap"
+import { canonicalComparePath } from "@/lib/routes"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 
@@ -58,7 +59,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         const a = topModels[i]
         const b = topModels[j]
         compareRoutes.push({
-          url: `${SITE_URL}/compare/${encodeSlugPath(a.slug)}-vs-${encodeSlugPath(b.slug)}`,
+          url: `${SITE_URL}${canonicalComparePath(a.slug, b.slug)}`,
           lastModified: new Date(
             Math.max(Date.parse(a.updated_at), Date.parse(b.updated_at)),
           ),

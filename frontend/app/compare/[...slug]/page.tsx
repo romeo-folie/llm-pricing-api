@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { getModel } from "@/lib/api"
 import { safeJsonLd } from "@/lib/utils"
 import { formatPrice, formatContext, formatProviderName } from "@/lib/format"
-import { decodeSlugParts } from "@/lib/routes"
+import { canonicalComparePath, decodeSlugParts, encodeSlugPath } from "@/lib/routes"
 import type { Model } from "@/lib/api"
 
 export const dynamic = "force-dynamic"
@@ -69,11 +69,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!a || !b) return { title: "Compare Models" }
 
   const { title, description, keywords } = buildCompareSeo(a, b)
+  const canonicalPath = canonicalComparePath(a.slug, b.slug)
   return {
     title,
     description,
     keywords,
-    alternates: { canonical: `/compare/${slug}` },
+    alternates: { canonical: canonicalPath },
     openGraph: { title, description },
   }
 }
@@ -92,6 +93,10 @@ export default async function CompareStaticPage({ params }: PageProps) {
   ])
   if (!a || !b) notFound()
 
+  const canonicalPath = canonicalComparePath(a.slug, b.slug)
+  const requestedPath = `/compare/${encodeSlugPath(slug)}`
+  if (requestedPath !== canonicalPath) permanentRedirect(canonicalPath)
+
   const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 
   const jsonLd = {
@@ -99,7 +104,7 @@ export default async function CompareStaticPage({ params }: PageProps) {
     "@type": "ItemList",
     name: `${a.name} vs ${b.name} — Token Cost Comparison`,
     description: `Side-by-side pricing comparison: ${a.name} vs ${b.name}`,
-    url: `${SITE_URL}/compare/${slug}`,
+    url: `${SITE_URL}${canonicalPath}`,
     numberOfItems: 2,
     itemListElement: [
       { "@type": "ListItem", position: 1, name: a.name, url: `${SITE_URL}/models/${a.slug}` },
@@ -116,7 +121,7 @@ export default async function CompareStaticPage({ params }: PageProps) {
         "@type": "ListItem",
         position: 2,
         name: `${a.name} vs ${b.name}`,
-        item: `${SITE_URL}/compare/${slug}`,
+        item: `${SITE_URL}${canonicalPath}`,
       },
     ],
   }
