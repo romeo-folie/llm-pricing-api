@@ -523,7 +523,9 @@ go build -o bin/api ./cmd/api
 go run ./cmd/api
 
 # Background workers
-go run ./cmd/worker
+# Use `make worker` (offsets APP_PORT/METRICS_PORT so it can run beside the API);
+# a bare `go run ./cmd/worker` collides with the API on :8080.
+make worker
 
 # Frontend (Next.js)
 cd frontend && npm install

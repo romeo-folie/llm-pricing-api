@@ -61,7 +61,9 @@ var (
 	}, []string{"source", "status"})
 
 	// ReconcilerEventsTotal counts price reconciliation events processed.
-	// Labels: event_type (price_change, no_change, new_model, model_removed).
+	// Labels: event_type. Emitted values (see internal/reconciler): no_change,
+	// discrepancy_flagged, pending_change_seen, first_seen_published,
+	// price_published.
 	ReconcilerEventsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "llm_reconciler_events_total",
 		Help: "Total number of reconciler events processed, partitioned by event type.",

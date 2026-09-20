@@ -4,9 +4,9 @@ Prometheus instrumentation for the API and worker.
 
 ## Purpose
 
-Declares every Prometheus metric the service exposes and provides the Fiber middleware that records per-request counters and latency histograms. Metrics are package-level variables registered on `prometheus.DefaultRegisterer`, so any package can increment them without an import cycle or dependency injection.
+Declares every Prometheus metric the service exposes, provides the Fiber middleware that records per-request counters and latency histograms, and builds the internal HTTP server that serves them. Metrics are package-level variables registered on `prometheus.DefaultRegisterer`, so any package can increment them without an import cycle or dependency injection.
 
-`cmd/api` serves these on a **separate internal HTTP server** (`METRICS_PORT`, default `9091`) so `/metrics` is never reachable through the public API port.
+`cmd/api` and `cmd/worker` each serve the registry on a **separate internal HTTP server** (`METRICS_PORT`, default `9091`) so `/metrics` is never reachable through a public port. Each binary needs its own listener because Prometheus scrapes per process — the API's endpoint does not carry the worker's pipeline counters.
 
 ## Structure
 
@@ -15,6 +15,8 @@ internal/metrics/
   metrics.go      # All metric declarations (counters, histogram, gauge)
   middleware.go   # PrometheusMiddleware — per-request instrumentation
   active_keys.go  # Rolling 1-hour unique-key tracker feeding the ActiveKeys gauge
+  server.go       # NewMux / NewServer — the shared internal metrics HTTP server
+  server_test.go  # Tests for the listener, exposition, label names, and disabled state
   README.md       # This file
 ```
 
@@ -65,13 +67,25 @@ app.Use(requestLogger(log))
 app.Use(recover.New())
 ```
 
-Serve the registry on its own port:
+Serve the registry on its own port. `NewServer` returns `nil` when the port is
+empty, so a disabled endpoint needs no special-casing at the call site:
 
 ```go
-metricsMux := http.NewServeMux()
-metricsMux.Handle("/metrics", promhttp.Handler())
-// listened on :METRICS_PORT, separate from the Fiber app
+if srv := metrics.NewServer(cfg.MetricsPort); srv != nil {
+    go func() {
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Error().Err(err).Msg("metrics server error")
+        }
+    }()
+    defer func() {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        _ = srv.Shutdown(ctx)
+    }()
+}
 ```
+
+`NewMux()` is exported separately for tests that need the handler without a listener.
 
 Increment a domain metric from anywhere:
 
@@ -92,6 +106,7 @@ metrics.ScraperRunsTotal.WithLabelValues("openrouter", "success").Inc()
 | `internal/api` | Reads tier/key-hash locals keys shared with the auth middleware |
 | `github.com/prometheus/client_golang/prometheus` | Metric types and default registry |
 | `github.com/prometheus/client_golang/prometheus/promauto` | Self-registering constructors |
+| `github.com/prometheus/client_golang/prometheus/promhttp` | `/metrics` exposition handler used by `NewMux` |
 | `github.com/gofiber/fiber/v2` | Middleware signature and route introspection |
 
 Alert rules and dashboards built on these metrics live in [`monitoring/`](../../monitoring/README.md).

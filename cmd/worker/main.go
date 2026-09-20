@@ -17,6 +17,7 @@ import (
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
 	"llm-pricing-api/internal/logger"
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/worker"
 )
@@ -319,6 +320,30 @@ func run() error {
 		}
 	}()
 
+	// Start the internal Prometheus metrics server on its own port. The worker
+	// increments the pipeline counters inside this process, so this endpoint is
+	// the only path those samples have out of it — without it the data-pipeline
+	// dashboard stays empty and the scraper-failure alert can never fire.
+	//
+	// An empty METRICS_PORT disables the server, matching cmd/api. A bind
+	// failure is logged rather than fatal: losing telemetry must not take the
+	// data pipeline down with it, and the failure is loud in the logs.
+	metricsSrv := metrics.NewServer(cfg.MetricsPort)
+	if metricsSrv == nil {
+		// Metrics were explicitly disabled with an empty METRICS_PORT. Say so
+		// loudly: silently losing the pipeline counters is precisely the
+		// failure this endpoint exists to prevent.
+		log.Warn().Msg("metrics endpoint disabled (METRICS_PORT is empty)")
+	} else {
+		go func() {
+			log.Info().Str("addr", metricsSrv.Addr).Msg("starting metrics server")
+			if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Error().Err(err).Str("addr", metricsSrv.Addr).Msg(
+					"metrics server error — this process is now unscrapeable")
+			}
+		}()
+	}
+
 	// Block until SIGINT/SIGTERM or a health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -332,6 +357,8 @@ func run() error {
 		// pass. Initiate a graceful asynq shutdown and exit non-zero so the
 		// platform restarts the container.
 		log.Error().Err(healthErr).Msg("health server error — initiating shutdown")
+		// This path returns a non-nil error, so the process exits non-zero and
+		// the OS reclaims the metrics port; there is nothing to drain here.
 		shutdownDone := make(chan struct{})
 		go func() {
 			srv.Shutdown()
@@ -345,12 +372,17 @@ func run() error {
 		return healthErr
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// One budget covers the whole graceful shutdown — health, the asynq drain,
+	// and the metrics listener — so a stuck component cannot push the process
+	// past Railway's SIGKILL window. Each phase returns as soon as it is done;
+	// the deadline only bites when something is genuinely hung.
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelShutdown()
+
+	// Stop the health listener first so Railway sees the service draining.
 	_ = healthSrv.Shutdown(shutdownCtx)
 
-	// srv.Shutdown blocks until all in-flight tasks complete. Bound it with
-	// a 10s deadline so a stuck handler cannot push past Railway's SIGKILL window.
+	// srv.Shutdown blocks until all in-flight tasks complete.
 	shutdownDone := make(chan struct{})
 	go func() {
 		srv.Shutdown()
@@ -358,9 +390,16 @@ func run() error {
 	}()
 	select {
 	case <-shutdownDone:
-	case <-time.After(10 * time.Second):
+	case <-shutdownCtx.Done():
 		log.Warn().Msg("worker shutdown timed out — forcing exit")
 		return fmt.Errorf("worker shutdown timed out")
+	}
+
+	// Stop the metrics listener last, inside the same budget: a scrape during
+	// the drain can still observe the final counter increments produced by
+	// in-flight tasks.
+	if metricsSrv != nil {
+		_ = metricsSrv.Shutdown(shutdownCtx)
 	}
 
 	return nil

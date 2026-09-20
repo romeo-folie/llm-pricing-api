@@ -122,7 +122,7 @@ func Load() (*Config, error) {
 		UnkeyAPIID:       os.Getenv("UNKEY_API_ID"),
 		WebhookSecretKey: os.Getenv("WEBHOOK_SECRET_KEY"),
 		LogLevel:         getEnv("LOG_LEVEL", "debug"),
-		MetricsPort:      getEnv("METRICS_PORT", "9091"),
+		MetricsPort:      getEnvAllowEmpty("METRICS_PORT", "9091"),
 
 		ResendAPIKey:            resendAPIKey,
 		EmailFrom:               getEnv("EMAIL_FROM", "LLMRates <noreply@llmrates.live>"),
@@ -139,6 +139,16 @@ func Load() (*Config, error) {
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// getEnvAllowEmpty behaves like getEnv but honours an explicitly empty value.
+// Use it for settings where "" carries meaning distinct from "unset" — such as
+// METRICS_PORT, where an empty value disables the metrics listener.
+func getEnvAllowEmpty(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
 		return v
 	}
 	return fallback

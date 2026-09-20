@@ -11,6 +11,12 @@ vendor/
 *.out
 coverage.html
 
+# Workspace-local tool caches (used when the default cache dirs are unwritable)
+.gocache/
+.gotmp/
+.gomodcache/
+.golangci-cache/
+
 # Node
 node_modules/
 .next/
