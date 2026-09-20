@@ -15,11 +15,11 @@ import (
 // correct HTTP status code, type URI, title, and detail.
 func TestProblemDetailConstructors(t *testing.T) {
 	tests := []struct {
-		name           string
-		fn             func(string) *api.ProblemDetail
-		wantStatus     int
+		name             string
+		fn               func(string) *api.ProblemDetail
+		wantStatus       int
 		wantTypeContains string
-		wantTitle      string
+		wantTitle        string
 	}{
 		{
 			name:             "NewUnauthorized",

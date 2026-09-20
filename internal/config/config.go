@@ -9,16 +9,16 @@ import (
 )
 
 type Config struct {
-	DatabaseURL      string
-	RedisURL         string
-	AppEnv           string
-	AppPort          string
-	AdminUser        string
-	AdminPassword    string
-	OTELEndpoint     string
-	OTELServiceName  string
-	UnkeyRootKey     string
-	UnkeyAPIID       string
+	DatabaseURL     string
+	RedisURL        string
+	AppEnv          string
+	AppPort         string
+	AdminUser       string
+	AdminPassword   string
+	OTELEndpoint    string
+	OTELServiceName string
+	UnkeyRootKey    string
+	UnkeyAPIID      string
 	// WebhookSecretKey is a 32-byte hex-encoded AES-256-GCM key used to encrypt
 	// webhook secrets at rest. If empty, a random ephemeral key is generated at
 	// startup — webhook secrets will not survive process restarts in that mode.

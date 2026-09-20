@@ -1026,4 +1026,3 @@ func TestAsk_Alias_UnknownModel_NoModelInParams(t *testing.T) {
 		t.Errorf("expected no model for unknown alias, got %v", model)
 	}
 }
-

@@ -10,7 +10,7 @@ import "github.com/gofiber/fiber/v2"
 //	  "meta": { ...trust fields... }
 //	}
 type Envelope struct {
-	Data any      `json:"data"`
+	Data any       `json:"data"`
 	Meta TrustMeta `json:"meta"`
 }
 

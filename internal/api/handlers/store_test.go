@@ -6,8 +6,8 @@ import (
 
 func TestChangeDeltaPct(t *testing.T) {
 	tests := []struct {
-		name      string
-		c         ChangeRow
+		name       string
+		c          ChangeRow
 		wantApprox float64 // expected value (exact for integer results)
 	}{
 		{

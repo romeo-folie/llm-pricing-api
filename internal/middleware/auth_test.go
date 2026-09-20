@@ -278,4 +278,3 @@ func TestAuth_ContentType_IsProblemJSON(t *testing.T) {
 		t.Errorf("want Content-Type=application/problem+json, got %q", ct)
 	}
 }
-

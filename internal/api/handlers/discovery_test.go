@@ -730,4 +730,3 @@ func TestGetOpenAPI_AskResponseHasIntent(t *testing.T) {
 		t.Error("AskResponse schema must NOT have stale 'answer' field")
 	}
 }
-

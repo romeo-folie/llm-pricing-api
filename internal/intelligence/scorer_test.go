@@ -4,7 +4,6 @@ import (
 	"testing"
 )
 
-
 // makeCapScores creates CapabilityScore entries for the given dimension→score pairs.
 func makeCapScores(modelID int, scores map[string]float64) []CapabilityScore {
 	out := make([]CapabilityScore, 0, len(scores))

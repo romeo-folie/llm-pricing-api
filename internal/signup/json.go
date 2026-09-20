@@ -11,7 +11,7 @@ type Codec interface {
 
 type stdCodec struct{}
 
-func (stdCodec) Marshal(v any) ([]byte, error)            { return json.Marshal(v) }
-func (stdCodec) Unmarshal(data []byte, v any) error      { return json.Unmarshal(data, v) }
+func (stdCodec) Marshal(v any) ([]byte, error)      { return json.Marshal(v) }
+func (stdCodec) Unmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
 
 var defaultCodec Codec = stdCodec{}

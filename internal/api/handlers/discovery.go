@@ -61,9 +61,9 @@ func (h *DiscoveryHandler) GetOpenAPI(c *fiber.Ctx) error {
 // Returns the AI plugin manifest for agent discovery with no authentication.
 func (h *DiscoveryHandler) GetAIPlugin(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"schema_version":  "v1",
-		"name_for_human":  "LLM Rates",
-		"name_for_model":  "llmrates",
+		"schema_version": "v1",
+		"name_for_human": "LLM Rates",
+		"name_for_model": "llmrates",
 		"description_for_model": "Access current and historical LLM token pricing from multiple providers." +
 			" Use POST /v1/ask for natural language pricing queries (e.g. 'cheapest model for summarization')." +
 			" Use GET /v1/context for a compact pricing snapshot suitable for system prompts (~2k tokens)." +
