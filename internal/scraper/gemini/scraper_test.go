@@ -129,8 +129,8 @@ func TestFetch(t *testing.T) {
 	// Batch tiers skipped; "Gemini 3 Pro Preview" (no paid price) skipped.
 	// Dots are preserved in slugs (consistent with OpenAI scraper convention).
 	want := map[string]struct{}{
-		"google/gemini-2.5-pro":                {},
-		"google/gemini-3.1-pro-preview":        {},
+		"google/gemini-2.5-pro":                 {},
+		"google/gemini-3.1-pro-preview":         {},
 		"google/gemini-3.1-flash-image-preview": {},
 	}
 
@@ -255,7 +255,7 @@ func TestFetch_TieredContextPrice(t *testing.T) {
 			continue
 		}
 		found = true
-		const wantInput = 2.00 / 1_000_000  // first line: $2.00
+		const wantInput = 2.00 / 1_000_000   // first line: $2.00
 		const wantOutput = 12.00 / 1_000_000 // first line: $12.00
 		if !floatEq(m.InputCostPerToken, wantInput) {
 			t.Errorf("tiered input: got %v, want %v", m.InputCostPerToken, wantInput)

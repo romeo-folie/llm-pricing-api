@@ -426,8 +426,6 @@ func canonicalAnthropicSlug(name string) string {
 	return strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
 }
 
-
-
 // --- HTML helpers ---------------------------------------------------------
 
 // textContent returns the concatenated text of all text nodes under n.

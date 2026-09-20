@@ -358,5 +358,3 @@ func TestFetch_ContextCancellation(t *testing.T) {
 		t.Fatal("expected error on context cancellation, got nil")
 	}
 }
-
-

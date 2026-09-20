@@ -17,8 +17,8 @@ func TestOK_ReturnsEnvelope(t *testing.T) {
 	app := fiber.New()
 	app.Get("/test", func(c *fiber.Ctx) error {
 		meta := api.TrustMeta{
-			Confidence: models.ConfidenceHigh,
-			Source:     "openrouter",
+			Confidence:  models.ConfidenceHigh,
+			Source:      "openrouter",
 			ConfirmedAt: time.Now().UTC(),
 		}
 		return api.OK(c, fiber.Map{"key": "value"}, meta)

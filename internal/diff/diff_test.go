@@ -157,7 +157,7 @@ func TestDiff_MultipleModels(t *testing.T) {
 		storedPrice(2, 0.000015, 0.000075),
 	}
 	inc := []scraper.ScrapedModel{
-		incoming("openai/gpt-4", "openai", 0.00003, 0.00006),    // unchanged
+		incoming("openai/gpt-4", "openai", 0.00003, 0.00006),                // unchanged
 		incoming("anthropic/claude-3-opus", "anthropic", 0.00003, 0.000075), // input doubled
 	}
 

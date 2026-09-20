@@ -108,12 +108,12 @@ type askMeta struct {
 
 // askResponse is the /v1/ask success payload.
 type askResponse struct {
-	Intent              string         `json:"intent"`
-	InferredParams      map[string]any `json:"inferred_params"`
+	Intent              string          `json:"intent"`
+	InferredParams      map[string]any  `json:"inferred_params"`
 	Models              []modelResponse `json:"models,omitempty"`
 	RankedModels        []modelResponse `json:"ranked_models,omitempty"`
-	PlainEnglishSummary string         `json:"plain_english_summary"`
-	Meta                askMeta        `json:"meta"`
+	PlainEnglishSummary string          `json:"plain_english_summary"`
+	Meta                askMeta         `json:"meta"`
 }
 
 // --- AskHandler ---------------------------------------------------------
@@ -543,7 +543,7 @@ var useCaseKeywords = map[string]string{
 	"ai agent":         "agentic", // "agent" alone is too broad (e.g. "real estate agent")
 	"tool use":         "agentic",
 	"function calling": "agentic",
-	"writing code":     "coding",  // must appear before "writing" in longest-first order
+	"writing code":     "coding", // must appear before "writing" in longest-first order
 	"writing":          "writing",
 	"copywriting":      "writing",
 	"content creation": "writing",

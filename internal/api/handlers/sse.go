@@ -79,7 +79,7 @@ func NewSSEHandler(rdb *redis.Client) (*SSEHandler, error) {
 
 // sseFilters holds the parsed query-param filters for an SSE connection.
 type sseFilters struct {
-	provider string             // empty = no filter
+	provider string              // empty = no filter
 	modelIDs map[string]struct{} // empty = no filter; key = stringified model_id
 }
 

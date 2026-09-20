@@ -7,7 +7,6 @@ import (
 	"llm-pricing-api/internal/scraper"
 )
 
-
 // PriceDiff describes a detected change in a single price field for one model.
 type PriceDiff struct {
 	ModelSlug          string

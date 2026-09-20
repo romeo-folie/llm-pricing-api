@@ -462,7 +462,9 @@ func TestRecommend_TaskModalityMapping_Vision(t *testing.T) {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 	var envelope struct {
-		Data []struct{ ID int `json:"id"` } `json:"data"`
+		Data []struct {
+			ID int `json:"id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v; body: %s", err, body)
@@ -491,7 +493,9 @@ func TestRecommend_TaskModalityMapping_Embedding(t *testing.T) {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 	var envelope struct {
-		Data []struct{ ID int `json:"id"` } `json:"data"`
+		Data []struct {
+			ID int `json:"id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v; body: %s", err, body)
@@ -521,7 +525,9 @@ func TestRecommend_UnknownTask_NoModalityFilter(t *testing.T) {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
 	var envelope struct {
-		Data []struct{ ID int `json:"id"` } `json:"data"`
+		Data []struct {
+			ID int `json:"id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v; body: %s", err, body)
@@ -685,7 +691,9 @@ func TestRecommend_NoUseCase_BackwardCompatible(t *testing.T) {
 	if status != fiber.StatusOK {
 		t.Fatalf("expected 200, got %d; body: %s", status, body)
 	}
-	var envelope struct{ Data []json.RawMessage `json:"data"` }
+	var envelope struct {
+		Data []json.RawMessage `json:"data"`
+	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -745,7 +753,9 @@ func TestRecommend_FallbackFlag_WhenNoScores(t *testing.T) {
 	}
 	var envelope struct {
 		Data struct {
-			Items []struct{ Fallback bool `json:"fallback"` } `json:"items"`
+			Items []struct {
+				Fallback bool `json:"fallback"`
+			} `json:"items"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -1022,13 +1032,13 @@ func TestGetContext_MarkdownFormat(t *testing.T) {
 	}
 
 	bodyStr := string(body)
-	if !strings.Contains(bodyStr,"| Model |") {
+	if !strings.Contains(bodyStr, "| Model |") {
 		t.Error("expected markdown table header '| Model |'")
 	}
-	if !strings.Contains(bodyStr,"| Provider |") {
+	if !strings.Contains(bodyStr, "| Provider |") {
 		t.Error("expected markdown table header '| Provider |'")
 	}
-	if !strings.Contains(bodyStr,"| Input $/1M |") {
+	if !strings.Contains(bodyStr, "| Input $/1M |") {
 		t.Error("expected markdown table header '| Input $/1M |'")
 	}
 }
@@ -1050,10 +1060,10 @@ func TestGetContext_MarkdownFormat_HasMetadataSummary(t *testing.T) {
 	resp.Body.Close()
 
 	bodyStr := string(body)
-	if !strings.Contains(bodyStr,"> Models:") {
+	if !strings.Contains(bodyStr, "> Models:") {
 		t.Errorf("expected metadata summary line '> Models:', got body: %s", bodyStr)
 	}
-	if !strings.Contains(bodyStr,"Estimated tokens:") {
+	if !strings.Contains(bodyStr, "Estimated tokens:") {
 		t.Error("expected 'Estimated tokens:' in markdown header")
 	}
 }

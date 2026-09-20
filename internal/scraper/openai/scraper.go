@@ -311,9 +311,9 @@ func extractCells(tr *html.Node) []string {
 
 // sectionModality maps OpenAI page section labels to ScrapedModel.Modality.
 var sectionModality = map[string]string{
-	"Text tokens":                       "text",
-	"Image tokens":                      "image",
-	"Audio tokens":                      "audio",
+	"Text tokens":                         "text",
+	"Image tokens":                        "image",
+	"Audio tokens":                        "audio",
 	"Transcription and speech generation": "audio",
 }
 

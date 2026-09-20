@@ -154,18 +154,18 @@ var ErrRegenerateCooldown = fmt.Errorf("key regeneration is on cooldown — try 
 // isDisposableDomain checks against a minimal hardcoded denylist of commonly
 // abused disposable email services. Expand as needed.
 var disposableDomains = map[string]bool{
-	"mailinator.com":  true,
-	"guerrillamail.com": true,
-	"10minutemail.com": true,
-	"throwam.com":     true,
-	"yopmail.com":     true,
-	"maildrop.cc":     true,
-	"trashmail.com":   true,
-	"sharklasers.com": true,
+	"mailinator.com":         true,
+	"guerrillamail.com":      true,
+	"10minutemail.com":       true,
+	"throwam.com":            true,
+	"yopmail.com":            true,
+	"maildrop.cc":            true,
+	"trashmail.com":          true,
+	"sharklasers.com":        true,
 	"guerrillamailblock.com": true,
-	"spam4.me":        true,
-	"tempmail.com":    true,
-	"dispostable.com": true,
+	"spam4.me":               true,
+	"tempmail.com":           true,
+	"dispostable.com":        true,
 }
 
 func isDisposableDomain(email string) bool {

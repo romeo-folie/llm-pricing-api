@@ -1,4 +1,5 @@
 //go:build integration
+
 package handlers_test
 
 import (
@@ -11,7 +12,7 @@ import (
 
 func TestIntegration_Concurrency_Race(t *testing.T) {
 	app, _, _ := setupTestApp(t)
-	
+
 	const numRequests = 50
 	var wg sync.WaitGroup
 	wg.Add(numRequests)
@@ -21,7 +22,7 @@ func TestIntegration_Concurrency_Race(t *testing.T) {
 	for i := 0; i < numRequests; i++ {
 		go func(id int) {
 			defer wg.Done()
-			
+
 			// Hit different endpoints concurrently to stress shared state
 			paths := []string{
 				"/v1/models",
@@ -30,11 +31,11 @@ func TestIntegration_Concurrency_Race(t *testing.T) {
 				"/v1/changes",
 			}
 			path := paths[id%len(paths)]
-			
+
 			req := httptest.NewRequest("GET", path, nil)
 			// Use unique keys to bypass rate limits even if SKIP_RATE_LIMIT=0
 			req.Header.Set("Authorization", "Bearer test-concurrency-"+fmt.Sprint(id))
-			
+
 			resp, err := app.Test(req, 10000)
 			if err != nil {
 				errors <- fmt.Errorf("client %d: request failed: %v", id, err)
