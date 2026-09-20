@@ -17,7 +17,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/rs/zerolog"
 
@@ -271,21 +270,13 @@ func main() {
 	admin.Post("/review/:id/approve", reviewHandler.Approve)
 	admin.Post("/review/:id/reject", reviewHandler.Reject)
 
-	// Start internal Prometheus metrics server on a separate port.
-	// This server is intentionally NOT behind the public-facing Fiber instance
-	// so that /metrics is never reachable via the public API port.
-	if cfg.MetricsPort != "" {
-		metricsAddr := fmt.Sprintf(":%s", cfg.MetricsPort)
-		metricsMux := http.NewServeMux()
-		metricsMux.Handle("/metrics", promhttp.Handler())
-		metricsServer := &http.Server{
-			Addr:         metricsAddr,
-			Handler:      metricsMux,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
-		}
+	// Start the internal Prometheus metrics server on a separate port. It is
+	// intentionally NOT behind the public-facing Fiber instance so that
+	// /metrics is never reachable via the public API port. An empty
+	// METRICS_PORT disables the listener.
+	if metricsServer := metrics.NewServer(cfg.MetricsPort); metricsServer != nil {
 		go func() {
-			log.Info().Str("addr", metricsAddr).Msg("starting metrics server")
+			log.Info().Str("addr", metricsServer.Addr).Msg("starting metrics server")
 			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Error().Err(err).Msg("metrics server error")
 			}
@@ -295,6 +286,8 @@ func main() {
 			defer cancel()
 			_ = metricsServer.Shutdown(shutCtx)
 		}()
+	} else {
+		log.Warn().Msg("metrics endpoint disabled (METRICS_PORT is empty)")
 	}
 
 	// Graceful shutdown

@@ -206,6 +206,16 @@ railway up
   Grafana Cloud, Datadog, Honeycomb, or any OTLP-compatible backend.
 - **Health endpoint**: Poll `GET /health` from an external uptime monitor
   (e.g. Better Uptime, UptimeRobot) for availability alerting.
+- **Prometheus metrics**: Both services expose an internal metrics listener on
+  `METRICS_PORT` (default `9091`), served on a dedicated port that is never
+  reachable publicly. Scrape each service **separately** — the API's endpoint
+  does not carry the worker's pipeline counters:
+  - API — `http://llm-pricing-api.railway.internal:<METRICS_PORT>/metrics`
+  - Worker — `http://llm-pricing-worker.railway.internal:<METRICS_PORT>/metrics`
+
+  Confirm the exact private hostname for each service in the Railway dashboard,
+  and note that these names resolve only inside the project's private network —
+  so the collector must run as a service in the same environment.
 
 ---
 
@@ -217,6 +227,7 @@ railway up
 | `REDIS_URL` | Yes | `localhost:6379` | Redis connection string |
 | `APP_ENV` | No | `development` | Runtime environment (`development`/`staging`/`production`) |
 | `APP_PORT` | No | `8080` | HTTP listen port |
+| `METRICS_PORT` | No | `9091` | Internal Prometheus port for both services; empty disables the metrics listener |
 | `LOG_LEVEL` | No | `debug` | Minimum log level (`trace`/`debug`/`info`/`warn`/`error`) |
 | `ADMIN_USER` | No | `admin` | Basic auth username for `/admin` endpoints |
 | `ADMIN_PASSWORD` | Yes (prod) | `changeme` | Basic auth password — must be changed in non-dev environments |

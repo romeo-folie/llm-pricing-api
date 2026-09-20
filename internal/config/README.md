@@ -10,15 +10,17 @@ Provides a single `Config` struct populated from environment variables. Centrali
 
 ```
 internal/config/
-  config.go    # Config struct definition and Load() function
-  README.md    # This file
+  config.go       # Config struct definition and Load() function
+  config_test.go  # Tests for environment parsing, including empty-vs-unset
+  README.md       # This file
 ```
 
 ## Key Components
 
-- **`Config`** — Struct with fields: `DatabaseURL`, `RedisURL`, `AppEnv`, `AppPort`, `AdminUser`, `AdminPassword`, `OTELEndpoint`, `OTELServiceName`, `UnkeyRootKey`, `UnkeyAPIID`.
+- **`Config`** — Struct with fields: `DatabaseURL`, `RedisURL`, `AppEnv`, `AppPort`, `AdminUser`, `AdminPassword`, `OTELEndpoint`, `OTELServiceName`, `UnkeyRootKey`, `UnkeyAPIID`, `MetricsPort`.
 - **`Load() (*Config, error)`** — Reads environment variables. `DATABASE_URL` is required (returns error if missing). All other fields have sensible defaults (`localhost:6379`, `development`, `8080`).
-- **`getEnv(key, fallback)`** — Internal helper that returns the env var value or falls back to a default.
+- **`getEnv(key, fallback)`** — Internal helper that returns the env var value or falls back to a default. An empty value is treated as unset.
+- **`getEnvAllowEmpty(key, fallback)`** — Like `getEnv`, but an explicitly empty value is returned as-is rather than replaced by the fallback. Used for settings where `""` is meaningful — currently `METRICS_PORT`, where empty disables the metrics listener.
 
 ## Dependencies
 
@@ -42,6 +44,7 @@ fmt.Println(cfg.AppPort) // "8080"
 | `REDIS_URL` | No | `localhost:6379` | Redis address (host:port or URL) |
 | `APP_ENV` | No | `development` | Runtime environment |
 | `APP_PORT` | No | `8080` | HTTP listen port |
+| `METRICS_PORT` | No | `9091` | Internal Prometheus port for the API and worker; empty disables the metrics listener |
 | `ADMIN_USER` | No | `admin` | Admin panel HTTP Basic Auth username |
 | `ADMIN_PASSWORD` | No | `changeme` (dev only) | Admin panel HTTP Basic Auth password; must be set explicitly in non-development environments |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | — | OpenTelemetry OTLP exporter endpoint (no-op when empty) |

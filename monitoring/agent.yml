@@ -16,6 +16,17 @@ prometheus:
             # (METRICS_PORT, default 9091) started by cmd/api/main.go.
             - targets: ["host.docker.internal:9091"]
 
+        # The worker is a separate process with its own registry. Pipeline
+        # counters (llm_scraper_runs_total, llm_reconciler_events_total,
+        # llm_webhook_deliveries_total) exist only on this target — scraping
+        # the API alone leaves the data-pipeline dashboard empty. Locally the
+        # Makefile offsets the worker's METRICS_PORT to 9092 so both services
+        # can run at once. This collector config is superseded by the OTel
+        # Collector work in #195.
+        - job_name: llm-pricing-worker
+          static_configs:
+            - targets: ["host.docker.internal:9092"]
+
         - job_name: postgres-exporter
           static_configs:
             - targets: ["postgres-exporter:9187"]

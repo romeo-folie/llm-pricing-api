@@ -59,6 +59,11 @@ services:
         condition: service_started
       redis-exporter:
         condition: service_started
+    # The agent scrapes the API and worker processes running on the host. On
+    # Linux this mapping is required to resolve host.docker.internal; Docker
+    # Desktop on macOS provides it already, and the mapping is harmless there.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       GRAFANA_CLOUD_URL: ${GRAFANA_CLOUD_URL}
       GRAFANA_CLOUD_USER: ${GRAFANA_CLOUD_USER}

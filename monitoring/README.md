@@ -19,7 +19,18 @@ Infrastructure-as-code for LLM Pricing observability.
 `docker-compose.yml` includes:
 - `postgres-exporter` (9187)
 - `redis-exporter` (9121)
-- `grafana-agent` (scrapes exporters + API `/metrics` and forwards to Grafana Cloud)
+- `grafana-agent` (scrapes the exporters and both services' `/metrics`, then forwards to Grafana Cloud)
 
-The API metrics endpoint is served on `METRICS_PORT` (default `9091`) by `cmd/api/main.go`.
-For Docker Desktop, the agent scrapes `host.docker.internal:9091`.
+Both binaries serve `/metrics` on `METRICS_PORT` (default `9091`) via `metrics.NewServer` in
+`internal/metrics`. Prometheus scrapes per process, so the agent scrapes them separately:
+
+- API — `host.docker.internal:9091` (`cmd/api`)
+- Worker — `host.docker.internal:9092` (`cmd/worker`)
+
+The worker's port is offset to `9092` by the `worker` target in the Makefile so it can run alongside
+the API locally. Scraping only the API leaves the pipeline counters
+(`llm_scraper_runs_total`, `llm_reconciler_events_total`, `llm_webhook_deliveries_total`) empty —
+those exist only in the worker process.
+
+> The `grafana-agent` configuration here is local-only. It is replaced by an OpenTelemetry Collector
+> in production; see the observability epic.

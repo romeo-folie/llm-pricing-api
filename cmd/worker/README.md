@@ -4,20 +4,54 @@ Background job worker entrypoint for the LLM Pricing Platform.
 
 ## Purpose
 
-Runs an asynq worker server that processes asynchronous scraper tasks from the Redis-backed job queue. On startup it connects to PostgreSQL, wires the scraper task handlers through the diff and reconciliation pipeline, and starts a cron scheduler that enqueues scrape jobs at the configured intervals. The worker is the sole process responsible for keeping pricing data fresh. It also runs a minimal HTTP health server on `APP_PORT` (default 8080) so that Railway's health check can verify the service is alive.
+Runs an asynq worker server that processes asynchronous scraper tasks from the Redis-backed job queue. On startup it connects to PostgreSQL, wires the scraper task handlers through the diff and reconciliation pipeline, and starts a cron scheduler that enqueues scrape jobs at the configured intervals. The worker is the sole process responsible for keeping pricing data fresh. It also runs a minimal HTTP health server on `APP_PORT` (default 8080) so that Railway's health check can verify the service is alive, and an internal Prometheus metrics server on `METRICS_PORT` (default 9091) that exposes the pipeline counters it produces.
 
 ## Structure
 
 ```
 cmd/worker/
-  main.go      # Worker entrypoint — DB, Redis, asynq server, handler registration, cron scheduler
-  README.md    # This file
+  main.go    # Worker entrypoint — DB, Redis, asynq server, handler registration, cron scheduler
+  README.md  # This file
 ```
 
 ## Key Components
 
-- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of the health server, asynq server, and scheduler.
+- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, the asynq server, and the scheduler.
 - **`GET /health`** — Pings both PostgreSQL and Redis. Returns `{"status":"ok","db":"ok","redis":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable. Used by Railway's health check to verify the worker is running.
+- **`GET /metrics`** — Prometheus exposition of the process registry, served on `METRICS_PORT` by a dedicated listener that is never publicly exposed. See [Metrics](#metrics) below.
+
+## Metrics
+
+The worker is the **only** producer of the pipeline counters — `llm_scraper_runs_total`,
+`llm_reconciler_events_total`, and `llm_webhook_deliveries_total` are all incremented inside this
+process. Before this endpoint existed those samples were written to a process-local registry that
+nothing read, which left the data-pipeline dashboard permanently empty and made the
+`LLMScraperFailureConsecutive` alert impossible to fire.
+
+| Setting | Behaviour |
+|---|---|
+| `METRICS_PORT` set (default `9091`) | Metrics server listens on that port; `GET /metrics` returns the exposition |
+| `METRICS_PORT=""` | Metrics server is not started, matching `cmd/api` |
+
+The server is built by `metrics.NewServer` in [`internal/metrics`](../../internal/metrics/README.md),
+shared with `cmd/api`, and deliberately serves **only** `/metrics` — it is a telemetry surface, not a
+router. A bind failure is logged at error level but is not fatal: losing telemetry must not take the
+data pipeline down with it.
+
+Because Prometheus scrapes each process separately, the API's endpoint does **not** include these
+counters. A collector must scrape the worker independently:
+
+```
+# Local (see the Makefile, which offsets the worker to avoid colliding with the API)
+http://localhost:9092/metrics
+
+# Production (Railway private networking) — substitute the actual service name
+http://llm-pricing-worker.railway.internal:<METRICS_PORT>/metrics
+```
+
+A `CounterVec` emits no samples until its first child is observed, so immediately after boot the
+exposition contains only `go_*` and `process_*` families. The pipeline counters appear as soon as the
+startup scrape tasks record their first result.
 
 ## Tasks and Cron Schedule
 
@@ -47,6 +81,7 @@ Each handler executes the same three-stage pipeline:
 | `internal/database` | Opens and pings the PostgreSQL connection pool |
 | `internal/worker` | `WorkerStore`, `Handlers`, and task name constants |
 | `internal/reconciler` | Mediates all writes to `price_history` |
+| `internal/metrics` | Pipeline counters plus the shared `/metrics` HTTP server (`metrics.NewServer`) |
 | `github.com/hibiken/asynq` | Distributed task queue and cron scheduler backed by Redis |
 | `github.com/jackc/pgx/v5/pgxpool` | PostgreSQL connection pool |
 | `github.com/joho/godotenv` | `.env` file loading |
@@ -54,12 +89,22 @@ Each handler executes the same three-stage pipeline:
 ## Usage
 
 ```bash
-# Run directly
-go run ./cmd/worker
+# Preferred: `make worker` offsets APP_PORT and METRICS_PORT so the worker can
+# run alongside `make run` without either service failing to bind.
+make worker
+
+# Run directly — set both ports yourself, or the worker collides with a running
+# API on :8080 and exits non-zero when its health listener fails to bind.
+APP_PORT=8081 METRICS_PORT=9092 go run ./cmd/worker
 
 # Build and run
 go build -o bin/worker ./cmd/worker
-./bin/worker
+APP_PORT=8081 METRICS_PORT=9092 ./bin/worker
 ```
 
-Requires `DATABASE_URL` and `REDIS_URL` environment variables (and optionally `APP_ENV`). See `.env.example`.
+Requires `DATABASE_URL` and `REDIS_URL` environment variables (and optionally `APP_ENV`). `APP_PORT`
+and `METRICS_PORT` default to `8080` and `9091`; set `METRICS_PORT=""` to disable the metrics
+endpoint. See `.env.example`.
+
+Note that `make worker` always sets `METRICS_PORT`, overriding a blank value from `.env`. To disable
+metrics under that target, override the Makefile variable: `make worker WORKER_METRICS_PORT=""`.

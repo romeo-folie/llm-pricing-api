@@ -3,6 +3,13 @@ export
 
 .PHONY: setup up down logs migrate-up migrate-down build run worker test tidy install-tools
 
+# The worker binds APP_PORT for its health endpoint and METRICS_PORT for
+# Prometheus — the same two variables the API uses. Offset them so that
+# `make run` and `make worker` can run side by side locally; in production each
+# Railway service sets its own values.
+WORKER_APP_PORT ?= 8081
+WORKER_METRICS_PORT ?= 9092
+
 setup:
 	@test -f .env && echo "✅ .env already exists" || (cp .env.example .env && echo "✅ .env created from .env.example")
 
@@ -25,12 +32,13 @@ migrate-down:
 
 build:
 	go build -o bin/api ./cmd/api
+	go build -o bin/worker ./cmd/worker
 
 run:
 	go run ./cmd/api
 
 worker:
-	go run ./cmd/worker
+	APP_PORT=$(WORKER_APP_PORT) METRICS_PORT=$(WORKER_METRICS_PORT) go run ./cmd/worker
 
 test:
 	go test ./...
