@@ -188,7 +188,7 @@ func (h *AskHandler) Ask(c *fiber.Ctx) error {
 	}
 
 	// Increment OTel counter with intent label.
-	h.queriesTotal.Add(c.Context(), 1,
+	h.queriesTotal.Add(c.UserContext(), 1,
 		metric.WithAttributes(attribute.String("intent", intent)),
 	)
 
@@ -248,7 +248,7 @@ func (h *AskHandler) buildResponse(
 		}
 		filter.TopK = 5
 
-		models, err := h.store.RecommendModels(c.Context(), filter)
+		models, err := h.store.RecommendModels(c.UserContext(), filter)
 		if err != nil {
 			log.Error().Err(err).Str("intent", IntentRecommend).Msg("ask: recommend query failed")
 			return nil, err
@@ -327,7 +327,7 @@ func (h *AskHandler) buildCapabilityAskResponse(
 		modelIDs[i] = m.ID
 	}
 
-	capScoresMap, err := h.store.GetCapabilityScoresForModels(c.Context(), modelIDs)
+	capScoresMap, err := h.store.GetCapabilityScoresForModels(c.UserContext(), modelIDs)
 	if err != nil {
 		log.Error().Err(err).Msg("ask: failed to fetch capability scores")
 		return err

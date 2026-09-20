@@ -1,7 +1,9 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"testing"
@@ -208,6 +210,46 @@ func TestErrorHandlerInstanceIsPath(t *testing.T) {
 	}
 	if pd.Instance != "/models/123" {
 		t.Errorf("Instance: got %q, want %q", pd.Instance, "/models/123")
+	}
+}
+
+// TestErrorHandlerMapsDeadlineExceededToServiceUnavailable is the regression
+// test for requests that hit the per-request timeout. A saturated connection
+// pool must surface as a retryable 503 Problem Detail rather than an opaque
+// 500, so an overload is not mistaken for a bug.
+func TestErrorHandlerMapsDeadlineExceededToServiceUnavailable(t *testing.T) {
+	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
+	app.Get("/v1/models", func(_ *fiber.Ctx) error {
+		// Wrapped, as a real store error would be, to prove errors.Is is used.
+		return fmt.Errorf("acquire connection: %w", context.DeadlineExceeded)
+	})
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/v1/models", nil))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != fiber.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", resp.StatusCode, fiber.StatusServiceUnavailable)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	var pd api.ProblemDetail
+	if err := json.Unmarshal(body, &pd); err != nil {
+		t.Fatalf("unmarshal problem detail: %v", err)
+	}
+	if pd.Status != fiber.StatusServiceUnavailable {
+		t.Errorf("problem status = %d, want %d", pd.Status, fiber.StatusServiceUnavailable)
+	}
+	if pd.Instance != "/v1/models" {
+		t.Errorf("problem instance = %q, want %q", pd.Instance, "/v1/models")
 	}
 }
 

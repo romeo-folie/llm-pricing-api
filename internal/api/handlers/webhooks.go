@@ -286,7 +286,7 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 	if validator == nil {
 		validator = isWebhookURLSafe
 	}
-	if err := validator(c.Context(), body.URL); err != nil {
+	if err := validator(c.UserContext(), body.URL); err != nil {
 		return api.NewBadRequest(fmt.Sprintf("url rejected: %s", err.Error()))
 	}
 
@@ -310,7 +310,7 @@ func (h *WebhookHandler) Create(c *fiber.Ctx) error {
 		secretToStore = encSecret
 	}
 
-	rec, err := h.store.CreateWebhook(c.Context(), apiKeyHash, body.URL, secretToStore)
+	rec, err := h.store.CreateWebhook(c.UserContext(), apiKeyHash, body.URL, secretToStore)
 	if errors.Is(err, ErrWebhookLimitReached) {
 		pd := api.NewConflict(fmt.Sprintf(
 			"this API key already has the maximum of %d active webhooks; delete one before registering another",
@@ -341,7 +341,7 @@ func (h *WebhookHandler) Delete(c *fiber.Ctx) error {
 
 	apiKeyHash, _ := c.Locals(middleware.LocalKeyHash).(string)
 
-	if err := h.store.DeleteWebhook(c.Context(), id, apiKeyHash); err != nil {
+	if err := h.store.DeleteWebhook(c.UserContext(), id, apiKeyHash); err != nil {
 		if err == ErrWebhookNotFound {
 			return api.NewNotFound("webhook not found or not owned by this API key")
 		}

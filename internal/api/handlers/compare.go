@@ -81,7 +81,7 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 	case len(intIDs) > 0 && len(strSlugs) == 0:
 		// Legacy: all integer IDs.
 		var err error
-		models, err = h.store.CompareModels(c.Context(), intIDs)
+		models, err = h.store.CompareModels(c.UserContext(), intIDs)
 		if err != nil {
 			if err == ErrNotFound {
 				return api.NewNotFound("one or more model IDs were not found")
@@ -91,7 +91,7 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 	case len(intIDs) == 0:
 		// New: all slugs.
 		var err error
-		models, err = h.store.CompareModelsBySlugs(c.Context(), strSlugs)
+		models, err = h.store.CompareModelsBySlugs(c.UserContext(), strSlugs)
 		if err != nil {
 			if err == ErrNotFound {
 				return api.NewNotFound("one or more model slugs were not found")
@@ -100,14 +100,14 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 		}
 	default:
 		// Mixed: resolve both and merge.
-		slugModels, err := h.store.CompareModelsBySlugs(c.Context(), strSlugs)
+		slugModels, err := h.store.CompareModelsBySlugs(c.UserContext(), strSlugs)
 		if err != nil {
 			if err == ErrNotFound {
 				return api.NewNotFound("one or more model slugs were not found")
 			}
 			return api.NewInternalError("failed to compare models")
 		}
-		idModels, err := h.store.CompareModels(c.Context(), intIDs)
+		idModels, err := h.store.CompareModels(c.UserContext(), intIDs)
 		if err != nil {
 			if err == ErrNotFound {
 				return api.NewNotFound("one or more model IDs were not found")
@@ -122,7 +122,7 @@ func (h *Handlers) Compare(c *fiber.Ctx) error {
 	for i, m := range models {
 		ids[i] = m.ID
 	}
-	capMap, err := h.store.GetCapabilityScoresForModels(c.Context(), ids)
+	capMap, err := h.store.GetCapabilityScoresForModels(c.UserContext(), ids)
 	if err != nil {
 		log.Error().Err(err).Msg("compare: failed to fetch capability scores")
 		// Non-fatal: proceed without capability data.

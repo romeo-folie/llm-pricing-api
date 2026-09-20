@@ -26,6 +26,7 @@ import (
 	"llm-pricing-api/internal/cache"
 	"llm-pricing-api/internal/config"
 	"llm-pricing-api/internal/database"
+	"llm-pricing-api/internal/health"
 	"llm-pricing-api/internal/logger"
 	"llm-pricing-api/internal/mailer"
 	"llm-pricing-api/internal/metrics"
@@ -33,6 +34,21 @@ import (
 	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/review"
 	"llm-pricing-api/internal/signup"
+)
+
+const (
+	// requestTimeout bounds a single non-streaming /v1 request. It sits well
+	// above the p99 latency target (<200ms) so it only fires on a genuine
+	// stall, while still releasing a request whose dependency never answers.
+	requestTimeout = 15 * time.Second
+
+	// watchdogInterval is how often the liveness watchdog probes dependencies.
+	watchdogInterval = 30 * time.Second
+
+	// watchdogFailureThreshold is the number of consecutive failed probes that
+	// trigger a restart. At one probe per 30s that is ~90s of sustained
+	// failure: long enough to ride out a blip, short enough to catch a wedge.
+	watchdogFailureThreshold = 3
 )
 
 func main() {
@@ -107,6 +123,14 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	// Shared dependency checker for /health and the liveness watchdog: both need
+	// the same bounded probe, and neither may hang on an unreachable dependency.
+	healthChecker := health.NewChecker(
+		db.Ping,
+		func(ctx context.Context) error { return redisClient.Ping(ctx).Err() },
+		health.DefaultCheckTimeout,
+	)
+
 	// Wire OTel instrumentation onto the Redis client.
 	if err := redisotel.InstrumentTracing(redisClient); err != nil {
 		log.Fatal().Err(err).Msg("could not instrument redis with OTel tracing")
@@ -179,19 +203,18 @@ func main() {
 	app.Use(recover.New())
 
 	app.Get("/health", func(c *fiber.Ctx) error {
-		dbStatus := "ok"
-		if err := db.Ping(c.Context()); err != nil {
-			dbStatus = "error"
-		}
+		// healthChecker bounds both pings with one shared deadline, so an
+		// unreachable dependency yields a fast 503 instead of hanging the
+		// endpoint — a hanging /health is what let the process wedge for four
+		// days without Railway ever reporting a failure.
+		st := healthChecker.Check(c.Context())
 
-		redisStatus := "ok"
-		if err := redisClient.Ping(c.Context()).Err(); err != nil {
-			redisStatus = "error"
-		}
+		dbStatus := statusLabel(st.DBOK)
+		redisStatus := statusLabel(st.RedisOK)
 
 		overall := "ok"
 		code := fiber.StatusOK
-		if dbStatus != "ok" || redisStatus != "ok" {
+		if !st.OK() {
 			overall = "degraded"
 			code = fiber.StatusServiceUnavailable
 		}
@@ -207,8 +230,13 @@ func main() {
 	// and Redis response caching for cacheable GET endpoints.
 	// /health and discovery endpoints are registered outside this group so they
 	// are exempt from auth.
+	// Every /v1 request is bounded end to end: RequestTimeout runs first so the
+	// auth, cache, rate-limit and handler stages all inherit the deadline that
+	// eventually releases a connection blocked on pool acquire. Streaming
+	// routes are excluded inside the middleware.
 	unkeyVerifier := middleware.NewUnkeyClient(cfg.UnkeyRootKey, cfg.UnkeyAPIID)
 	v1 := app.Group("/v1",
+		middleware.RequestTimeout(requestTimeout),
 		middleware.Auth(unkeyVerifier, redisClient, cfg.UnkeyAPIID),
 		middleware.Cache(redisClient),
 		middleware.RateLimit(redisClient),
@@ -241,7 +269,14 @@ func main() {
 	// Rate-limit all auth routes first (DDoS protection even when signup is
 	// disabled). Handler-level checks in auth.Handler manage the 503 response
 	// when SIGNUP_ENABLED=false.
-	authGroup := app.Group("/auth", middleware.IPRateLimit(redisClient, log))
+	// Bounded like /v1: the signup routes are public and hit the same database
+	// pool, so an unbounded request there could exhaust it exactly as /v1 could.
+	// Work that must outlive the request opts out explicitly with
+	// context.WithoutCancel (see internal/auth).
+	authGroup := app.Group("/auth",
+		middleware.RequestTimeout(requestTimeout),
+		middleware.IPRateLimit(redisClient, log),
+	)
 	auth.Register(authGroup, authHandler)
 
 	// Register public discovery routes outside the auth group.
@@ -263,9 +298,12 @@ func main() {
 
 	// /admin routes are protected by HTTP Basic Auth.
 	// Credentials are read from ADMIN_USER / ADMIN_PASSWORD env vars.
-	admin := app.Group("/admin", basicauth.New(basicauth.Config{
-		Users: map[string]string{cfg.AdminUser: cfg.AdminPassword},
-	}))
+	admin := app.Group("/admin",
+		middleware.RequestTimeout(requestTimeout),
+		basicauth.New(basicauth.Config{
+			Users: map[string]string{cfg.AdminUser: cfg.AdminPassword},
+		}),
+	)
 	admin.Get("/review", reviewHandler.List)
 	admin.Post("/review/:id/approve", reviewHandler.Approve)
 	admin.Post("/review/:id/reject", reviewHandler.Reject)
@@ -295,6 +333,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
 
+	// Liveness watchdog. Railway's healthcheck is a one-time deploy gate, and a
+	// wedged process never exits, so restartPolicyType: ON_FAILURE never fired
+	// during the four-day outage. Probe the dependencies on an interval and exit
+	// non-zero after enough consecutive failures, handing the container to the
+	// platform's restart policy.
+	watchdogTrips := make(chan struct{}, 1)
+	go runWatchdog(ctx, healthChecker, health.NewWatchdog(watchdogFailureThreshold), log, watchdogTrips)
+
 	addr := fmt.Sprintf(":%s", cfg.AppPort)
 	log.Info().Str("addr", addr).Str("env", cfg.AppEnv).Msg("starting api")
 
@@ -309,6 +355,23 @@ func main() {
 	case err := <-serverErr:
 		log.Error().Err(err).Msg("server error")
 		return
+	case <-watchdogTrips:
+		// The database has been unreachable across several consecutive probes,
+		// which is the signature of the pool exhaustion that wedged the process
+		// for four days. Shut down and exit non-zero so Railway's ON_FAILURE
+		// policy restarts the container.
+		log.Error().Msg("watchdog: database unreachable repeatedly — shutting down for restart")
+		if err := app.ShutdownWithTimeout(5 * time.Second); err != nil {
+			log.Error().Err(err).Msg("watchdog shutdown error")
+		}
+		// Flush traces before exiting: os.Exit skips the deferred shutdown, and
+		// the traces describing this failure are exactly what must survive it.
+		flushCtx, cancelFlush := context.WithTimeout(context.Background(), 2*time.Second)
+		if err := otelShutdown(flushCtx); err != nil {
+			log.Error().Err(err).Msg("OTel flush during watchdog shutdown failed")
+		}
+		cancelFlush()
+		os.Exit(1)
 	case <-quit:
 		log.Info().Msg("shutting down...")
 		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
@@ -325,6 +388,56 @@ func parseLogLevel(s string) zerolog.Level {
 		return zerolog.InfoLevel
 	}
 	return l
+}
+
+// statusLabel renders a dependency's health using the strings the /health
+// payload has always reported.
+func statusLabel(ok bool) string {
+	if ok {
+		return "ok"
+	}
+	return "error"
+}
+
+// runWatchdog probes the dependencies on a fixed interval and signals when the
+// database has been unreachable for enough consecutive checks.
+//
+// It watches the database specifically, not every dependency. Issue #183 was
+// connection-pool exhaustion, which shows up as a failing pool ping (Ping has
+// to acquire a connection), whereas a Redis outage is survivable — cache, rate
+// limiting and key verification all fall back. Restarting on a Redis blip would
+// convert a degraded-but-serving API into a crash loop.
+//
+// It signals rather than exiting so that main can shut down and flush traces on
+// the normal path: a goroutine calling os.Exit would skip that, and could also
+// fire in the middle of a graceful shutdown.
+func runWatchdog(ctx context.Context, checker *health.Checker, wd *health.Watchdog, log zerolog.Logger, trips chan<- struct{}) {
+	ticker := time.NewTicker(watchdogInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			st := checker.Check(ctx)
+			switch {
+			case !st.DBOK:
+				log.Error().Bool("redis_ok", st.RedisOK).Msg("watchdog: database check failed")
+			case !st.RedisOK:
+				log.Warn().Msg("watchdog: redis check failed (not fatal — cache, rate limit and auth fail open)")
+			}
+
+			if wd.Observe(st.DBOK) {
+				select {
+				case trips <- struct{}{}:
+				default:
+					// A trip is already queued; main has not acted yet.
+				}
+				return
+			}
+		}
+	}
 }
 
 // requestLogger returns a Fiber middleware that logs each completed request
@@ -354,7 +467,9 @@ func requestLogger(base zerolog.Logger) fiber.Handler {
 			}
 		}
 
-		l := logger.FromContext(c.Context(), base)
+		// UserContext, not Context: otelfiber installs the request span there,
+		// so this is what puts trace_id/span_id on request log lines.
+		l := logger.FromContext(c.UserContext(), base)
 		event := l.Info()
 		if err != nil {
 			event = l.Error().Err(err)

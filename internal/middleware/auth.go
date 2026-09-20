@@ -158,7 +158,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 
 	// --- cache lookup ---
 	var result cachedVerifyResult
-	if data, err := cfg.redis.Get(c.Context(), cacheKey).Bytes(); err == nil {
+	if data, err := cfg.redis.Get(c.UserContext(), cacheKey).Bytes(); err == nil {
 		if jsonErr := json.Unmarshal(data, &result); jsonErr == nil {
 			if !result.Valid {
 				return api.NewUnauthorized("Invalid API key")
@@ -170,7 +170,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	}
 
 	// --- cache miss: call Unkey ---
-	valid, tier, err := cfg.verifier.VerifyKey(c.Context(), rawKey, cfg.apiID)
+	valid, tier, err := cfg.verifier.VerifyKey(c.UserContext(), rawKey, cfg.apiID)
 	if err != nil {
 		// Do not expose internal error details to the caller.
 		return api.NewUnauthorized("API key verification failed")
@@ -180,7 +180,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	result = cachedVerifyResult{Valid: valid, Tier: tier}
 	if data, merr := json.Marshal(result); merr == nil {
 		// Best-effort; ignore errors so a Redis hiccup doesn't break auth.
-		_ = cfg.redis.Set(c.Context(), cacheKey, data, unkeyTTL).Err()
+		_ = cfg.redis.Set(c.UserContext(), cacheKey, data, unkeyTTL).Err()
 	}
 
 	if !valid {

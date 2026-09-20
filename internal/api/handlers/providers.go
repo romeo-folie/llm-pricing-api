@@ -15,7 +15,7 @@ type providerResponse struct {
 // ListProviders handles GET /v1/providers.
 // Returns all providers with their model counts.
 func (h *Handlers) ListProviders(c *fiber.Ctx) error {
-	providers, err := h.store.ListProviders(c.Context())
+	providers, err := h.store.ListProviders(c.UserContext())
 	if err != nil {
 		return api.NewInternalError("failed to list providers")
 	}

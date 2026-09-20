@@ -62,7 +62,7 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 
 		// Atomically increment and return the new count.
-		count, err := redisClient.Incr(c.Context(), counterKey).Result()
+		count, err := redisClient.Incr(c.UserContext(), counterKey).Result()
 		if err != nil {
 			// Redis hiccup: let the request through rather than blocking all
 			// traffic, but do not count it.
@@ -74,9 +74,9 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		if count == 1 {
 			// Expire at the start of the next UTC day so the key lives a full day.
 			// Use rateLimitTTL as a safety net (25h) in case ExpireAt fails.
-			_ = redisClient.ExpireAt(c.Context(), counterKey, midnight).Err()
+			_ = redisClient.ExpireAt(c.UserContext(), counterKey, midnight).Err()
 			// Belt-and-suspenders: also set a 25h TTL via Expire.
-			_ = redisClient.Expire(c.Context(), counterKey, rateLimitTTL).Err()
+			_ = redisClient.Expire(c.UserContext(), counterKey, rateLimitTTL).Err()
 		}
 
 		if int(count) > limit {

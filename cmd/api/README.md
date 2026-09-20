@@ -17,7 +17,9 @@ cmd/api/
 ## Key Components
 
 - **`main()`** — Loads `.env` via godotenv, reads config, connects to PostgreSQL (with 5-attempt retry) and Redis, registers middleware (logger, recover), mounts the `/health` endpoint, and listens on the configured port. Blocks on `SIGINT`/`SIGTERM` for graceful shutdown.
-- **`/health`** — Deep health check that pings both Postgres and Redis. Returns `{"status":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable.
+- **`/health`** — Deep health check that pings both Postgres and Redis. Returns `{"status":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable. Both pings run under one 2-second shared deadline (`internal/health`), so an unreachable dependency yields a fast 503 rather than hanging the probe.
+- **Request timeout** — `/v1`, `/auth` and `/admin` requests carry a 15-second deadline (`middleware.RequestTimeout`), so a stalled dependency releases its pooled connection instead of pinning it forever. `/v1/stream/*` is exempt: an SSE connection is expected to outlive any request deadline.
+- **Liveness watchdog** — probes PostgreSQL every 30 seconds and, after 3 consecutive failures, shuts the server down and exits non-zero so Railway's `ON_FAILURE` restart policy restarts the container. Railway's own healthcheck is a one-time deploy gate and will not: during the four-day outage in issue #183 it reported `SUCCESS` throughout. It watches the database specifically — pool exhaustion is what wedges the process, whereas a Redis outage is survivable (cache, rate limiting and auth fail open) and must not cause a crash loop. `restartPolicyMaxRetries` is 10 to give the watchdog room to act.
 
 ## Dependencies
 

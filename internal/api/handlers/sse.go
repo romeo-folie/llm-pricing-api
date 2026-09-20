@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,15 @@ const (
 
 	// sseHeartbeatInterval is how often the server sends a keep-alive comment.
 	sseHeartbeatInterval = 30 * time.Second
+
+	// sseWriteTimeout bounds a single write to the client.
+	//
+	// A peer that disappears without sending an RST leaves the socket writable
+	// as far as the kernel is concerned, so an unbounded write blocks forever:
+	// the stream loop never returns and its goroutines, Redis Pub/Sub
+	// subscription and per-key connection slot leak permanently. Two heartbeat
+	// intervals is long enough that an idle-but-healthy client is never cut off.
+	sseWriteTimeout = 2 * sseHeartbeatInterval
 )
 
 // SSEHandler holds dependencies for the SSE stream endpoint.
@@ -128,16 +138,31 @@ func matchesFilter(rawJSON string, f sseFilters) (sseEventPayload, bool) {
 	return ev, true
 }
 
-// writeSSEEvent writes a single SSE event frame to w:
+// writeWithDeadline writes payload and flushes it, bounding the whole write
+// with a socket deadline.
+//
+// The deadline is what makes an abandoned client observable: writing to a
+// half-open connection otherwise blocks indefinitely, and the only exit from
+// the stream loop is a write error. Note that w wraps fasthttp's in-memory
+// pipe rather than the socket, so the deadline bounds fasthttp's own socket
+// write; that failure closes the pipe reader, which unblocks the pending Flush.
+func writeWithDeadline(conn net.Conn, w *bufio.Writer, payload string) error {
+	if conn != nil {
+		_ = conn.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+	}
+	if _, err := fmt.Fprint(w, payload); err != nil {
+		return err
+	}
+	return w.Flush()
+}
+
+// writeSSEEvent writes a single SSE event frame:
 //
 //	id: {event_id}
 //	data: {json_payload}
 //	(blank line)
-func writeSSEEvent(w *bufio.Writer, eventID int64, payload string) error {
-	if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", eventID, payload); err != nil {
-		return err
-	}
-	return w.Flush()
+func writeSSEEvent(conn net.Conn, w *bufio.Writer, eventID int64, payload string) error {
+	return writeWithDeadline(conn, w, fmt.Sprintf("id: %d\ndata: %s\n\n", eventID, payload))
 }
 
 // StreamChanges implements GET /v1/stream/changes.
@@ -171,19 +196,26 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 
 	// --- 3. Per-key connection limit ---
 	keyHash, _ := c.Locals(middleware.LocalKeyHash).(string)
+	// counted records whether this connection actually incremented the per-key
+	// counter, so the cleanup defer never decrements a counter that was never
+	// incremented — which would drive the key negative and under-count.
+	counted := false
 	if keyHash != "" && h.redisClient != nil {
 		connKey := sseConnKeyPrefix + keyHash
-		count, err := h.redisClient.Incr(c.Context(), connKey).Result()
+		count, err := h.redisClient.Incr(c.UserContext(), connKey).Result()
 		if err != nil {
 			// Redis error — allow connection through rather than blocking all clients.
 			count = 1
 		} else {
+			counted = true
 			// Refresh safety-net TTL on every connect.
-			_ = h.redisClient.Expire(c.Context(), connKey, sseConnTTL).Err()
+			_ = h.redisClient.Expire(c.UserContext(), connKey, sseConnTTL).Err()
 		}
 		if count > sseMaxConnsPerKey {
 			// Over limit — decrement and reject.
-			_ = h.redisClient.Decr(c.Context(), connKey).Err()
+			if counted {
+				_ = h.redisClient.Decr(c.UserContext(), connKey).Err()
+			}
 			return api.NewTooManyRequests("maximum concurrent SSE connections per API key (3) exceeded")
 		}
 	}
@@ -194,27 +226,34 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	h.activeConns.Add(c.Context(), 1)
+	h.activeConns.Add(c.UserContext(), 1)
 
-	// Capture request context before handing off to the writer goroutine.
-	// fasthttp may recycle c.Context() after the handler returns.
-	reqCtx := c.UserContext()
+	// The stream outlives this handler: fasthttp runs the body stream writer
+	// after the middleware chain has unwound, so no request-derived context is
+	// usable here. otelfiber cancels its span context as it unwinds, and
+	// Fiber's default user context is a Background that is never cancelled.
+	// Give the stream a context it owns, cancelled by its own cleanup defer.
+	streamCtx, cancelStream := context.WithCancel(context.Background())
+
+	// Capture the underlying connection: unlike c.Context() it is not recycled
+	// when the handler returns, and it is what carries the write deadline.
+	conn := c.Context().Conn()
+
 	rdb := h.redisClient
 
 	c.Status(fiber.StatusOK)
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
-		// Cleanup on exit: decrement connection count and OTel gauge.
+		// Cleanup on exit: release the stream context, decrement the OTel gauge,
+		// and hand back the per-key slot if this connection took one.
+		defer cancelStream()
 		defer h.activeConns.Add(context.Background(), -1)
-		if keyHash != "" && rdb != nil {
+		if counted {
 			connKey := sseConnKeyPrefix + keyHash
 			defer func() { _ = rdb.Decr(context.Background(), connKey).Err() }()
 		}
 
 		// --- 5. Send initial keepalive ---
-		if _, err := fmt.Fprint(w, ": ok\n\n"); err != nil {
-			return
-		}
-		if err := w.Flush(); err != nil {
+		if err := writeWithDeadline(conn, w, ": ok\n\n"); err != nil {
 			return
 		}
 
@@ -222,7 +261,7 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 		if hasLastEventID && rdb != nil {
 			// Use exclusive lower bound "(lastEventID" to skip the already-seen event.
 			minScore := fmt.Sprintf("(%d", lastEventID)
-			members, err := rdb.ZRangeArgs(reqCtx, redis.ZRangeArgs{
+			members, err := rdb.ZRangeArgs(streamCtx, redis.ZRangeArgs{
 				Key:     sseReplayBufferKey,
 				Start:   minScore,
 				Stop:    "+inf",
@@ -234,7 +273,7 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 					if !ok {
 						continue
 					}
-					if err := writeSSEEvent(w, ev.EventID, member); err != nil {
+					if err := writeSSEEvent(conn, w, ev.EventID, member); err != nil {
 						return
 					}
 					h.eventsEmitted.Add(context.Background(), 1,
@@ -247,50 +286,50 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 		// --- 7. Subscribe and stream live events ---
 		if rdb == nil {
 			// No Redis — heartbeat-only mode.
-			h.heartbeatLoop(reqCtx, w)
+			h.heartbeatLoop(streamCtx, conn, w)
 			return
 		}
 
-		sub := rdb.Subscribe(reqCtx, ssePubSubChannel)
+		sub := rdb.Subscribe(streamCtx, ssePubSubChannel)
 		defer func() { _ = sub.Close() }()
 
 		msgCh := sub.Channel()
 		ticker := time.NewTicker(sseHeartbeatInterval)
 		defer ticker.Stop()
 
+		// The loop ends when a write fails (bounded by sseWriteTimeout) or when
+		// Redis closes the channel. There is deliberately no context case here:
+		// a request-derived context is unusable in this goroutine, and the
+		// socket deadline is what turns an abandoned peer into a write error.
 		for {
 			select {
-			case <-reqCtx.Done():
-				return
-
 			case msg, ok := <-msgCh:
 				if !ok {
 					// Channel closed (Redis disconnected). Fall back to heartbeat loop.
-					h.heartbeatLoop(reqCtx, w)
+					h.heartbeatLoop(streamCtx, conn, w)
 					return
 				}
 				ev, ok := matchesFilter(msg.Payload, filters)
 				if !ok {
 					continue
 				}
-				if err := writeSSEEvent(w, ev.EventID, msg.Payload); err != nil {
+				if err := writeSSEEvent(conn, w, ev.EventID, msg.Payload); err != nil {
 					return
 				}
 				h.eventsEmitted.Add(context.Background(), 1,
 					metric.WithAttributes(attribute.String("provider", ev.Provider)))
 
 			case <-ticker.C:
-				if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				if err := writeWithDeadline(conn, w, ": heartbeat\n\n"); err != nil {
 					return
 				}
-				if err := w.Flush(); err != nil {
-					return
-				}
-				// Refresh the connection-count key TTL on every heartbeat so the
-				// safety-net expiry only kicks in after a real crash (i.e. after
-				// sseConnTTL of silence, meaning all active connections have closed
-				// or the process has died without running their defers).
-				if keyHash != "" && rdb != nil {
+				// Keep the per-key counter alive while this stream is genuinely
+				// live. A stream blocked on a dead peer cannot reach this tick,
+				// so refreshing cannot pin the slot of a leaked connection —
+				// whereas dropping it lets the key expire beneath a healthy
+				// long-lived stream, silently defeating the per-key cap and
+				// leaving a later DECR to recreate the key at -1.
+				if counted {
 					_ = rdb.Expire(context.Background(), sseConnKeyPrefix+keyHash, sseConnTTL).Err()
 				}
 			}
@@ -302,7 +341,7 @@ func (h *SSEHandler) StreamChanges(c *fiber.Ctx) error {
 
 // heartbeatLoop sends 30-second heartbeat comments until the context is cancelled.
 // Used as a fallback when Redis is unavailable.
-func (h *SSEHandler) heartbeatLoop(ctx context.Context, w *bufio.Writer) {
+func (h *SSEHandler) heartbeatLoop(ctx context.Context, conn net.Conn, w *bufio.Writer) {
 	ticker := time.NewTicker(sseHeartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -310,10 +349,7 @@ func (h *SSEHandler) heartbeatLoop(ctx context.Context, w *bufio.Writer) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
-				return
-			}
-			if err := w.Flush(); err != nil {
+			if err := writeWithDeadline(conn, w, ": heartbeat\n\n"); err != nil {
 				return
 			}
 		}

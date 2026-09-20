@@ -114,7 +114,7 @@ func (h *Handlers) Recommend(c *fiber.Ctx) error {
 	}
 	filter.TopK = topK
 
-	models, err := h.store.RecommendModels(c.Context(), filter)
+	models, err := h.store.RecommendModels(c.UserContext(), filter)
 	if err != nil {
 		return api.NewInternalError("failed to retrieve model recommendations")
 	}
@@ -175,7 +175,7 @@ func (h *Handlers) recommendCapabilityBased(c *fiber.Ctx, models []ModelRow, fil
 	for i, m := range models {
 		ids[i] = m.ID
 	}
-	capMap, err := h.store.GetCapabilityScoresForModels(c.Context(), ids)
+	capMap, err := h.store.GetCapabilityScoresForModels(c.UserContext(), ids)
 	if err != nil {
 		log.Error().Err(err).Msg("recommend: failed to fetch capability scores")
 		return api.NewInternalError("failed to retrieve capability scores")

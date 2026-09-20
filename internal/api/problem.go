@@ -4,7 +4,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -37,8 +39,14 @@ type ProblemDetail struct {
 func ErrorHandler(c *fiber.Ctx, err error) error {
 	var problem *ProblemDetail
 
-	// If the error is already a ProblemDetail, use it directly.
-	if pd, ok := err.(*ProblemDetail); ok {
+	// A request that hit its context deadline is a capacity condition worth
+	// retrying, not an internal fault. This is the path a saturated connection
+	// pool takes once middleware.RequestTimeout fires: reporting it as an
+	// opaque 500 would hide an overload behind a bug report.
+	if errors.Is(err, context.DeadlineExceeded) {
+		problem = NewServiceUnavailable("request timed out")
+	} else if pd, ok := err.(*ProblemDetail); ok {
+		// If the error is already a ProblemDetail, use it directly.
 		problem = pd
 	} else if fe, ok := err.(*fiber.Error); ok {
 		// Convert a native Fiber error to the appropriate ProblemDetail.

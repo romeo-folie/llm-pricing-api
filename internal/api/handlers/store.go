@@ -20,7 +20,9 @@ import (
 
 // Store is the data-access contract used by all handler functions.
 // All methods accept a context.Context for OTel span propagation and
-// cancellation; handlers pass c.Context() from the Fiber request context.
+// cancellation; handlers pass c.UserContext() from the Fiber request context, which carries
+// both the active OTel span and the per-request deadline set by
+// middleware.RequestTimeout.
 //
 // Every Store method returns only plain Go types — no pgx-specific types
 // escape the implementation — so callers and tests remain decoupled from pgx.

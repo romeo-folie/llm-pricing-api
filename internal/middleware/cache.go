@@ -109,7 +109,7 @@ func Cache(client *redis.Client) fiber.Handler {
 		}
 
 		key := cacheKey(c)
-		ctx := c.Context()
+		ctx := c.UserContext()
 
 		// Attempt cache hit.
 		cached, err := client.Get(ctx, key).Bytes()
