@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -130,7 +131,11 @@ func parseHTML(r io.Reader) ([]PricingTable, error) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
 			case "h1", "h2", "h3", "h4":
-				if text := textContent(n); text != "" {
+				// Headings can carry decorative, non-text children (the docs
+				// site renders a copy-link button whose icon is a private-use
+				// glyph). cleanHeading strips those so the section label stays
+				// comparable to the literal strings used below.
+				if text := cleanHeading(textContent(n)); text != "" {
 					currentSection = text
 				}
 			case "table":
@@ -282,9 +287,15 @@ func toScrapedModels(tables []PricingTable, fetchedAt time.Time) []scraper.Scrap
 				continue
 			}
 
+			// Row cells are the model name plus one cell per header. Anything
+			// else means a cell was merged or dropped, which would shift the
+			// input/output indices onto a cache or long-context column — skip
+			// rather than risk publishing the wrong price.
 			inIdx := inputIdx + 1
 			outIdx := outputIdx + 1
-			if inIdx >= len(row) || outIdx >= len(row) {
+			if len(row) != len(pt.Headers)+1 || inIdx >= len(row) || outIdx >= len(row) {
+				slog.Debug("anthropic: skipping row — cell count does not match headers",
+					"model", modelName, "cells", len(row), "headers", len(pt.Headers))
 				continue
 			}
 
@@ -353,6 +364,12 @@ func parsePricePerMTok(s string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("parse float %q: %w", s, err)
 	}
+	// ParseFloat accepts "NaN", "Inf" and "-Inf". Reject them explicitly:
+	// NaN compares false against `v <= 0`, so without this guard a non-finite
+	// value would be divided and stored as a price.
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, fmt.Errorf("non-finite price: %q", s)
+	}
 	if v <= 0 {
 		return 0, fmt.Errorf("non-positive price: %v", v)
 	}
@@ -402,8 +419,12 @@ func canonicalAnthropicSlug(name string) string {
 	//   "Claude <Variant> <Major>.<Minor>"  → claude-<major>-<minor>-<variant>
 	//   "Claude <Variant> <Major>"          → claude-<major>-<variant>
 	// Split on spaces; token[0]="Claude", token[1]=variant, token[2]=version.
+	// The version must start with a digit: without that check a version-first
+	// name such as "Claude 3.5 Sonnet" would be read as variant "3.5" and
+	// version "Sonnet", producing a bogus slug. Version-first names fall
+	// through to the lowercase-hyphenated fallback below.
 	parts := strings.Fields(name)
-	if len(parts) == 3 && strings.EqualFold(parts[0], "claude") {
+	if len(parts) == 3 && strings.EqualFold(parts[0], "claude") && startsWithDigit(parts[2]) {
 		variant := strings.ToLower(parts[1])
 		version := parts[2] // e.g. "4.6", "3.5", or "4"
 		verParts := strings.SplitN(version, ".", 2)
@@ -426,7 +447,38 @@ func canonicalAnthropicSlug(name string) string {
 	return strings.NewReplacer(" ", "-", "_", "-", ".", "-").Replace(name)
 }
 
+// startsWithDigit reports whether s begins with an ASCII digit.
+func startsWithDigit(s string) bool {
+	return s != "" && s[0] >= '0' && s[0] <= '9'
+}
+
 // --- HTML helpers ---------------------------------------------------------
+
+// cleanHeading normalises a heading's text for section comparison.
+//
+// The Anthropic docs site appends decorative icon glyphs to headings — most
+// notably U+E09A, the private-use character inside the "copy link" button's
+// icon span. textContent collects it, so without stripping, the section label
+// reads "Model pricing\ue09a" and never matches the literal "Model pricing".
+// That mismatch silently disabled this scraper for ~190 days (#209).
+//
+// Stripped: the Unicode private-use area (U+E000–U+F8FF), zero-width
+// characters, and text/emoji variation selectors. Ordinary text — including
+// non-ASCII model names — is preserved.
+func cleanHeading(s string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		switch {
+		case r >= 0xE000 && r <= 0xF8FF: // private use area (icon fonts)
+			return -1
+		case r >= 0x200B && r <= 0x200D: // zero-width space / joiner / non-joiner
+			return -1
+		case r == 0xFE0E || r == 0xFE0F: // text / emoji variation selectors
+			return -1
+		default:
+			return r
+		}
+	}, s))
+}
 
 // textContent returns the concatenated text of all text nodes under n.
 func textContent(n *html.Node) string {
