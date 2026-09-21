@@ -37,8 +37,40 @@ that event has never happened. A label-filtered counter such as
 the bare expression returns nothing and Grafana raises `DatasourceNoData` —
 which notifies. Guard such expressions with `or vector(0)` and set
 `no_data_state: OK` (#213). Rules that watch a continuously-present gauge keep
-the `NoData` default, because for those, silence really is a failure; detecting
-"all metrics went silent" is #194's job.
+the `NoData` default, because for those, silence really is a failure.
+
+### Liveness and uptime (#194)
+
+`#183` wedged the API for four days while Railway kept reporting the deployment
+`SUCCESS`: its healthcheck is a one-time deploy gate, and the process never
+exited. Three layers now cover that, in increasing order of directness:
+
+| Layer | Signal | Threshold | Notes |
+|---|---|---|---|
+| Service reachability | `up{job=~"llm-pricing-api\|llm-pricing-worker"} < 1` → `LLMScrapeTargetDown` | 5m, critical | The worker has **no public domain**, so this is its only liveness signal; scraped over Railway private networking. Also catches a dead API metrics listener. |
+| Requests completing | `sum(rate(llm_api_requests_total[15m])) < 0.01` → `LLMAPITrafficAbsent` | 10m, critical | Catches a wedge that still answers `/health` but serves no traffic. Threshold sits 4× below the observed 24h minimum (0.043 req/s). |
+| External probe | Grafana Cloud Synthetic Monitoring, `GET https://api.llmrates.live/health` | 60s, alert after 2 failures | Fastest layer, and independent of our own metrics pipeline. **Not yet configured** — needs a Synthetic Monitoring access token (see below). `/health` returns `503` when a dependency is down, `200` with `{"db":"ok","redis":"ok","status":"ok"}` when healthy. |
+
+All three route to the `llm-pricing-email` contact point via the root
+notification policy, provisioned by `provision/provision.py`. Expected response:
+`LLMScrapeTargetDown` or a failed synthetic probe → check the service in
+Railway; `LLMAPITrafficAbsent` with `up=1` → the process is alive but stuck,
+restart the `llm-pricing-api` service.
+
+The worker is deliberately not given a public domain: probing it externally
+would expose `/health` to the internet for no gain when the private scrape
+already reports reachability.
+
+#### Configuring the synthetic probe
+
+The Grafana Cloud Synthetic Monitoring API rejects the instance service-account
+token with `403 invalid API token`; it needs an **SM access token**, created in
+the Synthetic Monitoring app (Grafana Cloud → Synthetic Monitoring → Config →
+Access tokens), plus the stack's SM API URL (e.g.
+`https://synthetic-monitoring-api-eu-west-2.grafana.net`). Once that token is in
+`.env`, the probe is: HTTP check on `https://api.llmrates.live/health`, 60s
+interval, timeout 10s, assertions `2xx` and body contains `"status":"ok"`, from
+the nearest public probe location, alerting after 2 consecutive failures.
 
 `grafana-agent` was removed: Grafana Agent is on a deprecation path in favour of
 Alloy, and the Collector already matches the intended topology.

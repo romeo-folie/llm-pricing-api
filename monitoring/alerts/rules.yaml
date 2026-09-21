@@ -17,6 +17,43 @@ groups:
       # Every expression must still end in a single comparison — the
       # provisioning parser extracts the Grafana threshold from it.
 
+      # ── Liveness / uptime (#194) ──────────────────────────────────────────
+      # #183 wedged the API for four days while Railway kept reporting the
+      # deployment SUCCESS: its healthcheck is a one-time deploy gate, and the
+      # process never exited. The watchdog restarts on dependency failure, but
+      # nothing watched the services from outside.
+      #
+      # LLMScrapeTargetDown is the worker's only liveness signal — it has no
+      # public domain, so it is scraped over Railway private networking and
+      # `up` going to 0 is how a stopped or unreachable worker surfaces. For the
+      # API the same expression catches a dead metrics listener; a wedge that
+      # still answers /health but serves no traffic is caught by
+      # LLMAPITrafficAbsent (the external synthetic probe on /health is the
+      # third, fastest layer).
+      - alert: LLMScrapeTargetDown
+        expr: |
+          up{job=~"llm-pricing-api|llm-pricing-worker"} < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A metrics scrape target has been unreachable for 5m"
+
+      # Tuned against a day of traffic: the 15m request rate bottomed at
+      # 0.043 req/s (avg 0.10), so 0.01 leaves a 4x margin before a genuinely
+      # quiet period could page. Stays silent when the metric disappears
+      # entirely — LLMScrapeTargetDown owns that case, and a second page for it
+      # would be noise.
+      - alert: LLMAPITrafficAbsent
+        expr: |
+          sum(rate(llm_api_requests_total[15m])) < 0.01
+        for: 10m
+        no_data_state: OK
+        labels:
+          severity: critical
+        annotations:
+          summary: "API completed almost no requests for 15 minutes"
+
       - alert: LLMAPIErrorRateSpike
         expr: |
           (sum(rate(llm_api_requests_total{status=~"5.."}[5m])) or vector(0)) / (sum(rate(llm_api_requests_total[5m])) or vector(0)) > 0.05
