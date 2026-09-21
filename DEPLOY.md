@@ -199,23 +199,63 @@ railway up
 
 ## Monitoring and Observability
 
-- **Railway Metrics**: CPU, memory, and request counts are visible in the
-  Railway dashboard under the service Metrics tab.
-- **Application logs**: `railway logs --tail` or the Logs tab in the dashboard.
-- **OpenTelemetry**: Set `OTEL_EXPORTER_OTLP_ENDPOINT` to forward traces to
-  Grafana Cloud, Datadog, Honeycomb, or any OTLP-compatible backend.
-- **Health endpoint**: Poll `GET /health` from an external uptime monitor
-  (e.g. Better Uptime, UptimeRobot) for availability alerting.
-- **Prometheus metrics**: Both services expose an internal metrics listener on
-  `METRICS_PORT` (default `9091`), served on a dedicated port that is never
-  reachable publicly. Scrape each service **separately** — the API's endpoint
-  does not carry the worker's pipeline counters:
-  - API — `http://llm-pricing-api.railway.internal:<METRICS_PORT>/metrics`
-  - Worker — `http://llm-pricing-worker.railway.internal:<METRICS_PORT>/metrics`
+All telemetry leaves the platform through one **OpenTelemetry Collector**, running
+as a Railway service in the same project as the API and worker:
 
-  Confirm the exact private hostname for each service in the Railway dashboard,
-  and note that these names resolve only inside the project's private network —
-  so the collector must run as a service in the same environment.
+```
+api / worker / postgres-exporter / redis-exporter ──► OTel Collector ──► Grafana Cloud (Mimir, Tempo)
+```
+
+### Deploying the collector
+
+The collector is a stock image plus `monitoring/otel-collector.yaml`, so it needs
+no build step:
+
+1. Create a new service in the **same Railway project**. This is required — the
+   `*.railway.internal` scrape targets resolve only inside the project.
+2. Image `otel/opentelemetry-collector-contrib:0.161.0`. Pin the version; do not
+   track `latest`.
+3. Supply the config at `/etc/otelcol-contrib/config.yaml`. Railway has no bind
+   mounts, so either wrap it in a one-line Dockerfile or serve the file over
+   HTTPS and use `--config` with a downloaded path; see
+   [`monitoring/README.md`](monitoring/README.md).
+4. Set the collector's environment variables — scrape targets
+   (`API_METRICS_TARGET`, `WORKER_METRICS_TARGET`, `POSTGRES_EXPORTER_TARGET`,
+   `REDIS_EXPORTER_TARGET`) and egress credentials (`GRAFANA_CLOUD_URL`,
+   `GRAFANA_CLOUD_USER`, `GRAFANA_CLOUD_API_KEY`,
+   `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_BASIC_AUTH_HEADER`).
+5. Health check: the `health_check` extension listens on `13133` at `/`. Aim the
+   service health check there.
+6. Point the API's `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector
+   (`<collector-service>.railway.internal:4317`). Plaintext gRPC, no credentials:
+   the collector owns the TLS + auth hop to Grafana, so `internal/otel` needs no
+   change.
+
+### Scrape targets
+
+Both binaries expose an internal metrics listener on `METRICS_PORT` (default
+`9091`) that is never publicly reachable. Scrape each **separately** — the API's
+endpoint does not carry the worker's pipeline counters:
+
+- API — `http://llm-pricing-api.railway.internal:<METRICS_PORT>/metrics`
+- Worker — `http://llm-pricing-worker.railway.internal:<METRICS_PORT>/metrics`
+
+Confirm the exact private hostname for each service in the Railway dashboard.
+Postgres and Redis exporters need their own services for the `pg_*` / `redis_*`
+metrics that the infrastructure dashboard and two alert rules depend on.
+
+### Dashboards, alert rules and notifications
+
+Provisioned as code by `monitoring/provision/provision.py`: four dashboards, the
+email contact point, and the six alert rules. Required variables are documented
+in [`monitoring/README.md`](monitoring/README.md).
+
+- **Railway Metrics**: CPU, memory, and request counts are visible in the Railway
+  dashboard under the service Metrics tab.
+- **Application logs**: `railway logs --tail` or the Logs tab. Shipping them to
+  Loki is issue #199.
+- **External uptime probe**: poll `GET /health` from outside the platform — a
+  metrics pipeline cannot alert on a process that has stopped emitting. Issue #194.
 
 ---
 
@@ -228,6 +268,13 @@ railway up
 | `APP_ENV` | No | `development` | Runtime environment (`development`/`staging`/`production`) |
 | `APP_PORT` | No | `8080` | HTTP listen port |
 | `METRICS_PORT` | No | `9091` | Internal Prometheus port for both services; empty disables the metrics listener |
+| `GRAFANA_CLOUD_OTLP_ENDPOINT` | Collector | — | OTLP gateway base URL (`/v1/traces`, `/v1/logs`) |
+| `GRAFANA_CLOUD_BASIC_AUTH_HEADER` | Collector | — | Full `Basic …` header for the OTLP gateway (access-policy token) |
+| `GRAFANA_CLOUD_URL` | Collector | — | Prometheus remote_write endpoint |
+| `GRAFANA_CLOUD_USER` | Collector | — | Metrics instance ID — not the stack ID |
+| `GRAFANA_CLOUD_API_KEY` | Collector | — | Access-policy token with `metrics:write` |
+| `GRAFANA_API_URL` / `GRAFANA_API_TOKEN` | Provisioning | — | Grafana instance URL + `glsa_` service-account token (Admin) |
+| `API_METRICS_TARGET` etc. | Collector | — | Per-service scrape targets; see `monitoring/README.md` |
 | `LOG_LEVEL` | No | `debug` | Minimum log level (`trace`/`debug`/`info`/`warn`/`error`) |
 | `ADMIN_USER` | No | `admin` | Basic auth username for `/admin` endpoints |
 | `ADMIN_PASSWORD` | Yes (prod) | `changeme` | Basic auth password — must be changed in non-dev environments |
