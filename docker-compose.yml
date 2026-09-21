@@ -51,26 +51,44 @@ services:
     ports:
       - "9121:9121"
 
-  grafana-agent:
-    image: grafana/agent:v0.43.4
+  # Single egress for all telemetry. Replaces the deprecated grafana-agent.
+  # In production this runs as its own Railway service in the same project, so
+  # that the *.railway.internal scrape targets resolve.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
     restart: unless-stopped
     depends_on:
       postgres-exporter:
         condition: service_started
       redis-exporter:
         condition: service_started
-    # The agent scrapes the API and worker processes running on the host. On
-    # Linux this mapping is required to resolve host.docker.internal; Docker
-    # Desktop on macOS provides it already, and the mapping is harmless there.
+    # The API and worker run on the host (make run / make worker), not in
+    # compose. On Linux this mapping is required to resolve
+    # host.docker.internal; Docker Desktop on macOS provides it already, and
+    # the mapping is harmless there.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      # Scrape targets. The worker's metrics port is offset to 9092 by the
+      # Makefile so it can run alongside the API.
+      API_METRICS_TARGET: host.docker.internal:9091
+      WORKER_METRICS_TARGET: host.docker.internal:9092
+      POSTGRES_EXPORTER_TARGET: postgres-exporter:9187
+      REDIS_EXPORTER_TARGET: redis-exporter:9121
+      # Telemetry egress to Grafana Cloud. Values come from .env.
       GRAFANA_CLOUD_URL: ${GRAFANA_CLOUD_URL}
       GRAFANA_CLOUD_USER: ${GRAFANA_CLOUD_USER}
       GRAFANA_CLOUD_API_KEY: ${GRAFANA_CLOUD_API_KEY}
+      GRAFANA_CLOUD_OTLP_ENDPOINT: ${GRAFANA_CLOUD_OTLP_ENDPOINT}
+      GRAFANA_CLOUD_BASIC_AUTH_HEADER: ${GRAFANA_CLOUD_BASIC_AUTH_HEADER}
     volumes:
-      - ./monitoring/agent.yml:/etc/agent/agent.yml:ro
-    command: ["--config.file=/etc/agent/agent.yml"]
+      - ./monitoring/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      # OTLP ingest from the API (gRPC + HTTP).
+      - "4317:4317"
+      - "4318:4318"
+      # health_check extension.
+      - "13133:13133"
 
 volumes:
   postgres_data:
