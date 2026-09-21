@@ -30,11 +30,17 @@ var (
 	}, []string{"method", "path"})
 
 	// RateLimitHitsTotal counts requests rejected by the rate limiter (HTTP 429).
-	// Labels: tier, key_hash.
+	//
+	// Labelled by tier only. It previously carried key_hash too, which emitted
+	// one series per API key — and every signup, including every skill user,
+	// creates a key, so cardinality grew without bound (#198). Per-key detail
+	// is still available where it belongs: the Redis counter
+	// ratelimit:{sha256(key)}:{date} and the request logs.
+	// Labels: tier.
 	RateLimitHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "llm_api_rate_limit_hits_total",
-		Help: "Total number of requests rejected by the rate limiter.",
-	}, []string{"tier", "key_hash"})
+		Help: "Total number of requests rejected by the rate limiter, partitioned by tier.",
+	}, []string{"tier"})
 
 	// ActiveKeys tracks the number of distinct API keys seen in the last rolling
 	// hour. Partitioned by tier.
@@ -218,4 +224,44 @@ var (
 		Name: "llm_prices_published",
 		Help: "Number of published prices for a source.",
 	}, []string{"source"})
+
+	// ── Job queue ─────────────────────────────────────────────────────────────
+
+	// QueueTasks is the number of asynq tasks in a queue by state, sampled from
+	// the Inspector on a ticker by worker.QueueSampler.
+	//
+	// The pipeline's other signals say whether work succeeded; this one says
+	// whether work is *stuck*, which nothing else could see. Concretely: a
+	// failing task holds its asynq Unique(24h) lock while it retries, so the
+	// startup enqueue of a fixed scraper is silently deduplicated and the fix
+	// appears not to work. Queue depth makes that visible.
+	//
+	// States are asynq's own: pending, active, scheduled, retry, archived,
+	// completed, aggregating. A queue that has never held a task emits no
+	// sample rather than zeroes.
+	// Labels: queue, state.
+	QueueTasks = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_asynq_queue_tasks",
+		Help: "Number of asynq tasks in a queue, by state.",
+	}, []string{"queue", "state"})
+
+	// QueueLatencySeconds is the age of the oldest pending task in a queue.
+	//
+	// It is the better backlog signal of the two: a queue holding a handful of
+	// tasks that are being worked through is healthy, while a single task
+	// waiting an hour is not. Pending counts cannot tell those apart.
+	// Labels: queue.
+	QueueLatencySeconds = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_asynq_queue_latency_seconds",
+		Help: "Age of the oldest pending task in a queue, in seconds.",
+	}, []string{"queue"})
+
+	// QueuePaused reports whether a queue is paused (1) or running (0), so a
+	// queue that has been paused — by an operator or by a bug — is visible
+	// rather than merely quiet.
+	// Labels: queue.
+	QueuePaused = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_asynq_queue_paused",
+		Help: "Whether an asynq queue is paused (1) or running (0).",
+	}, []string{"queue"})
 )

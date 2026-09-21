@@ -109,6 +109,28 @@
           "expr": "sum(rate(llm_capability_recompute_failures_total[5m]))"
         }
       ]
+    },
+    {
+      "id": 12,
+      "title": "Job queue depth by state",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "llm_asynq_queue_tasks",
+          "legendFormat": "{{queue}} / {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Oldest pending job (seconds)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "llm_asynq_queue_latency_seconds",
+          "legendFormat": "{{queue}}"
+        }
+      ]
     }
   ]
 }

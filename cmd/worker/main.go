@@ -36,6 +36,12 @@ const (
 	// threshold between runs is reflected without waiting for the next scrape.
 	benchmarkSampleInterval = 60 * time.Second
 	benchmarkSampleTimeout  = 10 * time.Second
+
+	// Queue depth and latency share the cadence. This is the one signal that
+	// shows *stuck* work rather than failed work: a task that keeps retrying
+	// holds its asynq Unique(24h) lock, so the next enqueue is silently
+	// deduplicated and a deployed fix looks like it did not work (#198).
+	queueSampleInterval = 60 * time.Second
 )
 
 // parseLogLevel converts a LOG_LEVEL string to a zerolog.Level.
@@ -85,6 +91,16 @@ func sampleBenchmarkEvidence(ctx context.Context, log zerolog.Logger, s *worker.
 	defer cancel()
 	if err := s.Sample(sampleCtx); err != nil {
 		log.Warn().Err(err).Msg("benchmark evidence sample failed")
+	}
+}
+
+// sampleQueue runs one queue-inspection sample. Unlike the SQL samplers there
+// is no context to bound: asynq's Inspector exposes no context-aware API, and
+// its Redis client applies its own timeouts. A failure is logged, never
+// returned: telemetry must not take the data pipeline down with it.
+func sampleQueue(log zerolog.Logger, s *worker.QueueSampler) {
+	if err := s.Sample(); err != nil {
+		log.Warn().Err(err).Msg("queue sample failed")
 	}
 }
 
@@ -434,6 +450,30 @@ func run() error {
 		}
 	}()
 
+	// Publish asynq queue depth and latency on the same cadence. This is the
+	// only signal that shows work piled up rather than failed: a task that keeps
+	// retrying holds its asynq Unique(24h) lock, so the next enqueue of the same
+	// type is silently deduplicated and the pipeline looks idle instead of stuck.
+	// Seeded immediately and stopped on shutdown like the other samplers.
+	queueSampler := worker.NewQueueSampler(redisOpt)
+	queueSamplerCtx, stopQueueSampler := context.WithCancel(context.Background())
+	defer stopQueueSampler()
+	queueSamplerDone := make(chan struct{})
+	go func() {
+		defer close(queueSamplerDone)
+		ticker := time.NewTicker(queueSampleInterval)
+		defer ticker.Stop()
+		sampleQueue(log, queueSampler)
+		for {
+			select {
+			case <-queueSamplerCtx.Done():
+				return
+			case <-ticker.C:
+				sampleQueue(log, queueSampler)
+			}
+		}
+	}()
+
 	// Block until SIGINT/SIGTERM or a health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -505,6 +545,14 @@ func run() error {
 	case <-benchmarkSamplerDone:
 	case <-shutdownCtx.Done():
 		log.Warn().Msg("benchmark sampler did not stop before shutdown deadline")
+	}
+
+	// Stop the queue sampler inside the same budget, before the metrics listener.
+	stopQueueSampler()
+	select {
+	case <-queueSamplerDone:
+	case <-shutdownCtx.Done():
+		log.Warn().Msg("queue sampler did not stop before shutdown deadline")
 	}
 
 	// Stop the metrics listener last, inside the same budget: a scrape during
