@@ -54,6 +54,28 @@ groups:
         annotations:
           summary: "API completed almost no requests for 15 minutes"
 
+      # External synthetic probe on the public /health, provisioned by
+      # monitoring/synthetic/provision_checks.py. probe_success lands in the same
+      # hosted Prometheus as everything else, so this needs no second alerting
+      # path — it routes through the existing contact point.
+      #
+      # The check runs every 5 minutes, and Grafana's guidance is that a rule
+      # range should be at least 2.5x the check interval so the window holds
+      # enough samples. Over 15m there are ~3 samples; < 0.6 trips once two have
+      # failed, matching the "alert after 2-3 consecutive failures" intent
+      # without paging on a single transient blip.
+      #
+      # No no_data_state override: if probe_success stops arriving the check or
+      # SM publishing is broken, and that is worth knowing.
+      - alert: LLMAPIHealthProbeFailing
+        expr: |
+          avg_over_time(probe_success{job="llm-pricing-api-health"}[15m]) < 0.6
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "External probe of api.llmrates.live/health is failing"
+
       - alert: LLMAPIErrorRateSpike
         expr: |
           (sum(rate(llm_api_requests_total{status=~"5.."}[5m])) or vector(0)) / (sum(rate(llm_api_requests_total[5m])) or vector(0)) > 0.05
