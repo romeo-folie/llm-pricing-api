@@ -80,6 +80,12 @@ Supplied per environment so one config file serves both local and production:
 | `POSTGRES_EXPORTER_TARGET` | `postgres-exporter:9187` | `postgres-exporter.railway.internal:9187` |
 | `REDIS_EXPORTER_TARGET` | `redis-exporter:9121` | `redis-exporter.railway.internal:9121` |
 
+In production the two exporter targets must exist as Railway services named
+exactly `postgres-exporter` and `redis-exporter` (`prometheuscommunity/postgres-exporter:v0.20.1`
+and `oliver006/redis_exporter:v1.91.1`); see `DEPLOY.md`. They need no public
+domain — the collector reaches them over private networking. In local compose
+they are declared alongside the collector.
+
 Both binaries serve `/metrics` on `METRICS_PORT` (default `9091`) via
 `metrics.NewServer` in `internal/metrics`. Prometheus scrapes per process, so the
 API and worker are scraped separately — the API's endpoint does **not** carry the
