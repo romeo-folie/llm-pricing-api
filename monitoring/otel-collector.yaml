@@ -95,8 +95,13 @@ exporters:
     auth:
       authenticator: basicauth/prometheus
 
+  # One exporter for both signals: Grafana Cloud's OTLP gateway serves traces
+  # and logs on the same host, differing only by path. Logs were missing from
+  # this file entirely, so an OTLP logs pipeline had nowhere to send them and the
+  # app's shipped records were dropped on the floor (#199).
   otlphttp/grafana:
     traces_endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}/v1/traces
+    logs_endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}/v1/logs
     headers:
       authorization: ${env:GRAFANA_CLOUD_BASIC_AUTH_HEADER}
 
@@ -112,6 +117,15 @@ service:
       exporters: [prometheusremotewrite]
 
     traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana]
+
+    # Structured logs from both binaries (internal/logger ships them over
+    # otlploggrpc on :4317). Same receiver and resource as traces, so
+    # service.name / deployment.environment cannot diverge between a log line
+    # and the trace it belongs to.
+    logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlphttp/grafana]
