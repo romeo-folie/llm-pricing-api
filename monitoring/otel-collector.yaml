@@ -1,0 +1,117 @@
+# OpenTelemetry Collector — single egress for all platform telemetry.
+#
+#   api               ─┐
+#   worker            ─┤  pull (/metrics, Prometheus receiver)
+#   postgres-exporter ─┤──────────────► prometheusremotewrite ─► Grafana Cloud Mimir
+#   redis-exporter    ─┘
+#
+#   api (OTLP gRPC)   ──── otlp receiver ─► otlphttp ─► Grafana Cloud Tempo
+#
+# Metrics deliberately use remote_write rather than OTLP. remote_write preserves
+# the native Prometheus data model — `up`, `job` and `instance` stay exactly as
+# the Prometheus receiver scraped them — which is what the provisioned
+# dashboards and alert rules are written against. In particular
+# `absent(up{job="llm-pricing-api"})` (issue #194) depends on that model, and
+# OTLP's resource-attribute mapping does not guarantee it.
+#
+# Scrape targets come from the environment so this one file serves both local
+# docker-compose (host.docker.internal) and Railway (*.railway.internal):
+#
+#   API_METRICS_TARGET        e.g. llm-pricing-api.railway.internal:9091
+#   WORKER_METRICS_TARGET     e.g. llm-pricing-worker.railway.internal:9091
+#   POSTGRES_EXPORTER_TARGET  e.g. postgres-exporter.railway.internal:9187
+#   REDIS_EXPORTER_TARGET     e.g. redis-exporter.railway.internal:9121
+#
+# Telemetry credentials (never commit their values):
+#   GRAFANA_CLOUD_URL               remote_write endpoint
+#   GRAFANA_CLOUD_USER              metrics instance ID
+#   GRAFANA_CLOUD_API_KEY           token with metrics:write
+#   GRAFANA_CLOUD_OTLP_ENDPOINT     OTLP gateway base URL
+#   GRAFANA_CLOUD_BASIC_AUTH_HEADER full "Basic ..." header value for the gateway
+
+extensions:
+  # Liveness endpoint for the platform health check. The collector has no
+  # application routes, so this is what a healthcheck can actually probe.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # Client credentials for Mimir. Held in an extension so the token never
+  # appears in an exporter block (and therefore never in a rendered config dump).
+  basicauth/prometheus:
+    client_auth:
+      username: ${env:GRAFANA_CLOUD_USER}
+      password: ${env:GRAFANA_CLOUD_API_KEY}
+
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: llm-pricing-api
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:API_METRICS_TARGET}"]
+
+        - job_name: llm-pricing-worker
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:WORKER_METRICS_TARGET}"]
+
+        - job_name: postgres-exporter
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["${env:POSTGRES_EXPORTER_TARGET}"]
+
+        - job_name: redis-exporter
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["${env:REDIS_EXPORTER_TARGET}"]
+
+  # Traces pushed by the API. Plaintext, so the application needs no credentials
+  # and internal/otel keeps using its gRPC exporter unchanged — the collector
+  # owns TLS and authentication for the hop to Grafana Cloud.
+  # Structured logs join this receiver in #199.
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Shed load before the collector is OOM-killed. Must be first in every pipeline.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+
+  batch:
+    send_batch_size: 1000
+    send_batch_max_size: 1500
+    timeout: 10s
+
+exporters:
+  prometheusremotewrite:
+    endpoint: ${env:GRAFANA_CLOUD_URL}
+    auth:
+      authenticator: basicauth/prometheus
+
+  otlphttp/grafana:
+    traces_endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}/v1/traces
+    headers:
+      authorization: ${env:GRAFANA_CLOUD_BASIC_AUTH_HEADER}
+
+service:
+  extensions: [health_check, basicauth/prometheus]
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [prometheusremotewrite]
+
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana]
