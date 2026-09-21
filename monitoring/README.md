@@ -49,7 +49,7 @@ exited. Three layers now cover that, in increasing order of directness:
 |---|---|---|---|
 | Service reachability | `up{job=~"llm-pricing-api\|llm-pricing-worker"} < 1` → `LLMScrapeTargetDown` | 5m, critical | The worker has **no public domain**, so this is its only liveness signal; scraped over Railway private networking. Also catches a dead API metrics listener. |
 | Requests completing | `sum(rate(llm_api_requests_total[15m])) < 0.01` → `LLMAPITrafficAbsent` | 10m, critical | Catches a wedge that still answers `/health` but serves no traffic. Threshold sits 4× below the observed 24h minimum (0.043 req/s). |
-| External probe | Grafana Cloud Synthetic Monitoring, `GET https://api.llmrates.live/health` | 60s, alert after 2 failures | Fastest layer, and independent of our own metrics pipeline. **Not yet configured** — needs a Synthetic Monitoring access token (see below). `/health` returns `503` when a dependency is down, `200` with `{"db":"ok","redis":"ok","status":"ok"}` when healthy. |
+| External probe | Grafana Cloud Synthetic Monitoring, `GET https://api.llmrates.live/health` → `LLMAPIHealthProbeFailing` | 5m check, rule trips when 2 of ~3 samples fail | Fastest layer, and independent of our own metrics pipeline. **Not yet configured** — needs a Synthetic Monitoring access token (see below). `/health` returns `503` when a dependency is down, `200` with `{"db":"ok","redis":"ok","status":"ok"}` when healthy. `probe_success` lands in the same hosted Prometheus, so this routes through the existing contact point with no second alerting path. |
 
 All three route to the `llm-pricing-email` contact point via the root
 notification policy, provisioned by `provision/provision.py`. Expected response:
@@ -67,10 +67,22 @@ The Grafana Cloud Synthetic Monitoring API rejects the instance service-account
 token with `403 invalid API token`; it needs an **SM access token**, created in
 the Synthetic Monitoring app (Grafana Cloud → Synthetic Monitoring → Config →
 Access tokens), plus the stack's SM API URL (e.g.
-`https://synthetic-monitoring-api-eu-west-2.grafana.net`). Once that token is in
-`.env`, the probe is: HTTP check on `https://api.llmrates.live/health`, 60s
-interval, timeout 10s, assertions `2xx` and body contains `"status":"ok"`, from
-the nearest public probe location, alerting after 2 consecutive failures.
+`https://synthetic-monitoring-api-eu-west-2.grafana.net`). The `-api-` host is
+the REST API; the separate `-grpc-` host is for private probe agents and is not
+needed for public checks. Once `GRAFANA_SM_*` are in `.env`:
+
+```bash
+python3 monitoring/synthetic/provision_checks.py     # create/update the check
+python3 monitoring/synthetic/provision_checks.py --live-fire   # prove notifications
+```
+
+The check is an HTTP probe of `https://api.llmrates.live/health` every **5
+minutes** from **one** probe (a 60s interval would cost 5x for little extra
+signal given the in-pipeline alerts above), asserting HTTP 200. Create the check
+*before* provisioning the `LLMAPIHealthProbeFailing` rule, or it will fire
+`DatasourceNoData` until `probe_success` starts arriving. See
+[`synthetic/README.md`](synthetic/README.md) for the cost model and the full
+procedure.
 
 `grafana-agent` was removed: Grafana Agent is on a deprecation path in favour of
 Alloy, and the Collector already matches the intended topology.
