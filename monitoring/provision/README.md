@@ -50,7 +50,7 @@ Everything lives in a folder titled **`LLM Pricing`** with the stable uid
 | Folder | `llm-pricing` / `LLM Pricing` | container for everything below |
 | Dashboards | `llm-api-overview`, `llm-data-pipeline`, `llm-infrastructure`, `llm-usage-abuse` | imported with `overwrite: true` |
 | Contact point | `llm-pricing-email` | type `email`, `addresses: romeofolie1@gmail.com` |
-| Alert rules | eight rules in group `llm-pricing-api-alerts` | one per entry in `../alerts/rules.yaml`, in the `llm-pricing` folder |
+| Alert rules | twelve rules in group `llm-pricing-api-alerts` | one per entry in `../alerts/rules.yaml`, in the `llm-pricing` folder |
 | Notification policy | root receiver `llm-pricing-email` | existing routes are preserved verbatim |
 
 ### Datasource injection
@@ -78,7 +78,18 @@ Each Prometheus rule becomes a Grafana-managed alert rule:
 * threshold expression (`refId: C`, the rule `condition`) ← the comparison
   operator and value, using `datasourceUid: __expr__`, reducer `last`
 * `for`, `labels.severity` and `annotations.summary` are preserved
-* `noDataState: NoData`, `execErrState: Error`
+* `noDataState` ← `no_data_state` (optional: `OK`, `NoData`, `Alerting` or
+  `Error`), defaulting to `NoData`; `execErrState: Error`
+
+A rule that alerts on the *presence* of a bad event must still evaluate when
+that event has never happened. A label-filtered counter such as
+`llm_api_requests_total{status=~"5.."}` has no series until the first 5xx, so
+the bare expression returns nothing and Grafana raises `DatasourceNoData` —
+which notifies (this paged for hours against a healthy API, #213). Such
+expressions must guard with `or vector(0)` **and** set `no_data_state: OK`.
+Rules that watch a continuously-present gauge (freshness, stale ratio,
+connection count) keep the `NoData` default: for those, silence really is a
+failure. Detecting "all metrics went silent" is #194's job.
 
 The query's `relativeTimeRange.from` is derived from the largest `[range]`
 selector in the expression (plus a 5-minute buffer, minimum 10 minutes) so
@@ -127,7 +138,8 @@ understands exactly the shape that file uses today and nothing more:
 * a top-level `groups:` list containing one `- name:` entry,
 * that group's `rules:` list,
 * rule entries made of `- alert:`, an `expr:` block scalar (`|`) or inline
-  scalar, `for:`, and single-key `labels:` / `annotations:` mappings,
+  scalar, `for:`, `no_data_state:`, and single-key `labels:` / `annotations:`
+  mappings,
 * `severity:` and `summary:` are read by key name wherever they appear inside a
   rule (they are not scoped to their parent mapping).
 
