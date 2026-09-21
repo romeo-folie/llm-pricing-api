@@ -1,0 +1,249 @@
+package worker
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// mockFreshnessQuerier is a freshnessQuerier whose result the test controls.
+type mockFreshnessQuerier struct {
+	rows          []sourceFreshness
+	err           error
+	calls         int
+	gotStaleAfter time.Duration
+}
+
+func (m *mockFreshnessQuerier) SourceFreshness(_ context.Context, staleAfter time.Duration) ([]sourceFreshness, error) {
+	m.calls++
+	m.gotStaleAfter = staleAfter
+	return m.rows, m.err
+}
+
+// sourceGaugeSamples gathers every sample of the named gauge family keyed by its
+// source label. Gathering the default registry (rather than a per-child read) is
+// what lets a test assert a source is *absent* rather than merely zero: a
+// GaugeVec child is created by the first WithLabelValues call, so reading an
+// untouched label reports 0 and cannot distinguish "never set" from "set to 0".
+//
+// The task's alternative — prometheus/client_golang/prometheus/testutil — is
+// deliberately not used: testutil drags in github.com/kylelemons/godebug, which
+// is not currently a go.mod requirement, and importing it would force a
+// dependency change unrelated to this feature.
+func sourceGaugeSamples(t *testing.T, name string) map[string]float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather default registry: %v", err)
+	}
+	out := make(map[string]float64)
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			source := ""
+			for _, label := range m.GetLabel() {
+				if label.GetName() == "source" {
+					source = label.GetValue()
+				}
+			}
+			out[source] = m.GetGauge().GetValue()
+		}
+	}
+	return out
+}
+
+// gaugeValue returns the current value of a gauge sample for source, failing the
+// test if the sample does not exist.
+func gaugeValue(t *testing.T, name, source string) float64 {
+	t.Helper()
+	value, ok := sourceGaugeSamples(t, name)[source]
+	if !ok {
+		t.Fatalf("%s has no sample for source %q", name, source)
+	}
+	return value
+}
+
+// assertGaugeAbsent fails when the named gauge has a sample for source, which is
+// how the "no rows must not emit a misleading zero" rule is verified.
+func assertGaugeAbsent(t *testing.T, name, source string) {
+	t.Helper()
+	if _, ok := sourceGaugeSamples(t, name)[source]; ok {
+		t.Errorf("%s must have no sample for source %q; got one", name, source)
+	}
+}
+
+// TestFreshnessSampler_HealthyRows covers the all-fresh case: every published
+// price was verified inside the staleness window, so the ratio is 0 and the
+// timestamp/total gauges carry the source's real values.
+func TestFreshnessSampler_HealthyRows(t *testing.T) {
+	const source = "test_fresh_healthy"
+	lastVerified := time.Unix(1_700_000_000, 0).UTC()
+
+	q := &mockFreshnessQuerier{rows: []sourceFreshness{
+		{Source: source, LastVerifiedAt: lastVerified, Prices: 4, Stale: 0},
+	}}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+
+	if got := gaugeValue(t, "llm_source_last_success_timestamp_seconds", source); got != float64(lastVerified.Unix()) {
+		t.Errorf("last success = %v; want %v", got, lastVerified.Unix())
+	}
+	if got := gaugeValue(t, "llm_prices_published", source); got != 4 {
+		t.Errorf("prices total = %v; want 4", got)
+	}
+	if got := gaugeValue(t, "llm_prices_stale_ratio", source); got != 0 {
+		t.Errorf("stale ratio = %v; want 0", got)
+	}
+}
+
+// TestFreshnessSampler_AllRowsStale covers a source whose entire published set
+// has fallen outside the freshness window: the ratio is 1, not 0 or 100.
+func TestFreshnessSampler_AllRowsStale(t *testing.T) {
+	const source = "test_fresh_all_stale"
+	lastVerified := time.Unix(1_600_000_000, 0).UTC()
+
+	q := &mockFreshnessQuerier{rows: []sourceFreshness{
+		{Source: source, LastVerifiedAt: lastVerified, Prices: 3, Stale: 3},
+	}}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+
+	if got := gaugeValue(t, "llm_prices_stale_ratio", source); got != 1 {
+		t.Errorf("stale ratio = %v; want 1", got)
+	}
+	if got := gaugeValue(t, "llm_prices_published", source); got != 3 {
+		t.Errorf("prices total = %v; want 3", got)
+	}
+}
+
+// TestFreshnessSampler_SomeRowsStale covers the partial case the warning alert
+// keys on: 1 of 4 prices stale must publish 0.25.
+func TestFreshnessSampler_SomeRowsStale(t *testing.T) {
+	const source = "test_fresh_some_stale"
+
+	q := &mockFreshnessQuerier{rows: []sourceFreshness{
+		{Source: source, LastVerifiedAt: time.Unix(1_700_000_500, 0).UTC(), Prices: 4, Stale: 1},
+	}}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+
+	if got := gaugeValue(t, "llm_prices_stale_ratio", source); got != 0.25 {
+		t.Errorf("stale ratio = %v; want 0.25", got)
+	}
+}
+
+// TestFreshnessSampler_SourceWithNoRowsIsSkipped verifies that a source the
+// query returns with a zero price count produces no gauge samples at all. A
+// zeroed llm_prices_stale_ratio would read as "perfectly fresh", and a zeroed
+// llm_source_last_success_timestamp_seconds as "verified in 1970"; either would
+// mislead the dashboard and the alert rules.
+func TestFreshnessSampler_SourceWithNoRowsIsSkipped(t *testing.T) {
+	const emptySource = "test_fresh_no_rows"
+	const realSource = "test_fresh_no_rows_real"
+
+	q := &mockFreshnessQuerier{rows: []sourceFreshness{
+		{Source: emptySource, Prices: 0, Stale: 0},
+		{Source: realSource, LastVerifiedAt: time.Unix(1_700_000_100, 0).UTC(), Prices: 2, Stale: 0},
+	}}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+
+	for _, name := range []string{
+		"llm_source_last_success_timestamp_seconds",
+		"llm_prices_stale_ratio",
+		"llm_prices_published",
+	} {
+		assertGaugeAbsent(t, name, emptySource)
+	}
+
+	// The healthy sibling in the same sample is still published.
+	if got := gaugeValue(t, "llm_prices_published", realSource); got != 2 {
+		t.Errorf("sibling prices total = %v; want 2", got)
+	}
+}
+
+// TestFreshnessSampler_EmptyResultSetsNothing verifies the genuine "no source
+// has prices yet" case: a healthy empty result is not an error and emits
+// nothing.
+func TestFreshnessSampler_EmptyResultSetsNothing(t *testing.T) {
+	q := &mockFreshnessQuerier{}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+	if q.calls != 1 {
+		t.Fatalf("querier calls = %d; want 1", q.calls)
+	}
+}
+
+// TestFreshnessSampler_QueryError verifies that a failed query is returned to
+// the caller (so the ticker can log it) and that no gauges are touched.
+func TestFreshnessSampler_QueryError(t *testing.T) {
+	const source = "test_fresh_query_error"
+	queryErr := errors.New("connection reset")
+
+	q := &mockFreshnessQuerier{
+		rows: []sourceFreshness{{Source: source, Prices: 1, Stale: 1}},
+		err:  queryErr,
+	}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+
+	err := s.Sample(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, queryErr) {
+		t.Errorf("error chain should contain the query error; got: %v", err)
+	}
+
+	for _, name := range []string{
+		"llm_source_last_success_timestamp_seconds",
+		"llm_prices_stale_ratio",
+		"llm_prices_published",
+	} {
+		assertGaugeAbsent(t, name, source)
+	}
+}
+
+// TestFreshnessSampler_PassesStaleAfter verifies the configured threshold is
+// forwarded to the querier rather than hard-coded, since the SQL binds it as a
+// parameter.
+func TestFreshnessSampler_PassesStaleAfter(t *testing.T) {
+	const staleAfter = 6 * time.Hour
+	q := &mockFreshnessQuerier{}
+	s := &FreshnessSampler{querier: q, staleAfter: staleAfter}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+	if q.gotStaleAfter != staleAfter {
+		t.Errorf("querier staleAfter = %v; want %v", q.gotStaleAfter, staleAfter)
+	}
+}
+
+// TestDefaultStaleAfterMatchesProductPromise pins the threshold to the 24-hour
+// freshness promise and to the medium-confidence window in
+// internal/api.ComputeTrustMeta. If one moves, the other must move with it.
+func TestDefaultStaleAfterMatchesProductPromise(t *testing.T) {
+	if DefaultStaleAfter != 24*time.Hour {
+		t.Errorf("DefaultStaleAfter = %v; want 24h", DefaultStaleAfter)
+	}
+}

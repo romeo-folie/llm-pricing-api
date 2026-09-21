@@ -16,7 +16,7 @@ cmd/worker/
 
 ## Key Components
 
-- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, the asynq server, and the scheduler.
+- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, starts the freshness sampler on a 60-second ticker, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, the sampler, the asynq server, and the scheduler.
 - **`GET /health`** — Pings both PostgreSQL and Redis. Returns `{"status":"ok","db":"ok","redis":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable. Used by Railway's health check to verify the worker is running.
 - **`GET /metrics`** — Prometheus exposition of the process registry, served on `METRICS_PORT` by a dedicated listener that is never publicly exposed. See [Metrics](#metrics) below.
 
@@ -52,6 +52,24 @@ http://llm-pricing-worker.railway.internal:<METRICS_PORT>/metrics
 A `CounterVec` emits no samples until its first child is observed, so immediately after boot the
 exposition contains only `go_*` and `process_*` families. The pipeline counters appear as soon as the
 startup scrape tasks record their first result.
+
+### Freshness sampler
+
+The worker also publishes the data-freshness gauges — `llm_source_last_success_timestamp_seconds`,
+`llm_prices_stale_ratio`, and `llm_prices_published`, all labelled by `source`. `worker.FreshnessSampler`
+runs them on a **60-second ticker** with a **10-second per-sample timeout**, seeded once at boot and
+stopped during graceful shutdown before the metrics listener.
+
+The ticker is the design, not an implementation detail. If the gauges were refreshed only inside the
+scrape pipeline, a scraper that silently stopped running would leave them frozen at their last good
+values: `time() - llm_source_last_success_timestamp_seconds` would stay small and the
+`LLMSourceFreshnessStale` critical alert could never fire — failing at exactly the outage it exists to
+detect. A sample failure is logged at warn level and never returns an error up the call stack, because
+freshness telemetry must not take the data pipeline down with it.
+
+`llm_source_last_success_timestamp_seconds` is also nudged at the end of each successful scrape
+(`internal/worker.runPipeline`) so the alert has a prompt anchor, but the ticker remains the
+authority.
 
 ## Tasks and Cron Schedule
 

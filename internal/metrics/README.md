@@ -34,8 +34,23 @@ internal/metrics/
 | `ScraperRunsTotal` | `llm_scraper_runs_total` | CounterVec | scraper, outcome |
 | `ReconcilerEventsTotal` | `llm_reconciler_events_total` | CounterVec | event kind |
 | `WebhookDeliveriesTotal` | `llm_webhook_deliveries_total` | CounterVec | delivery outcome |
+| `SourceLastSuccessTimestampSeconds` | `llm_source_last_success_timestamp_seconds` | GaugeVec | `source` |
+| `PricesStaleRatio` | `llm_prices_stale_ratio` | GaugeVec | `source` |
+| `PricesPublished` | `llm_prices_published` | GaugeVec | `source` |
 
-The last three are incremented from the worker, so both binaries link this package.
+The pipeline and freshness metrics are written from the worker, so both binaries link this package.
+
+### Freshness gauges
+
+`SourceLastSuccessTimestampSeconds`, `PricesStaleRatio` and `PricesPublished` are written by `worker.FreshnessSampler`, which the worker runs on a **60-second ticker** ([`cmd/worker`](../../cmd/worker/README.md)), and `SourceLastSuccessTimestampSeconds` is also nudged eagerly at the end of a successful scrape.
+
+- `llm_source_last_success_timestamp_seconds{source}` — Unix timestamp of the most recent verification across the source's published prices.
+- `llm_prices_stale_ratio{source}` — fraction (0–1) of the source's published prices older than the staleness threshold (24h).
+- `llm_prices_published{source}` — number of published prices for the source, so the ratio has absolute context.
+
+Sources with no published prices emit **no sample** rather than a zero: a zeroed ratio would read as "perfectly fresh" and a zeroed timestamp as "verified in 1970".
+
+> **Deviation from the issue draft.** The draft proposed labelling the ratio by `confidence`. `confidence` is derived per API response by `api.ComputeTrustMeta` and is not a column on `prices`, so a `confidence` label would require recomputing it for every row on every sample and would still not say *which feed* went quiet. The ratio is labelled by `source` instead — cheaper (one `GROUP BY`) and directly actionable.
 
 ### `PrometheusMiddleware`
 
@@ -96,6 +111,7 @@ metrics.ScraperRunsTotal.WithLabelValues("openrouter", "success").Inc()
 ## Design Notes
 
 - **`promauto` + default registry.** Metrics register themselves at package init, so a missing explicit registration cannot silently drop a metric. The cost is that importing this package has a side effect.
+- **Freshness gauges move on a ticker, not only on scrape success.** A gauge refreshed only inside the scrape pipeline freezes at its last good value when a scraper stops running, so `time() - llm_source_last_success_timestamp_seconds` stays small and the staleness alert — the one thing the signal exists for — never fires. The worker's 60-second sampler keeps the value advancing regardless of scrape activity.
 - **Key hashes only.** Nothing here stores or exports a raw API key; the tracker keys on the SHA-256 hash produced by the auth middleware, and the hash is never used as a metric label (it would be unbounded cardinality).
 - **Setting `METRICS_PORT=""` disables the metrics server** without removing instrumentation — the counters still increment, nothing scrapes them.
 

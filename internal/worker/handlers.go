@@ -133,6 +133,13 @@ func (h *Handlers) runPipeline(ctx context.Context, taskName, sourceName string,
 		h.logger.Warn().Str("task", taskName).Err(err).Msg("handler: mark verified failed")
 	}
 
+	// Advance the last-success gauge eagerly so the freshness alert has a prompt
+	// anchor after each successful scrape. The ticker-driven FreshnessSampler in
+	// cmd/worker remains the authority: it keeps the gauge moving — and the alert
+	// able to fire — even when no scrape runs at all, which is the outage this
+	// signal exists to catch.
+	metrics.SourceLastSuccessTimestampSeconds.WithLabelValues(sourceName).Set(float64(time.Now().Unix()))
+
 	h.logger.Info().Str("task", taskName).Int("model_count", len(scraped)).Msg("handler: done")
 	status = "success"
 	return nil

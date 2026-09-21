@@ -123,6 +123,33 @@ func TestRunPipeline_HappyPath(t *testing.T) {
 	}
 }
 
+// TestRunPipeline_SetsLastSuccessGauge verifies the eager freshness anchor: a
+// successful scrape advances llm_source_last_success_timestamp_seconds for its
+// source without waiting for the ticker's next sample.
+func TestRunPipeline_SetsLastSuccessGauge(t *testing.T) {
+	const source = "test_fresh_pipeline_eager"
+	store := &mockStore{
+		models: []models.Model{{ID: 1, Slug: "openai/gpt-4o"}},
+		prices: []models.Price{},
+	}
+	h := newTestHandlers(store)
+
+	s := &mockScraper{result: []scraper.ScrapedModel{
+		{Slug: "openai/gpt-4o", SourceName: source, InputCostPerToken: 5e-6, OutputCostPerToken: 15e-6},
+	}}
+
+	before := time.Now().Unix()
+	if err := h.runPipeline(context.Background(), TaskOpenRouterScrape, source, s); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	after := time.Now().Unix()
+
+	got := gaugeValue(t, "llm_source_last_success_timestamp_seconds", source)
+	if got < float64(before) || got > float64(after) {
+		t.Errorf("last success = %v; want a timestamp in [%d, %d]", got, before, after)
+	}
+}
+
 // TestRunPipeline_MarkVerifiedError_DoesNotFailPipeline verifies that a failure
 // to stamp last_verified_at is swallowed: prices are already reconciled, so the
 // scrape is still a success.

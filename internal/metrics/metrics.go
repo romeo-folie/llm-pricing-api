@@ -75,4 +75,40 @@ var (
 		Name: "llm_webhook_deliveries_total",
 		Help: "Total number of webhook delivery attempts, partitioned by status.",
 	}, []string{"status"})
+
+	// ── Data freshness ────────────────────────────────────────────────────────
+
+	// SourceLastSuccessTimestampSeconds is the Unix timestamp of the last
+	// successful verification for a source. It is refreshed by a periodic ticker
+	// in the worker (internal/worker.FreshnessSampler), not only when a scrape
+	// succeeds: a gauge updated solely inside the scrape pipeline would freeze at
+	// its last good value when a scraper stops running, so
+	// time() - llm_source_last_success_timestamp_seconds would stay small and the
+	// staleness alert would never fire. Sources with no published prices emit no
+	// sample.
+	// Labels: source.
+	SourceLastSuccessTimestampSeconds = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_source_last_success_timestamp_seconds",
+		Help: "Unix timestamp of the last successful verification for a source.",
+	}, []string{"source"})
+
+	// PricesStaleRatio is the fraction (0–1) of a source's published prices whose
+	// last_verified_at is older than the staleness threshold. Labelled by source
+	// rather than by confidence: confidence is computed per API response and is
+	// not stored on the prices rows, so it is neither cheap nor actionable here —
+	// the source label names the feed that went quiet.
+	// Labels: source.
+	PricesStaleRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_prices_stale_ratio",
+		Help: "Fraction of a source's published prices older than the staleness threshold.",
+	}, []string{"source"})
+
+	// PricesPublished is the number of published prices for a source. It gives
+	// llm_prices_stale_ratio absolute context so a high ratio on a tiny
+	// denominator is not mistaken for a broad outage.
+	// Labels: source.
+	PricesPublished = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_prices_published",
+		Help: "Number of published prices for a source.",
+	}, []string{"source"})
 )

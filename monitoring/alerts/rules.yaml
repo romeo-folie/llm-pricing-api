@@ -55,3 +55,21 @@ groups:
           severity: warning
         annotations:
           summary: "Redis memory usage > 80%"
+
+      - alert: LLMSourceFreshnessStale
+        expr: |
+          time() - llm_source_last_success_timestamp_seconds > 86400
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A source has not had a successful verification in over 24h"
+
+      - alert: LLMPricesStaleRatioHigh
+        expr: |
+          max(llm_prices_stale_ratio) > 0.25
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 25% of published prices are stale for a source"

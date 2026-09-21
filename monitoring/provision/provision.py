@@ -7,7 +7,7 @@ Issue #195. This script applies, as code and idempotently:
   * the four dashboards in ``monitoring/dashboards/*.json``, with the
     Prometheus datasource injected on every panel and every target,
   * one email contact point (``llm-pricing-email``),
-  * the six Grafana-managed alert rules derived from
+  * the eight Grafana-managed alert rules derived from
     ``monitoring/alerts/rules.yaml``, and
   * a notification policy whose root receiver is that contact point.
 
