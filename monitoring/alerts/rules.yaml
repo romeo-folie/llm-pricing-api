@@ -73,3 +73,57 @@ groups:
           severity: warning
         annotations:
           summary: "More than 25% of published prices are stale for a source"
+
+      # ── Benchmark evidence & capability scoring ───────────────────────────
+      # llm_benchmark_scrape_runs_total is separate from llm_scraper_runs_total:
+      # benchmark scrapes do not funnel through the price pipeline, so a failing
+      # leaderboard scrape would otherwise be invisible. 3 errors in 30m is the
+      # retry burst of one run, the same shape as LLMScraperFailureConsecutive.
+      - alert: LLMBenchmarkScrapeFailureConsecutive
+        expr: |
+          sum(increase(llm_benchmark_scrape_runs_total{status="error"}[30m])) by (source) >= 3
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A benchmark scraper failed 3+ times in 30m"
+
+      # Answers the benchmark-audit question directly: are upstream leaderboards
+      # publishing few mappable models, or is the slug allowlist rejecting most
+      # entries? Fires when more than half of the leaderboard entries that
+      # reached slug resolution in the last hour could not be mapped to a
+      # canonical model. clamp_min(..., 1) keeps a near-empty denominator from
+      # producing a spurious ratio.
+      - alert: LLMSlugResolutionUnknownRateHigh
+        expr: |
+          sum(rate(llm_slug_resolutions_total{result="unknown"}[1h])) / clamp_min(sum(rate(llm_slug_resolutions_total[1h])), 1) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 50% of leaderboard model names could not be mapped to a canonical slug"
+
+      # Measured from evaluated_at, never last_observed_at: SWE-bench is
+      # re-scraped daily, so observation time is always fresh while its newest
+      # published evaluation is months old. This alert is expected to fire on
+      # day one — the evidence genuinely is stale — and continuing to fire is
+      # the honest signal that upstream has published nothing newer.
+      - alert: LLMBenchmarkEvidenceStaleRatioHigh
+        expr: |
+          max(llm_benchmark_evidence_stale_ratio) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 50% of a benchmark's active evidence is older than 90 days"
+
+      # The scrape task still fails and retries; this makes the retry loop
+      # visible instead of only appearing as a task-level error.
+      - alert: LLMCapabilityRecomputeFailure
+        expr: |
+          increase(llm_capability_recompute_failures_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Capability score recomputation failed in the last hour"

@@ -18,9 +18,10 @@ Supplies the `coding` capability dimension.
 
 ```
 internal/scraper/livecodebench/
-  scraper.go       # Scraper type, fetch, pass@1 aggregation, evidence upsert
-  scraper_test.go  # Parsing, averaging, percentage normalisation, order-independence
-  README.md        # This file
+  scraper.go            # Scraper type, fetch, pass@1 aggregation, evidence upsert
+  scraper_test.go       # Parsing, averaging, percentage normalisation, order-independence
+  slug_metrics_test.go  # Per-entry slug-resolution outcome counter tests
+  README.md             # This file
 ```
 
 ## Key Components
@@ -43,6 +44,15 @@ func (s *Scraper) Scrape(ctx context.Context) error
 
 Implements the shared `scraper.BenchmarkScraper` interface.
 
+### Slug resolution observability
+
+Each entry is resolved through the unexported `resolveSlug` helper, which tries `model_name` and then
+`model_repr` and increments `llm_slug_resolutions_total{result}` **once per entry**
+(`resolved` / `unknown` / `ambiguous`). Counting lookups instead of entries would double-count every
+fallback failure and inflate the unknown rate that `LLMSlugResolutionUnknownRateHigh` keys on.
+Ambiguous names still resolve to the greedy first match, so adding the counter cannot shrink
+coverage. The helper is unit-tested in `slug_metrics_test.go` without a database.
+
 ### pass@1 aggregation
 
 The upstream payload reports results per question, not per model. The scraper averages them into a **mean pass@1 percentage (0–100)** per model. Two normalisation details are covered by tests:
@@ -64,7 +74,7 @@ scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiveCodeBenchScrape, n
 
 ## Design Notes
 
-- **Identity via allowlist.** Model names resolve through [`slugmap.Resolve`](../slugmap/README.md); unresolved or ambiguous names are logged and skipped.
+- **Identity via allowlist.** Model names resolve through [`slugmap.ResolveOutcome`](../slugmap/README.md); names with no match are logged and skipped, and every outcome is counted in `llm_slug_resolutions_total`. Ambiguous names are counted as ambiguous but still resolve to the greedy first match.
 - **Multiple upstream names can map to one model**, so the scraper deduplicates deterministically before writing (`TestModelNamesByRepresentation_OrderIndependent`).
 - **Failure propagates** so asynq retries rather than leaving benchmark state half-written.
 - **Untrusted input**: external JSON is validated before use; the HTTP client needs an explicit timeout and the SSRF-safe transport.
@@ -74,6 +84,7 @@ scheduler.Register("@every 24h", asynq.NewTask(worker.TaskLiveCodeBenchScrape, n
 | Dependency | Role |
 |---|---|
 | `internal/intelligence` | Benchmark evidence upsert and capability recompute |
+| `internal/metrics` | `llm_slug_resolutions_total` outcome counter |
 | `internal/scraper` | `BenchmarkScraper` interface, SSRF-safe transport |
 | `internal/scraper/slugmap` | Leaderboard name → canonical DB slug |
 | `github.com/jackc/pgx/v5/pgxpool` | Postgres access |

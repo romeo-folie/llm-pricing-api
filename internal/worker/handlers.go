@@ -193,13 +193,29 @@ func (h *Handlers) HandleGeminiScrape(ctx context.Context, _ *asynq.Task) error 
 // Benchmark scraper handlers
 // ---------------------------------------------------------------------------
 
-func (h *Handlers) runBenchmarkScrape(ctx context.Context, taskName string, s scraper.BenchmarkScraper) error {
+// runBenchmarkScrape executes the fetch-leaderboard → recompute-capabilities
+// sequence for one benchmark source.
+//
+// Benchmark scrapes do not funnel through runPipeline: they have no diff or
+// reconcile stage. Instead of contorting runPipeline to count two different
+// kinds of run, they record their own llm_benchmark_scrape_runs_total{source}
+// and duration histogram. taskName is used for error wrapping and log context;
+// source is the short metric label (swebench, livecodebench).
+func (h *Handlers) runBenchmarkScrape(ctx context.Context, taskName, source string, s scraper.BenchmarkScraper) error {
+	start := time.Now()
+	status := "error"
+	defer func() {
+		metrics.BenchmarkScrapeRunsTotal.WithLabelValues(source, status).Inc()
+		metrics.BenchmarkScrapeDurationSeconds.WithLabelValues(source).Observe(time.Since(start).Seconds())
+	}()
+
 	if err := s.Scrape(ctx); err != nil {
 		return fmt.Errorf("%s: %w", taskName, err)
 	}
 	if err := h.recomputeCapabilities(ctx); err != nil {
 		return fmt.Errorf("%s: recompute capabilities: %w", taskName, err)
 	}
+	status = "success"
 	return nil
 }
 
@@ -208,7 +224,7 @@ func (h *Handlers) HandleSWEBenchScrape(ctx context.Context, _ *asynq.Task) erro
 	h.logger.Info().Msg("handler: starting SWE-bench scrape")
 	s := swebench.New(h.db, nil)
 	s.SetLogger(h.logger)
-	if err := h.runBenchmarkScrape(ctx, TaskSWEBenchScrape, s); err != nil {
+	if err := h.runBenchmarkScrape(ctx, TaskSWEBenchScrape, "swebench", s); err != nil {
 		return err
 	}
 	h.logger.Info().Msg("handler: SWE-bench scrape and capability recompute complete")
@@ -220,7 +236,7 @@ func (h *Handlers) HandleLiveCodeBenchScrape(ctx context.Context, _ *asynq.Task)
 	h.logger.Info().Msg("handler: starting LiveCodeBench scrape")
 	s := livecodebench.New(h.db, nil)
 	s.SetLogger(h.logger)
-	if err := h.runBenchmarkScrape(ctx, TaskLiveCodeBenchScrape, s); err != nil {
+	if err := h.runBenchmarkScrape(ctx, TaskLiveCodeBenchScrape, "livecodebench", s); err != nil {
 		return err
 	}
 	h.logger.Info().Msg("handler: LiveCodeBench scrape and capability recompute complete")

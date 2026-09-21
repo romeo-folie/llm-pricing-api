@@ -127,24 +127,87 @@ var prefixFallbacks = []struct {
 	{"mistral-large", "mistralai/mistral-large"},
 }
 
-// Resolve maps a leaderboard model name to its canonical DB slug.
-// Returns ("", false) if no mapping exists.
-func Resolve(name string) (slug string, ok bool) {
+// Outcome describes how a leaderboard model name was classified by
+// ResolveOutcome. It exists so the benchmark pipeline can tell "the allowlist
+// has no entry for this name" apart from "more than one allowlist rule matched
+// it" — a distinction Resolve's boolean collapses into a single failure.
+type Outcome string
+
+const (
+	// OutcomeResolved means exactly one canonical slug was matched.
+	OutcomeResolved Outcome = "resolved"
+	// OutcomeUnknown means no allowlist entry matched the name.
+	OutcomeUnknown Outcome = "unknown"
+	// OutcomeAmbiguous means more than one prefix rule matched the name with
+	// different canonical slugs. The greedy first-match slug is still returned
+	// (see ResolveOutcome) so existing callers keep their behaviour, but the
+	// outcome records that the match was not unique.
+	OutcomeAmbiguous Outcome = "ambiguous"
+)
+
+// String returns the outcome as its metric-label value.
+func (o Outcome) String() string { return string(o) }
+
+// ResolveOutcome maps a leaderboard model name to its canonical DB slug and
+// reports how the match was made.
+//
+// Resolution order is unchanged from the original Resolve:
+//
+//  1. Exact match on the lowercased name against canonicalMap → OutcomeResolved.
+//  2. Prefix fallback for date/variant suffixes. If every matching prefix rule
+//     agrees on a slug the result is OutcomeResolved; if two rules disagree the
+//     outcome is OutcomeAmbiguous and the first match — the order of
+//     prefixFallbacks is the specificity convention — is returned.
+//  3. No match at all → OutcomeUnknown with an empty slug.
+//
+// The greedy first match is returned for ambiguous names deliberately: the
+// resolver must not start rejecting names it used to accept, because that would
+// shrink benchmark coverage on the deploy that added observability for it.
+// Callers that care can branch on the outcome instead.
+func ResolveOutcome(name string) (slug string, outcome Outcome) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 
 	// Exact match first.
 	if s, found := canonicalMap[normalized]; found {
-		return s, true
+		return s, OutcomeResolved
 	}
 
 	// Prefix-based fallback for date-suffixed or versioned names.
+	var first string
+	matched := false
 	for _, pf := range prefixFallbacks {
-		if hasKnownVariantPrefix(normalized, pf.prefix) {
-			return pf.slug, true
+		if !hasKnownVariantPrefix(normalized, pf.prefix) {
+			continue
+		}
+		if !matched {
+			first = pf.slug
+			matched = true
+			continue
+		}
+		if pf.slug != first {
+			// Two rules matched with different slugs: the name is
+			// under-specified for the allowlist (for example "gpt-4o-mini-x"
+			// matches both "gpt-4o-mini" and "gpt-4o"). Fall through with the
+			// first match so behaviour is unchanged.
+			return first, OutcomeAmbiguous
 		}
 	}
+	if !matched {
+		return "", OutcomeUnknown
+	}
+	return first, OutcomeResolved
+}
 
-	return "", false
+// Resolve maps a leaderboard model name to its canonical DB slug.
+// Returns ("", false) if no mapping exists. Ambiguous names still return the
+// greedy first-match slug with ok=true, exactly as before this variant existed.
+//
+// It is a thin wrapper over ResolveOutcome so existing callers and tests are
+// unaffected. New callers that need to distinguish "no match" from "ambiguous
+// match" should call ResolveOutcome.
+func Resolve(name string) (slug string, ok bool) {
+	slug, outcome := ResolveOutcome(name)
+	return slug, outcome != OutcomeUnknown
 }
 
 func hasKnownVariantPrefix(name, prefix string) bool {

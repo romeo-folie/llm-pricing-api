@@ -34,6 +34,14 @@ internal/metrics/
 | `ScraperRunsTotal` | `llm_scraper_runs_total` | CounterVec | scraper, outcome |
 | `ReconcilerEventsTotal` | `llm_reconciler_events_total` | CounterVec | event kind |
 | `WebhookDeliveriesTotal` | `llm_webhook_deliveries_total` | CounterVec | delivery outcome |
+| `BenchmarkScrapeRunsTotal` | `llm_benchmark_scrape_runs_total` | CounterVec | `source`, `status` |
+| `BenchmarkScrapeDurationSeconds` | `llm_benchmark_scrape_duration_seconds` | HistogramVec | `source` |
+| `SlugResolutionsTotal` | `llm_slug_resolutions_total` | CounterVec | `result` |
+| `BenchmarkEvidenceActive` | `llm_benchmark_evidence_active` | GaugeVec | `benchmark` |
+| `BenchmarkEvidenceStaleRatio` | `llm_benchmark_evidence_stale_ratio` | GaugeVec | `benchmark` |
+| `CapabilityRecomputeDurationSeconds` | `llm_capability_recompute_duration_seconds` | Histogram | — |
+| `CapabilityRecomputeFailuresTotal` | `llm_capability_recompute_failures_total` | Counter | — |
+| `CapabilityLastRecomputeTimestampSeconds` | `llm_capability_last_recompute_timestamp_seconds` | Gauge | — |
 | `SourceLastSuccessTimestampSeconds` | `llm_source_last_success_timestamp_seconds` | GaugeVec | `source` |
 | `PricesStaleRatio` | `llm_prices_stale_ratio` | GaugeVec | `source` |
 | `PricesPublished` | `llm_prices_published` | GaugeVec | `source` |
@@ -51,6 +59,20 @@ The pipeline and freshness metrics are written from the worker, so both binaries
 Sources with no published prices emit **no sample** rather than a zero: a zeroed ratio would read as "perfectly fresh" and a zeroed timestamp as "verified in 1970".
 
 > **Deviation from the issue draft.** The draft proposed labelling the ratio by `confidence`. `confidence` is derived per API response by `api.ComputeTrustMeta` and is not a column on `prices`, so a `confidence` label would require recomputing it for every row on every sample and would still not say *which feed* went quiet. The ratio is labelled by `source` instead — cheaper (one `GROUP BY`) and directly actionable.
+
+### Benchmark evidence, slug resolution, and capability scoring
+
+These metrics cover the benchmark-evidence and capability-scoring pipeline, whose production failure mode was invisible: the scrapers ran, but only 24 of 4,078 models had any evidence and most of that evidence was months old.
+
+- `llm_slug_resolutions_total{result}` (`SlugResolutionsTotal`) — leaderboard entries that reached `slugmap` resolution, split into `resolved`, `unknown`, and `ambiguous`. It is incremented once per leaderboard *entry* by the benchmark scrapers, not once per resolver lookup, so LiveCodeBench's two-step `model_name` → `model_repr` fallback cannot count one entry twice. This is the metric that answers whether thin coverage comes from upstream publishing few mappable models (`unknown` low, coverage low) or from the allowlist rejecting most entries (`unknown` high).
+- `llm_benchmark_scrape_runs_total{source,status}` (`BenchmarkScrapeRunsTotal`) and `llm_benchmark_scrape_duration_seconds{source}` — benchmark scrape runs. They are **separate from `llm_scraper_runs_total`**: benchmark scrapers do not funnel through `worker.runPipeline`, and folding them into the price counter would give the price-scrape failure alert a source a price re-run can never fix. `ChatbotArena` is a compatibility no-op stub and deliberately records nothing; counting its no-op success would pollute the failure signal.
+- `llm_benchmark_evidence_active{benchmark}` (`BenchmarkEvidenceActive`) and `llm_benchmark_evidence_stale_ratio{benchmark}` (`BenchmarkEvidenceStaleRatio`) — written by `worker.BenchmarkSampler` on a **60-second ticker**, independently of the daily benchmark scrapes.
+  - *Active* mirrors `intelligence.GetActiveBenchmarkScores`: one normalised row per `(model, benchmark)`, so a re-published benchmark version does not inflate coverage.
+  - The ratio is measured from `evaluated_at`, **never** `last_observed_at`. SWE-bench is re-scraped daily, so its observation time is always fresh while its newest published evaluation is months old; measuring observation time would report it as healthy while the scorer itself marks the dimension stale. The threshold is `intelligence.StalenessThresholdDays` (90 days) so the gauge can never disagree with the scorer.
+  - A benchmark with no active evidence emits **no sample**: a zeroed ratio would read as "perfectly fresh", and a zeroed count is indistinguishable from "never ingested".
+- `llm_capability_recompute_duration_seconds`, `llm_capability_recompute_failures_total`, `llm_capability_last_recompute_timestamp_seconds` — recorded by `intelligence.ComputeAllCapabilityScores`. Duration is observed on failure too (a slow failure is what the dashboard needs to show); failures increment the counter while the error is still returned so the triggering scrape task fails and retries; the timestamp only advances on success, so a recompute that keeps failing leaves the value receding.
+
+The slug-resolution counter is the one signal that is *not* written by the worker's samplers: it is incremented by the `swebench` and `livecodebench` scrapers themselves, which run inside the worker process, so it is exposed by the worker's `/metrics` listener.
 
 ### `PrometheusMiddleware`
 

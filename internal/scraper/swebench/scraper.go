@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/intelligence"
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/slugmap"
 )
@@ -109,6 +110,21 @@ func extractModelFromTags(tags []string) (string, bool) {
 	return model, model != ""
 }
 
+// resolveSlug resolves one leaderboard model name to a canonical slug and
+// records the outcome in llm_slug_resolutions_total.
+//
+// The counter is incremented here rather than inside slugmap so the resolver
+// stays pure and dependency-free (see internal/scraper/slugmap/README.md), and
+// once per leaderboard entry rather than once per lookup, so the resulting
+// ratio answers "how many upstream entries can we map?" instead of "how many
+// lookups failed?". Ambiguous names are counted as ambiguous but still resolve
+// to the greedy first-match slug, so adding the counter cannot shrink coverage.
+func resolveSlug(name string) (string, slugmap.Outcome) {
+	slug, outcome := slugmap.ResolveOutcome(name)
+	metrics.SlugResolutionsTotal.WithLabelValues(outcome.String()).Inc()
+	return slug, outcome
+}
+
 // betterResolvedEntry defines the order-independent SWE-bench selection
 // policy: best resolved percentage, then newest evaluation, then stable
 // upstream identity tie-breakers.
@@ -171,8 +187,8 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 			continue
 		}
 
-		slug, ok := slugmap.Resolve(modelName)
-		if !ok {
+		slug, outcome := resolveSlug(modelName)
+		if outcome == slugmap.OutcomeUnknown {
 			s.logger.Debug().Str("model", modelName).Msg("swebench: no slug mapping — skipping")
 			skipped++
 			continue

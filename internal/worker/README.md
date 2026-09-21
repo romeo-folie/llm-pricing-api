@@ -10,6 +10,7 @@ This package is the bridge between the asynq job queue and the scrape→diff→r
 - **`WorkerStore`** — a DB read interface (and its pgx implementation) that supplies the diff engine with the current stored models and prices for each source.
 - **`Handlers`** — one public handler method per data source, each executing the full pipeline: fetch scraped data, fetch stored data, compute diffs, reconcile.
 - **`FreshnessSampler`** — a per-source price-freshness query that publishes the last-success timestamp and stale-ratio gauges; run on a ticker by `cmd/worker` so a scraper that stops running is still detected.
+- **`BenchmarkSampler`** — a per-benchmark evidence coverage/staleness query that publishes the active-evidence count and stale-ratio gauges; run on the same kind of ticker, independently of the daily benchmark scrapes.
 - **Webhook delivery** — `HandleWebhookDeliver` processes `webhook:deliver` asynq tasks, signs the payload with HMAC-SHA256, and POSTs to the registered URL with retry on failure.
 
 `cmd/worker/main.go` instantiates this package and wires it into the asynq server and cron scheduler.
@@ -22,9 +23,11 @@ internal/worker/
   store.go              # WorkerStore interface + pgxWorkerStore implementation
   handlers.go           # Handlers struct, runPipeline helper, scraper handler methods
   freshness.go          # FreshnessSampler — per-source freshness query + gauges
+  benchmark.go          # BenchmarkSampler — per-benchmark evidence freshness query + gauges
   webhook_handler.go    # WebhookPayload, WebhookTaskPayload, NewWebhookDeliverTask, HandleWebhookDeliver
   handlers_test.go      # Unit tests using mock store and mock scraper
   freshness_test.go     # Unit tests for the sampler using a mock querier
+  benchmark_test.go     # Unit tests for the benchmark sampler using a mock querier
   webhook_handler_test.go # Unit tests for HMAC signing and non-2xx retry
   README.md             # This file
 ```
@@ -98,6 +101,32 @@ The staleness threshold is bound as a query parameter (`$1::interval`) — never
 
 The sampler holds a narrow local `freshnessQuerier` interface rather than the concrete `*pgxpool.Pool` (and rather than a new `WorkerStore` method), so it is unit-testable with a mock and the existing store mocks are unaffected. `cmd/worker/main.go` runs it on a **60-second ticker with a 10-second per-sample timeout**, independent of the scrape pipeline — a sampler invoked only inside the pipeline would leave the gauges frozen at their last good values when a scraper stopped running, so `time() - last success` would stay small and the staleness alert would never fire.
 
+### Benchmark sampler (`benchmark.go`)
+
+```go
+type BenchmarkSampler struct { /* unexported: querier, staleAfter */ }
+func NewBenchmarkSampler(db *pgxpool.Pool, staleAfter time.Duration) *BenchmarkSampler
+func (s *BenchmarkSampler) Sample(ctx context.Context) error
+```
+
+`Sample` runs a **single** grouped query over active benchmark evidence and republishes two gauges per benchmark that has any:
+
+| Gauge | Meaning |
+|---|---|
+| `llm_benchmark_evidence_active{benchmark}` | Active evidence rows: one normalised row per `(model, benchmark)` |
+| `llm_benchmark_evidence_stale_ratio{benchmark}` | Fraction (0–1) of that evidence older than `staleAfter` by `evaluated_at` |
+
+Two properties make this sampler trustworthy rather than decorative:
+
+- **"Active" mirrors the scorer.** The query's `DISTINCT ON (model_id, benchmark_id)` ordering is the same ordering `intelligence.GetActiveBenchmarkScores` uses (source observation time, then evaluation time, then stable content tie-breakers). If the scorer's ordering changes, this query must change with it, or the gauge would describe a different row than the one that produced the capability score.
+- **Staleness is measured from `evaluated_at`, never `last_observed_at`.** SWE-bench is re-scraped daily, so observation time is always fresh while the newest published evaluation is 216 days old. Measuring observation time would report the benchmark as healthy while the scorer marks its dimensions stale.
+
+`DefaultBenchmarkStaleAfter` is derived from `intelligence.StalenessThresholdDays` (90 days) rather than declared independently, so the gauge can never disagree with the rule the product applies. `Sample` returns the wrapped query error and publishes nothing on failure. Benchmarks with no active evidence are **skipped, not zeroed**: a zeroed ratio would read as "perfectly fresh" and a zeroed count is indistinguishable from "never ingested". It holds its own narrow `benchmarkEvidenceQuerier` interface for the same reason `FreshnessSampler` holds `freshnessQuerier`. `cmd/worker/main.go` runs it on a **60-second ticker with a 10-second per-sample timeout**, stopped during graceful shutdown before the metrics listener.
+
+### Benchmark scrape handlers (`handlers.go`)
+
+`runBenchmarkScrape(ctx, taskName, source, scraper)` is the benchmark counterpart to `runPipeline`. Benchmark scrapes have no diff/reconcile stage, so they do not funnel through `runPipeline`; instead they record `llm_benchmark_scrape_runs_total{source,status}` and `llm_benchmark_scrape_duration_seconds{source}` themselves, in a deferred `status` update that also counts recompute failures as run failures. `source` is a short label (`swebench`, `livecodebench`), kept separate from the price-scraper counter so a price re-run can never appear to fix a leaderboard failure. `HandleChatbotArenaScrape` is a compatibility no-op stub and records nothing.
+
 ### Webhook delivery (`webhook_handler.go`)
 
 `HandleWebhookDeliver(ctx, task)` processes `webhook:deliver` asynq tasks:
@@ -143,6 +172,7 @@ type WebhookTaskPayload struct {
 | `internal/diff` | Diff engine — computes price changes |
 | `internal/reconciler` | Reconciliation engine — mediates all DB writes |
 | `internal/metrics` | Freshness gauges published by `FreshnessSampler` (and pipeline counters) |
+| `internal/intelligence` | `ComputeAllCapabilityScores` invoked after each benchmark scrape, and the 90-day `StalenessThresholdDays` the benchmark sampler keys on |
 | `internal/models` | Shared domain types (`Model`, `Price`) |
 | `github.com/hibiken/asynq` | Task queue framework |
 | `github.com/jackc/pgx/v5/pgxpool` | PostgreSQL connection pool |
@@ -175,5 +205,7 @@ go test ./internal/worker/...
 `handlers_test.go` uses a `mockStore` implementing `WorkerStore` and a `mockScraper` implementing `scraper.Scraper`. The reconciler is backed by a `mockReconcilerStore` (via `reconciler.NewWithStore`) so tests run without a database.
 
 `freshness_test.go` drives `FreshnessSampler` through a `mockFreshnessQuerier` covering healthy rows, all-stale rows, partially-stale rows, an empty result, a zero-count source (skipped, not zeroed), and a query error (nothing published). Gauge values are read by gathering the default registry, which can assert a source is *absent* — a per-child read cannot distinguish "never set" from "set to 0".
+
+`benchmark_test.go` does the same for `BenchmarkSampler` via a `mockBenchmarkEvidenceQuerier`: healthy, all-stale, partially-stale, a zero-count benchmark (skipped, not zeroed), a benchmark absent from the result (keeps its previous sample rather than being reset), an empty result, a query error, and threshold forwarding. `handlers_benchmark_test.go` additionally asserts the benchmark scrape run counters and duration histogram increment on success, scrape failure, and recompute failure.
 
 `webhook_handler_test.go` spins up an `httptest.Server` to verify HMAC signature correctness and that non-2xx responses return an error.
