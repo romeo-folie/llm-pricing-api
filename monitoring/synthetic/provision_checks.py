@@ -139,7 +139,11 @@ class SMClient:
     """Minimal Synthetic Monitoring API client (standard library only)."""
 
     def __init__(self, base_url, token):
-        self.base_url = base_url.rstrip("/")
+        # The Grafana Cloud UI shows this host without a scheme; accept either.
+        base_url = base_url.strip().rstrip("/")
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"https://{base_url}"
+        self.base_url = base_url
         self.token = token
 
     def request(self, method, path, body=None):
@@ -163,7 +167,8 @@ class SMClient:
         return self.request("GET", "/api/v1/check") or []
 
     def list_probes(self):
-        return self.request("GET", "/api/v1/probes") or []
+        # Singular: the collection route is /api/v1/probe, not /probes.
+        return self.request("GET", "/api/v1/probe") or []
 
     def create_check(self, check):
         return self.request("POST", "/api/v1/check", check)
