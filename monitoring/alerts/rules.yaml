@@ -94,6 +94,12 @@ groups:
         annotations:
           summary: "A source has not had a successful verification in over 24h"
 
+      # The ratio's denominator is each source's *active* prices — those verified
+      # inside worker.DefaultActiveWindow (7 days) — so models upstream has
+      # delisted or renamed drop out instead of inflating the ratio forever
+      # (#217). A source that stops scraping still trips this while its models
+      # age through the window, and LLMSourceFreshnessStale catches it
+      # immediately.
       - alert: LLMPricesStaleRatioHigh
         expr: |
           max(llm_prices_stale_ratio) > 0.25
@@ -101,7 +107,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "More than 25% of published prices are stale for a source"
+          summary: "More than 25% of a source's active prices are stale"
 
       # ── Benchmark evidence & capability scoring ───────────────────────────
       # llm_benchmark_scrape_runs_total is separate from llm_scraper_runs_total:

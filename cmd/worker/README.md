@@ -56,9 +56,15 @@ startup scrape tasks record their first result.
 ### Freshness sampler
 
 The worker also publishes the data-freshness gauges — `llm_source_last_success_timestamp_seconds`,
-`llm_prices_stale_ratio`, and `llm_prices_published`, all labelled by `source`. `worker.FreshnessSampler`
-runs them on a **60-second ticker** with a **10-second per-sample timeout**, seeded once at boot and
-stopped during graceful shutdown before the metrics listener.
+`llm_prices_stale_ratio`, `llm_prices_active` and `llm_prices_published`, all labelled by `source`.
+`worker.FreshnessSampler` runs them on a **60-second ticker** with a **10-second per-sample timeout**,
+seeded once at boot and stopped during graceful shutdown before the metrics listener.
+
+The stale ratio's denominator is the **active** count — prices verified inside
+`worker.DefaultActiveWindow` (7 days) — not every published row. Rows upstream has delisted or renamed
+are never re-verified by design, so counting them made the ratio climb with upstream churn until it
+fired permanently on healthy feeds ([#217](https://github.com/romeo-folie/llm-pricing-api/issues/217));
+`llm_prices_published` minus `llm_prices_active` is that excluded population.
 
 The ticker is the design, not an implementation detail. If the gauges were refreshed only inside the
 scrape pipeline, a scraper that silently stopped running would leave them frozen at their last good

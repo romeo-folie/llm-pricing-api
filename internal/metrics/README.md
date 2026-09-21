@@ -44,19 +44,23 @@ internal/metrics/
 | `CapabilityLastRecomputeTimestampSeconds` | `llm_capability_last_recompute_timestamp_seconds` | Gauge | — |
 | `SourceLastSuccessTimestampSeconds` | `llm_source_last_success_timestamp_seconds` | GaugeVec | `source` |
 | `PricesStaleRatio` | `llm_prices_stale_ratio` | GaugeVec | `source` |
+| `PricesActive` | `llm_prices_active` | GaugeVec | `source` |
 | `PricesPublished` | `llm_prices_published` | GaugeVec | `source` |
 
 The pipeline and freshness metrics are written from the worker, so both binaries link this package.
 
 ### Freshness gauges
 
-`SourceLastSuccessTimestampSeconds`, `PricesStaleRatio` and `PricesPublished` are written by `worker.FreshnessSampler`, which the worker runs on a **60-second ticker** ([`cmd/worker`](../../cmd/worker/README.md)), and `SourceLastSuccessTimestampSeconds` is also nudged eagerly at the end of a successful scrape.
+`SourceLastSuccessTimestampSeconds`, `PricesStaleRatio`, `PricesActive` and `PricesPublished` are written by `worker.FreshnessSampler`, which the worker runs on a **60-second ticker** ([`cmd/worker`](../../cmd/worker/README.md)), and `SourceLastSuccessTimestampSeconds` is also nudged eagerly at the end of a successful scrape.
 
 - `llm_source_last_success_timestamp_seconds{source}` — Unix timestamp of the most recent verification across the source's published prices.
-- `llm_prices_stale_ratio{source}` — fraction (0–1) of the source's published prices older than the staleness threshold (24h).
-- `llm_prices_published{source}` — number of published prices for the source, so the ratio has absolute context.
+- `llm_prices_stale_ratio{source}` — fraction (0–1) of the source's **active** prices older than the staleness threshold (24h).
+- `llm_prices_active{source}` — the ratio's denominator: prices verified inside the **activity window** (`worker.DefaultActiveWindow`, 7 days).
+- `llm_prices_published{source}` — every published price for the source. The gap between it and `llm_prices_active` is the count of rows upstream has delisted or renamed — or that a scraper change orphaned.
 
-Sources with no published prices emit **no sample** rather than a zero: a zeroed ratio would read as "perfectly fresh" and a zeroed timestamp as "verified in 1970".
+Sources with no published prices emit **no sample** rather than a zero: a zeroed ratio would read as "perfectly fresh" and a zeroed timestamp as "verified in 1970". A source with published prices but *no* active ones (the whole feed delisted, or nothing verified for a week) publishes its timestamp and totals but omits the ratio and the active count, because there is no denominator.
+
+> **Why the ratio is windowed (#217).** `MarkVerified` stamps only the slugs present in the latest scrape, so a model upstream delists or renames is never re-verified again and nothing prunes it. Counting every published row therefore made the ratio climb monotonically with upstream churn — OpenRouter's reached 27% with *every* stale row genuinely delisted — until it fired permanently on healthy feeds. Restricting the denominator to models verified within the activity window restores the alert's meaning. A source that stops scraping entirely still alerts: its rows stay active (and stale) for a week while the ratio climbs, and `LLMSourceFreshnessStale` fires immediately from the last-success timestamp.
 
 > **Deviation from the issue draft.** The draft proposed labelling the ratio by `confidence`. `confidence` is derived per API response by `api.ComputeTrustMeta` and is not a column on `prices`, so a `confidence` label would require recomputing it for every row on every sample and would still not say *which feed* went quiet. The ratio is labelled by `source` instead — cheaper (one `GROUP BY`) and directly actionable.
 
