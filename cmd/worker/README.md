@@ -94,6 +94,19 @@ The benchmark scrape counters (`llm_benchmark_scrape_runs_total{source,status}`,
 (`llm_slug_resolutions_total{result}`) are incremented by the asynq handlers rather than by the
 samplers, so they appear when benchmark tasks run rather than on a timer.
 
+### Tracing and logs
+
+Unlike the API, the worker historically initialised **no OTel at all**, so
+scraper and reconciler spans were never exported while the API's were (#198).
+It now calls `otel.Init` with the same config as `cmd/api` and shuts the
+provider down on exit, so worker spans reach Tempo.
+
+The worker also ships structured logs to Loki through the same OTLP endpoint
+(#199): `logger.NewOTLPWriter` tees stdout into an `otlploggrpc` exporter, with
+info-and-above shipped and debug left on stdout. `MinLevel` defaults to
+`InfoLevel`; the writer never blocks and counts drops in
+`llm_logs_dropped_total`.
+
 ### Queue sampler
 
 `worker.QueueSampler` publishes `llm_asynq_queue_tasks{queue,state}`,

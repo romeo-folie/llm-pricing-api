@@ -270,15 +270,21 @@ Note: the managed Redis runs without a `maxmemory` policy, so
 ### Dashboards, alert rules and notifications
 
 Provisioned as code by `monitoring/provision/provision.py`: four dashboards, the
-email contact point, and the six alert rules. Required variables are documented
+email contact point, and seventeen alert rules. Required variables are documented
 in [`monitoring/README.md`](monitoring/README.md).
 
 - **Railway Metrics**: CPU, memory, and request counts are visible in the Railway
   dashboard under the service Metrics tab.
-- **Application logs**: `railway logs --tail` or the Logs tab. Shipping them to
-  Loki is issue #199.
-- **External uptime probe**: poll `GET /health` from outside the platform — a
-  metrics pipeline cannot alert on a process that has stopped emitting. Issue #194.
+- **Application logs**: `railway logs --tail` or the Logs tab. Both binaries also
+  ship structured logs to Loki through the collector (#199) — info and above,
+  correlated with traces via `trace_id`. `OTEL_EXPORTER_OTLP_ENDPOINT` must be
+  set on **both** services; the worker only started initialising OTel in #198, so
+  a worker missing that variable exports neither spans nor logs.
+- **External uptime probe**: Grafana Cloud Synthetic Monitoring probes
+  `GET https://api.llmrates.live/health` every 5 minutes from London (#194), and
+  is provisioned by `monitoring/synthetic/provision_checks.py`. This layer is
+  independent of the metrics pipeline — a wedged process can stop emitting while
+  still answering a health check.
 
 ---
 

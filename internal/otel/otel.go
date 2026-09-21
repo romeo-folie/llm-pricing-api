@@ -31,13 +31,13 @@ type Config struct {
 	OTLPEndpoint string
 }
 
-// Init configures and registers a global OTel TracerProvider and
-// TextMapPropagator.  The returned shutdown function must be called before
-// process exit to flush buffered spans.
+// NewResource builds the resource that identifies this process to the
+// collector: service.name, service.version and deployment.environment.
 //
-// When cfg.OTLPEndpoint is empty, a no-op provider is used and the returned
-// shutdown function is a harmless no-op.
-func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
+// It is exported so the logs pipeline (internal/logger) can attach the *same*
+// resource as tracing — Loki labels and Tempo resource attributes must not
+// diverge, or a log line and its trace would describe different services.
+func NewResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
 	res, err := resource.New(ctx,
 		resource.WithSchemaURL(semconv.SchemaURL),
 		resource.WithAttributes(
@@ -47,7 +47,21 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		),
 	)
 	if err != nil {
-		return noopShutdown, fmt.Errorf("otel: build resource: %w", err)
+		return nil, fmt.Errorf("otel: build resource: %w", err)
+	}
+	return res, nil
+}
+
+// Init configures and registers a global OTel TracerProvider and
+// TextMapPropagator.  The returned shutdown function must be called before
+// process exit to flush buffered spans.
+//
+// When cfg.OTLPEndpoint is empty, a no-op provider is used and the returned
+// shutdown function is a harmless no-op.
+func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error, err error) {
+	res, err := NewResource(ctx, cfg)
+	if err != nil {
+		return noopShutdown, err
 	}
 
 	var tp *sdktrace.TracerProvider

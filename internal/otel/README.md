@@ -44,6 +44,14 @@ internal/otel/
 | `Environment` | Deployment environment, e.g. `development` / `production` |
 | `OTLPEndpoint` | gRPC collector address (e.g. `localhost:4317`); empty → no-op |
 
+### `NewResource(ctx, Config) (*resource.Resource, error)`
+
+Builds the resource identifying this process (`service.name`, `service.version`,
+`deployment.environment`). Exported so the logs pipeline can attach the *same*
+resource as tracing: if Loki labels and Tempo resource attributes diverged, a
+log line and its trace would describe different services. `Init` uses it
+internally.
+
 ### `Init(ctx, Config) (shutdown func(context.Context) error, err error)`
 
 Configures and globally registers the SDK.  When `OTLPEndpoint` is non-empty

@@ -49,6 +49,9 @@ internal/metrics/
 | `QueueTasks` | `llm_asynq_queue_tasks` | GaugeVec | `queue`, `state` | worker |
 | `QueueLatencySeconds` | `llm_asynq_queue_latency_seconds` | GaugeVec | `queue` | worker |
 | `QueuePaused` | `llm_asynq_queue_paused` | GaugeVec | `queue` | worker |
+| `LogsDroppedTotal` | `llm_logs_dropped_total` | Counter | — | API, worker |
+
+`llm_logs_dropped_total` is the one metric written by both binaries: each process runs its own OTLP log shipper, and each drops independently when its queue is full, so both endpoints carry it.
 
 **Written by** is the binary whose `/metrics` endpoint carries the series. Prometheus scrapes per process, so a metric written only in the worker is not on the API's endpoint, and vice versa — a dashboard panel pointed at the wrong service renders empty rather than erroring.
 
