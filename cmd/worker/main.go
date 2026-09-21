@@ -18,6 +18,7 @@ import (
 	"llm-pricing-api/internal/database"
 	"llm-pricing-api/internal/logger"
 	"llm-pricing-api/internal/metrics"
+	internalotel "llm-pricing-api/internal/otel"
 	"llm-pricing-api/internal/reconciler"
 	"llm-pricing-api/internal/worker"
 )
@@ -145,13 +146,56 @@ func run() error {
 	}
 
 	zerolog.TimeFieldFormat = time.RFC3339Nano
+	ctx := context.Background()
+
+	// The worker previously initialised no OTel at all, so scraper and
+	// reconciler spans were never exported while the API's were — and logs had
+	// nothing to hook into (#198, #199). Same configuration as cmd/api.
+	otelCfg := internalotel.Config{
+		ServiceName:    cfg.OTELServiceName,
+		ServiceVersion: "0.1.0",
+		Environment:    cfg.AppEnv,
+		OTLPEndpoint:   cfg.OTELEndpoint,
+	}
+
+	logResource, resErr := internalotel.NewResource(ctx, otelCfg)
+	if resErr != nil {
+		return fmt.Errorf("build otel resource: %w", resErr)
+	}
+
+	// Ship structured logs through the same OTLP endpoint as traces. The writer
+	// is nil when no endpoint is configured, so local runs are unaffected.
+	logWriter, logShutdown, logErr := logger.NewOTLPWriter(ctx, logger.OTLPConfig{
+		Endpoint:    cfg.OTELEndpoint,
+		ServiceName: cfg.OTELServiceName,
+		Resource:    logResource,
+		MinLevel:    zerolog.InfoLevel, // debug stays on stdout only
+	})
+	if logErr != nil {
+		return fmt.Errorf("init otlp logs: %w", logErr)
+	}
+
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,
 		Environment: cfg.AppEnv,
 		Level:       parseLogLevel(cfg.LogLevel),
+		OTLPWriter:  logWriter,
 	})
 
-	ctx := context.Background()
+	otelShutdown, err := internalotel.Init(ctx, otelCfg)
+	if err != nil {
+		return fmt.Errorf("init otel: %w", err)
+	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutErr := otelShutdown(shutCtx); shutErr != nil {
+			log.Error().Err(shutErr).Msg("OTel SDK shutdown error")
+		}
+		if shutErr := logShutdown(shutCtx); shutErr != nil {
+			log.Error().Err(shutErr).Msg("OTLP log shutdown error")
+		}
+	}()
 
 	db, err := database.ConnectWithRetry(ctx, cfg.DatabaseURL, 5, log)
 	if err != nil {

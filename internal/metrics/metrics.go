@@ -264,4 +264,17 @@ var (
 		Name: "llm_asynq_queue_paused",
 		Help: "Whether an asynq queue is paused (1) or running (0).",
 	}, []string{"queue"})
+
+	// LogsDroppedTotal counts log records discarded because the OTLP shipping
+	// queue was full.
+	//
+	// Logging must never block a request, so when the log backend cannot keep up
+	// the record is dropped rather than waited on. Without this counter a drop is
+	// silent, and "logs are missing" is indistinguishable from "nothing
+	// happened" — the failure mode this whole observability epic exists to
+	// remove.
+	LogsDroppedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "llm_logs_dropped_total",
+		Help: "Total number of log records dropped because the OTLP queue was full.",
+	})
 )

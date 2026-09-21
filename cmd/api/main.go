@@ -83,6 +83,8 @@ func main() {
 	}
 
 	zerolog.TimeFieldFormat = time.RFC3339Nano
+	// Built twice: this first logger has no OTLP tee, so it can report failures
+	// while the tee is still being constructed.
 	log := logger.New(logger.Config{
 		ServiceName: cfg.OTELServiceName,
 		Environment: cfg.AppEnv,
@@ -91,14 +93,40 @@ func main() {
 
 	ctx := context.Background()
 
-	// Initialise OpenTelemetry SDK.  When OTELEndpoint is empty the SDK
-	// defaults to a no-op provider — safe to call unconditionally.
-	otelShutdown, err := internalotel.Init(ctx, internalotel.Config{
+	otelCfg := internalotel.Config{
 		ServiceName:    cfg.OTELServiceName,
 		ServiceVersion: "0.1.0",
 		Environment:    cfg.AppEnv,
 		OTLPEndpoint:   cfg.OTELEndpoint,
+	}
+
+	logResource, resErr := internalotel.NewResource(ctx, otelCfg)
+	if resErr != nil {
+		log.Fatal().Err(resErr).Msg("failed to build OTel resource")
+	}
+
+	// Ship structured logs through the same OTLP endpoint as traces. The writer
+	// is nil when no endpoint is configured, so local runs are unaffected.
+	logWriter, logShutdown, logErr := logger.NewOTLPWriter(ctx, logger.OTLPConfig{
+		Endpoint:    cfg.OTELEndpoint,
+		ServiceName: cfg.OTELServiceName,
+		Resource:    logResource,
+		MinLevel:    zerolog.InfoLevel, // debug stays on stdout only
 	})
+	if logErr != nil {
+		log.Fatal().Err(logErr).Msg("failed to initialise OTLP log exporter")
+	}
+
+	log = logger.New(logger.Config{
+		ServiceName: cfg.OTELServiceName,
+		Environment: cfg.AppEnv,
+		Level:       parseLogLevel(cfg.LogLevel),
+		OTLPWriter:  logWriter,
+	})
+
+	// Initialise OpenTelemetry SDK.  When OTELEndpoint is empty the SDK
+	// defaults to a no-op provider — safe to call unconditionally.
+	otelShutdown, err := internalotel.Init(ctx, otelCfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialise OTel SDK")
 	}
@@ -107,6 +135,9 @@ func main() {
 		defer cancel()
 		if shutErr := otelShutdown(shutCtx); shutErr != nil {
 			log.Error().Err(shutErr).Msg("OTel SDK shutdown error")
+		}
+		if shutErr := logShutdown(shutCtx); shutErr != nil {
+			log.Error().Err(shutErr).Msg("OTLP log shutdown error")
 		}
 	}()
 
@@ -369,6 +400,11 @@ func main() {
 		flushCtx, cancelFlush := context.WithTimeout(context.Background(), 2*time.Second)
 		if err := otelShutdown(flushCtx); err != nil {
 			log.Error().Err(err).Msg("OTel flush during watchdog shutdown failed")
+		}
+		// Same reasoning for logs: the lines describing a watchdog trip are the
+		// ones worth keeping.
+		if err := logShutdown(flushCtx); err != nil {
+			log.Error().Err(err).Msg("OTLP log flush during watchdog shutdown failed")
 		}
 		cancelFlush()
 		os.Exit(1)

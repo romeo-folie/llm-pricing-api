@@ -96,6 +96,17 @@ and for the live-fire result recorded in issue #194.
 `grafana-agent` was removed: Grafana Agent is on a deprecation path in favour of
 Alloy, and the Collector already matches the intended topology.
 
+### Logs
+
+Structured logs reach Loki through the same collector. Both binaries ship
+zerolog JSON over `otlploggrpc` to `OTEL_EXPORTER_OTLP_ENDPOINT` (see
+[`internal/logger`](../internal/logger/README.md)); logs and traces therefore
+share one endpoint and one resource, so `service.name` /
+`deployment.environment` cannot diverge between them. Info and above ship;
+debug stays on stdout, which is the main control on Loki ingest cost. A dropped
+record is counted by `llm_logs_dropped_total` so "logs are missing" is never
+mistaken for "nothing happened".
+
 ## Why metrics use remote_write and not OTLP
 
 Deliberate, not incidental. `prometheusremotewrite` preserves the native

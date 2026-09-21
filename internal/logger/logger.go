@@ -28,6 +28,10 @@ type Config struct {
 	// Level is the minimum zerolog level to emit.  Defaults to Debug when the
 	// zero value is used.
 	Level zerolog.Level
+	// OTLPWriter, when non-nil, receives a copy of every JSON log line so it can
+	// be shipped to the collector. stdout is always kept: Railway still has logs
+	// if the collector is unavailable. See NewOTLPWriter.
+	OTLPWriter io.Writer
 }
 
 // New creates and returns a zerolog.Logger configured according to cfg.
@@ -40,6 +44,14 @@ func New(cfg Config) zerolog.Logger {
 		w = os.Stdout
 	} else {
 		w = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	}
+
+	// Tee to the OTLP shipper only when the output is JSON. The shipper parses
+	// zerolog's JSON; the development console writer emits human-readable text
+	// that would be parsed as nothing, so local runs keep their console output
+	// untouched even if an endpoint is configured.
+	if cfg.OTLPWriter != nil && cfg.Environment == "production" {
+		w = io.MultiWriter(w, cfg.OTLPWriter)
 	}
 
 	level := cfg.Level
