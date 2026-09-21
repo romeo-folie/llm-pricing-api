@@ -12,8 +12,8 @@ Runs daily as an asynq cron task (`TaskGeminiScrape`). Emits records with `Sourc
 
 ```
 internal/scraper/gemini/
-  scraper.go       # Scraper, New, Fetch, parseHTML, extractPricing
-  scraper_test.go  # Tier, emoji, multi-line and tiered-price fixtures
+  scraper.go       # Scraper, New, Fetch, parseHTML, modelIDs, extractPricing
+  scraper_test.go  # Tier, emoji, multi-line, anchor-id and unit-guard fixtures
   README.md        # This file
 ```
 
@@ -39,11 +39,23 @@ Implements the shared `scraper.Scraper` interface.
 
 The Gemini pricing page is structured as a repeating `H2 → H3 → TABLE` triplet:
 
-- **H2** names the model.
+- **H2** names the model and carries its canonical id as an anchor (`id="gemini-3.1-flash-image"`).
 - **H3** names the tier — `Standard` or `Batch`.
 - **TABLE** carries the rows, where column 1 is Free Tier and **column 2 is Paid Tier**.
 
-`parseHTML` walks that structure, tracking the current model and tier and resetting the tier on each new H2. `extractPricing` pulls the Input and Output paid-tier cells out of one table into a `ModelPricing` intermediate (`Model`, `Tier`, `InputRaw`, `OutputRaw`) before conversion.
+`parseHTML` walks that structure, tracking the current model(s) and tier and resetting the tier on each new H2. `extractPricing` pulls the Input and Output paid-tier cells out of one table into a `ModelPricing` intermediate (`Model`, `Tier`, `InputRaw`, `OutputRaw`) before conversion.
+
+### Slugs come from anchor ids, not display text
+
+`modelIDs` takes each heading's slug from the **H2's `id` attribute**, falling back to the cleaned heading text only when the page omits one. The display text is not a reliable slug source: it carries marketing aliases (`Gemini 3.1 Flash Image (Nano Banana 2) 🍌`) and renamed versions, so deriving slugs from it produced rows like `google/gemini-3.1-flash-image-(nano-banana-2)` that never matched the canonical `google/gemini-3.1-flash-image` shared with OpenRouter and LiteLLM — leaving the canonical rows permanently stale (#215).
+
+A heading can also cover **several models that share one price table**. The extra ids then sit on `<span id="…">` anchors immediately before the H2, and `modelIDs` returns all of them, so one table emits one record per model:
+
+```html
+<span id="gemini-3.8-live-extended-thinking"></span>
+<span id="gemini-3.1-flash-live-preview"></span>
+<h2 id="gemini-3.8-live">Gemini 3.8 Live, Gemini 3.8 Live Extended Thinking, and Gemini 3.1 Flash Live Preview</h2>
+```
 
 ### Extraction rules
 
@@ -54,6 +66,10 @@ The Gemini pricing page is structured as a repeating `H2 → H3 → TABLE` tripl
 | Context-length-tiered prices handled | `TestFetch_TieredContextPrice` |
 | Emoji stripped from model headings | `TestFetch_EmojiStripped` |
 | Multi-line output-price cells parsed | `TestFetch_MultiLineOutputTextPrice` |
+| Slug from the heading's canonical anchor id | `TestFetch_CanonicalIDsFromAnchors` |
+| Grouped heading → one record per covered model | `TestFetch_CanonicalIDsFromAnchors` |
+| No-id heading falls back to canonicalised text | `TestFetch_FallbackStripsAlias` |
+| Prices quoted per image/second/request are rejected | `TestFetch_PerImageOutputSkipped`, `TestParsePricePerMillion` |
 | Display name → clean name → slug | `TestCleanModelName`, `TestNormalizeSlug` |
 | Non-2xx upstream response | `TestFetch_NonOKStatus` |
 | Empty or unparseable page | `TestFetch_EmptyHTML` |
@@ -81,6 +97,7 @@ if err != nil {
 - **Explicit User-Agent.** The page is served differently to unknown agents, so the scraper identifies as Googlebot. Changing this string is likely to change what gets parsed — treat it as part of the contract.
 - **Free tier ≠ zero price.** Skipping non-numeric paid-tier values is deliberate; writing `0.0` would make free-tier models look like the cheapest paid option in `/v1/recommend`.
 - **Batch tier is out of scope.** Batch pricing is a different product with different guarantees, so mixing it into the same model row would misreport the price a caller would actually pay.
+- **Only per-token prices are stored.** Some cells quote a per-image, per-second or per-request price (`$0.039 per image`, `$0.005/min`). Those are rejected when the unit directly follows the first price, because storing them as a per-token cost would be wrong by orders of magnitude and there is no token count to convert with. A cell that *leads* with a per-token price and then quotes per-image equivalents (`$12.00 (text and thinking) … $0.134 per 1K image`) is still accepted on the leading price.
 - **A layout change yields zero rows, not wrong prices** (`TestFetch_EmptyHTML`). The diff engine ignores absent models, so a parser break cannot zero out stored prices.
 - **Untrusted external input**: prices validated as finite and non-negative before storage.
 - **Never writes to the database.** Persistence is the reconciler's exclusive responsibility.

@@ -9,11 +9,17 @@
 // Page structure
 //
 //	H1: "Gemini Developer API pricing"
-//	H2: <model name>           (e.g. "Gemini 2.5 Pro")
+//	H2: id="<canonical-model-id>"     (e.g. id="gemini-3.1-flash-image")
 //	  H3: "Standard"
 //	    TABLE                  (one table per model per tier)
 //	  H3: "Batch"
 //	    TABLE
+//
+// The model slug comes from the H2's id anchor, not its display text: the text
+// carries marketing aliases ("(Nano Banana 2)") and emoji, while the id is the
+// canonical slug shared with OpenRouter and LiteLLM. A heading that covers
+// several models sharing one table lists the extra ids on sibling <span id>
+// anchors immediately before it (see modelIDs), and yields one record per model.
 //
 // Each table is "transposed" — rows are named price fields; columns are Free
 // Tier and Paid Tier.  The paid-tier price in the "Input price" and
@@ -150,8 +156,8 @@ func parseHTML(r io.Reader) ([]ModelPricing, error) {
 	var entries []ModelPricing
 
 	// State tracked across the walk.
-	var currentModel string // set by H2
-	var currentTier string  // set by H3: "Standard" or "Batch"
+	var currentModels []string // set by H2: one or more canonical model ids
+	var currentTier string     // set by H3: "Standard" or "Batch"
 
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
@@ -159,7 +165,7 @@ func parseHTML(r io.Reader) ([]ModelPricing, error) {
 			switch n.Data {
 			case "h2":
 				if text := cleanText(n); text != "" {
-					currentModel = cleanModelName(text)
+					currentModels = modelIDs(n, text)
 					currentTier = "" // reset tier on new model
 				}
 			case "h3":
@@ -167,9 +173,13 @@ func parseHTML(r io.Reader) ([]ModelPricing, error) {
 					currentTier = text
 				}
 			case "table":
-				if currentModel != "" && currentTier != "" {
-					if mp, ok := extractPricing(n, currentModel, currentTier); ok {
-						entries = append(entries, mp)
+				if len(currentModels) > 0 && currentTier != "" {
+					// A grouped heading (several models sharing one table)
+					// yields one entry per model, all with the same prices.
+					for _, name := range currentModels {
+						if mp, ok := extractPricing(n, name, currentTier); ok {
+							entries = append(entries, mp)
+						}
 					}
 				}
 				return // don't recurse into table via walk
@@ -182,6 +192,50 @@ func parseHTML(r io.Reader) ([]ModelPricing, error) {
 	walk(doc)
 
 	return entries, nil
+}
+
+// modelIDs returns the canonical model id(s) a pricing H2 covers.
+//
+// Every pricing heading carries its model id as an anchor — <h2
+// id="gemini-3.1-flash-image">. When one heading covers several models that
+// share a price table, the other ids sit on <span id="…"> anchors immediately
+// before it (e.g. gemini-3.8-live also covers
+// gemini-3.8-live-extended-thinking and gemini-3.1-flash-live-preview).
+//
+// These ids are the canonical slugs OpenRouter and LiteLLM use, so they are
+// preferred over deriving a slug from the display text — which carries
+// marketing aliases ("(Nano Banana 2)"), emoji and renamed versions that drift
+// from the id (#215). Falls back to the cleaned heading text when the page
+// omits an id.
+func modelIDs(h2 *html.Node, headingText string) []string {
+	var ids []string
+	if id := attrValue(h2, "id"); id != "" {
+		ids = append(ids, id)
+	}
+
+	// Collect the preceding sibling <span id> anchors in document order.
+	var preceding []string
+	for s := h2.PrevSibling; s != nil; s = s.PrevSibling {
+		if s.Type == html.TextNode && strings.TrimSpace(s.Data) == "" {
+			continue
+		}
+		if s.Type != html.ElementNode || s.Data != "span" {
+			break
+		}
+		if id := attrValue(s, "id"); id != "" {
+			preceding = append(preceding, id)
+		}
+	}
+	for i := len(preceding) - 1; i >= 0; i-- {
+		ids = append(ids, preceding[i])
+	}
+
+	if len(ids) == 0 {
+		if name := cleanModelName(headingText); name != "" {
+			ids = append(ids, name)
+		}
+	}
+	return ids
 }
 
 // extractPricing extracts the Input and Output paid-tier prices from a single
@@ -294,6 +348,20 @@ func toScrapedModels(entries []ModelPricing, fetchedAt time.Time) []scraper.Scra
 // firstPriceRe matches the first "$X" or "$X.XX" number in a string.
 var firstPriceRe = regexp.MustCompile(`\$(\d[\d,]*(?:\.\d+)?)`)
 
+// nonTokenUnits are unit qualifiers that, when they directly follow a price,
+// mean the number is not a USD-per-1M-token rate (image, video and realtime
+// models quote some prices per image, second or request).
+var nonTokenUnits = []string{
+	"per image", "/image",
+	"per second", "/second",
+	"per minute", "/min",
+	"per hour", "/hour",
+	"per day",
+	"per clip",
+	"per request", "/request",
+	"per 1k", "per 1,000",
+}
+
 // parsePricePerMillion extracts the first USD price from a Gemini pricing
 // cell value and converts it from $/1M tokens to per-token cost.
 //
@@ -315,12 +383,26 @@ func parsePricePerMillion(s string) (float64, error) {
 		s = s[:idx]
 	}
 
-	m := firstPriceRe.FindStringSubmatch(s)
-	if m == nil {
+	loc := firstPriceRe.FindStringSubmatchIndex(s)
+	if loc == nil {
 		return 0, fmt.Errorf("no price found in %q", s)
 	}
 
-	numStr := strings.ReplaceAll(m[1], ",", "")
+	// Some image-model cells quote their first price in a different unit —
+	// gemini-2.5-flash-image's output is "$0.039 per image". Storing that as a
+	// per-token cost would be wrong by orders of magnitude and there is no
+	// token count to convert with, so the price is rejected. The unit must
+	// directly follow the matched number: cells like "$12.00 (text and
+	// thinking) $120.00 (images) … per image" lead with a valid per-token text
+	// price and are accepted.
+	tail := strings.ToLower(strings.TrimSpace(s[loc[1]:]))
+	for _, unit := range nonTokenUnits {
+		if strings.HasPrefix(tail, unit) {
+			return 0, fmt.Errorf("price %q is quoted %s, not per token", s, unit)
+		}
+	}
+
+	numStr := strings.ReplaceAll(s[loc[2]:loc[3]], ",", "")
 	v, err := strconv.ParseFloat(numStr, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse float %q: %w", numStr, err)
@@ -335,10 +417,9 @@ func parsePricePerMillion(s string) (float64, error) {
 // heading.  E.g. "Gemini 3.1 Flash Image Preview 🍌" →
 // "Gemini 3.1 Flash Image Preview".
 //
-// Note: parenthetical suffixes (e.g. "(deprecated)") are NOT stripped here —
-// the Gemini pricing page does not use them in model headings.  If they appear
-// in future, add parenthetical stripping similar to the Anthropic scraper's
-// canonicalAnthropicSlug helper.
+// Used only on the no-id fallback path in modelIDs: headings normally carry a
+// canonical anchor id. Parenthetical aliases ("(Nano Banana 2)") are left here
+// and removed later by normalizeSlug.
 func cleanModelName(s string) string {
 	// Remove emoji (any character in Unicode category 'So', or
 	// specifically the common emoji ranges U+1F300–U+1FAFF and U+2600–U+27BF).
@@ -359,17 +440,34 @@ func isEmoji(r rune) bool {
 		(r >= 0x2600 && r <= 0x27BF) // Misc Symbols
 }
 
-// normalizeSlug lowercases and replaces spaces and underscores with hyphens.
-// Dots are intentionally preserved so "Gemini 2.5 Pro" stays "gemini-2.5-pro"
-// and matches canonical slugs used by other scrapers (e.g. OpenRouter/LiteLLM),
-// enabling cross-source diff/reconciliation to work correctly.
+// normalizeSlug converts a model name into a slug. Dots are intentionally
+// preserved so "Gemini 2.5 Pro" stays "gemini-2.5-pro" and matches canonical
+// slugs used by other scrapers (e.g. OpenRouter/LiteLLM), enabling cross-source
+// diff/reconciliation to work correctly.
+//
+// Parenthetical aliases are dropped — "Gemini 3.1 Flash Image (Nano Banana 2)"
+// is the same model as "gemini-3.1-flash-image". Slugs are normally taken from
+// the heading's anchor id, so this only affects the no-id fallback (#215).
 func normalizeSlug(name string) string {
-	name = strings.ToLower(name)
+	if idx := strings.Index(name, "("); idx >= 0 {
+		name = name[:idx]
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
 	name = strings.NewReplacer(" ", "-", "_", "-").Replace(name)
 	return name
 }
 
 // --- HTML helpers ---------------------------------------------------------
+
+// attrValue returns the value of the named attribute, or "" if absent.
+func attrValue(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
 
 // cleanText is a convenience alias for textContent.
 // Both trim whitespace; this wrapper exists for call-site readability

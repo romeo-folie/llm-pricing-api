@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"llm-pricing-api/internal/scraper"
 )
 
 const floatEps = 1e-14
@@ -372,6 +374,14 @@ func TestParsePricePerMillion(t *testing.T) {
 		{"$3 (text and thinking)\n$60.00 (images)", 3.0 / 1_000_000, false},
 		{"$2.00, prompts <= 200k tokens\n$4.00, prompts > 200k tokens", 2.0 / 1_000_000, false},
 		{"$1,000.00", 1000.0 / 1_000_000, false},
+		// Non-token units must be rejected, not mis-scaled (#215).
+		{"$0.039 per image*", 0, true},
+		{"$0.005/min (audio)", 0, true},
+		{"$0.10 per second", 0, true},
+		{"$14 per 1,000 queries", 0, true},
+		// …but a leading per-token price followed by per-image figures is fine.
+		{"$12.00 (text and thinking) $120.00 (images) Equivalent to $0.134 per 1K/2K image**", 12.0 / 1_000_000, false},
+		{"$0.30 (text / image)", 0.30 / 1_000_000, false},
 		{"Not available", 0, true},
 		{"Free of charge", 0, true},
 		{"", 0, true},
@@ -409,11 +419,153 @@ func TestNormalizeSlug(t *testing.T) {
 		{"Gemini 3.1 Flash Image Preview", "gemini-3.1-flash-image-preview"},
 		{"Gemini 2.5 Flash-Lite", "gemini-2.5-flash-lite"},
 		{"Gemini 2.5 Flash_Lite", "gemini-2.5-flash-lite"}, // underscores → hyphens
+		// Marketing aliases are dropped so the fallback still yields the
+		// canonical slug (#215).
+		{"Gemini 3.1 Flash Image (Nano Banana 2)", "gemini-3.1-flash-image"},
+		{"Gemini 3 Pro Image (Nano Banana Pro)", "gemini-3-pro-image"},
 	}
 	for _, tc := range cases {
 		if got := normalizeSlug(tc.in); got != tc.want {
 			t.Errorf("normalizeSlug(%q): got %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// fetchFixture serves html to a Scraper and returns the models it produces.
+func fetchFixture(t *testing.T, html string) []scraper.ScrapedModel {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(html))
+	}))
+	t.Cleanup(srv.Close)
+
+	s := &Scraper{client: srv.Client(), url: srv.URL}
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+	return models
+}
+
+// canonicalIDsHTML reproduces the two heading shapes that broke slug
+// generation (#215): display text carrying a marketing alias, and one heading
+// covering several models that share a price table.
+const canonicalIDsHTML = `<!DOCTYPE html>
+<html lang="en"><body>
+
+<div class="models-section"><div class="heading-group">
+  <h2 id="gemini-3.1-flash-image" data-text="Gemini 3.1 Flash Image (Nano Banana 2) 🍌">Gemini 3.1 Flash Image (Nano Banana 2) 🍌</h2>
+</div>
+<h3>Standard</h3>
+<table class="pricing-table"><tbody>
+  <tr><td>Input price</td><td>Not available</td><td>$0.50 (text/image)</td></tr>
+  <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$3 (text and thinking)</td></tr>
+</tbody></table></div>
+
+<div class="models-section"><div class="heading-group">
+  <span id="gemini-3.8-live-extended-thinking"></span>
+  <span id="gemini-3.1-flash-live-preview"></span>
+  <h2 id="gemini-3.8-live" data-text="Gemini 3.8 Live, Gemini 3.8 Live Extended Thinking, and Gemini 3.1 Flash Live Preview">Gemini 3.8 Live, Gemini 3.8 Live Extended Thinking, and Gemini 3.1 Flash Live Preview</h2>
+</div>
+<h3>Standard</h3>
+<table class="pricing-table"><tbody>
+  <tr><td>Input price</td><td>Not available</td><td>$0.75 (text)</td></tr>
+  <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$4.50 (text)</td></tr>
+</tbody></table></div>
+
+</body></html>`
+
+func TestFetch_CanonicalIDsFromAnchors(t *testing.T) {
+	models := fetchFixture(t, canonicalIDsHTML)
+
+	want := map[string]struct{}{
+		"google/gemini-3.1-flash-image":            {},
+		"google/gemini-3.8-live":                   {},
+		"google/gemini-3.8-live-extended-thinking": {},
+		"google/gemini-3.1-flash-live-preview":     {},
+	}
+
+	if len(models) != len(want) {
+		t.Errorf("got %d models, want %d", len(models), len(want))
+		for _, m := range models {
+			t.Logf("  got: %s", m.Slug)
+		}
+	}
+
+	got := make(map[string]struct{}, len(models))
+	for _, m := range models {
+		got[m.Slug] = struct{}{}
+		if _, ok := want[m.Slug]; !ok {
+			t.Errorf("unexpected slug: %s", m.Slug)
+		}
+		// Aliases and separators from display text must never reach a slug.
+		if strings.ContainsAny(m.Slug, "(,🍌") {
+			t.Errorf("slug carries display-text noise: %q", m.Slug)
+		}
+	}
+
+	for slug := range want {
+		if _, ok := got[slug]; !ok {
+			t.Errorf("missing expected slug: %s", slug)
+		}
+	}
+
+	// Models grouped under one heading all carry that heading's price table.
+	for _, m := range models {
+		if m.Slug == "google/gemini-3.1-flash-live-preview" {
+			if !floatEq(m.InputCostPerToken, 0.75/1_000_000) {
+				t.Errorf("grouped input price: got %v, want %v", m.InputCostPerToken, 0.75/1_000_000)
+			}
+		}
+	}
+}
+
+// TestFetch_FallbackStripsAlias covers a heading with no id anchor: the text
+// fallback must still canonicalise the slug.
+func TestFetch_FallbackStripsAlias(t *testing.T) {
+	const html = `<!DOCTYPE html><html><body>
+<h2>Gemini 2.5 Flash Image (Nano Banana) 🍌</h2>
+<h3>Standard</h3>
+<table class="pricing-table"><tbody>
+  <tr><td>Input price</td><td>Not available</td><td>$0.30 (text / image)</td></tr>
+  <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$3.00 (text)</td></tr>
+</tbody></table>
+</body></html>`
+
+	models := fetchFixture(t, html)
+	if len(models) != 1 || models[0].Slug != "google/gemini-2.5-flash-image" {
+		t.Fatalf("got %d models, want one google/gemini-2.5-flash-image", len(models))
+	}
+}
+
+// TestFetch_PerImageOutputSkipped pins the unit guard: gemini-2.5-flash-image
+// quotes its output "per image", which must not be stored as a per-token price.
+func TestFetch_PerImageOutputSkipped(t *testing.T) {
+	const html = `<!DOCTYPE html><html><body>
+<h2 id="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Nano Banana) 🍌</h2>
+<h3>Standard</h3>
+<table class="pricing-table"><tbody>
+  <tr><td>Input price</td><td>Not available</td><td>$0.30 (text / image)</td></tr>
+  <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$0.039 per image*</td></tr>
+</tbody></table>
+<h2 id="gemini-2.5-pro">Gemini 2.5 Pro</h2>
+<h3>Standard</h3>
+<table class="pricing-table"><tbody>
+  <tr><td>Input price</td><td>Not available</td><td>$1.25</td></tr>
+  <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$10.00</td></tr>
+</tbody></table>
+</body></html>`
+
+	models := fetchFixture(t, html)
+	if len(models) != 1 {
+		for _, m := range models {
+			t.Logf("  got: %s", m.Slug)
+		}
+		t.Fatalf("got %d models, want only google/gemini-2.5-pro", len(models))
+	}
+	if models[0].Slug != "google/gemini-2.5-pro" {
+		t.Errorf("got slug %s, want google/gemini-2.5-pro", models[0].Slug)
 	}
 }
 
