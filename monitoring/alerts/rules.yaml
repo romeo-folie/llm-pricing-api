@@ -54,6 +54,41 @@ groups:
         annotations:
           summary: "API completed almost no requests for 15 minutes"
 
+      # ── Job queue and webhooks ────────────────────────────────────────────
+
+      # Oldest-pending age rather than queue depth: a handful of tasks being
+      # worked through is healthy, while a single task waiting 15 minutes is
+      # not, and a count cannot tell those apart. Normal operation drains the
+      # startup burst within a minute, so 900s is generous.
+      #
+      # This is the signal that was missing when a failing task held its asynq
+      # Unique(24h) lock: the fix was deployed, the startup enqueue was silently
+      # deduplicated, and the pipeline simply looked idle.
+      - alert: LLMAsynqQueueBacklog
+        expr: |
+          (max(llm_asynq_queue_latency_seconds) or vector(0)) > 900
+        for: 10m
+        no_data_state: OK
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest pending job has waited over 15 minutes"
+
+      # Deliveries are at-least-once with 3 retries, so a persistently failing
+      # endpoint drops events and the only trace is this counter. 3 failed
+      # attempts in an hour is the retry burst of a single delivery — the same
+      # shape as the scraper-failure alerts. Guarded with `or vector(0)`
+      # because no delivery has happened until the first webhook fires (#213).
+      - alert: LLMWebhookDeliveriesFailing
+        expr: |
+          (sum(increase(llm_webhook_deliveries_total{status="error"}[1h])) or vector(0)) >= 3
+        for: 5m
+        no_data_state: OK
+        labels:
+          severity: critical
+        annotations:
+          summary: "Webhook deliveries are failing repeatedly"
+
       # External synthetic probe on the public /health, provisioned by
       # monitoring/synthetic/provision_checks.py. probe_success lands in the same
       # hosted Prometheus as everything else, so this needs no second alerting

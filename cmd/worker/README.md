@@ -16,7 +16,7 @@ cmd/worker/
 
 ## Key Components
 
-- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, starts the freshness and benchmark-evidence samplers on 60-second tickers, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, both samplers, the asynq server, and the scheduler.
+- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, starts the freshness, benchmark-evidence and queue samplers on 60-second tickers, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, all three samplers, the asynq server, and the scheduler.
 - **`GET /health`** — Pings both PostgreSQL and Redis. Returns `{"status":"ok","db":"ok","redis":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable. Used by Railway's health check to verify the worker is running.
 - **`GET /metrics`** — Prometheus exposition of the process registry, served on `METRICS_PORT` by a dedicated listener that is never publicly exposed. See [Metrics](#metrics) below.
 
@@ -93,6 +93,17 @@ The benchmark scrape counters (`llm_benchmark_scrape_runs_total{source,status}`,
 `llm_benchmark_scrape_duration_seconds{source}`) and the slug-resolution counter
 (`llm_slug_resolutions_total{result}`) are incremented by the asynq handlers rather than by the
 samplers, so they appear when benchmark tasks run rather than on a timer.
+
+### Queue sampler
+
+`worker.QueueSampler` publishes `llm_asynq_queue_tasks{queue,state}`,
+`llm_asynq_queue_latency_seconds{queue}` and `llm_asynq_queue_paused{queue}` on the **same
+60-second ticker**, from an `asynq.Inspector` over the same Redis. It is the only signal that shows
+work *stuck* rather than failed: a task that keeps retrying holds its asynq `Unique(24h)` lock, so
+the next enqueue of that task type is silently deduplicated and the pipeline looks idle.
+
+It publishes every state including zeroes — absence would be ambiguous — and unlike the SQL
+samplers it takes no context, because `asynq.Inspector` has no context-aware API.
 
 ## Tasks and Cron Schedule
 

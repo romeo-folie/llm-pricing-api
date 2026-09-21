@@ -55,6 +55,16 @@
           "expr": "sum(rate(llm_api_requests_total[1h])) by (tier)"
         }
       ]
+    },
+    {
+      "id": 6,
+      "title": "5xx by error type",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_errors_total[5m])) by (error_type) or vector(0)"
+        }
+      ]
     }
   ]
 }

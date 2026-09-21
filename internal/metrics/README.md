@@ -24,28 +24,35 @@ internal/metrics/
 
 ### Metrics
 
-| Variable | Prometheus name | Type | Labels |
-|---|---|---|---|
-| `RequestsTotal` | `llm_api_requests_total` | CounterVec | `method`, `path`, `status`, `tier` |
-| `RequestDurationSeconds` | `llm_api_request_duration_seconds` | HistogramVec | `method`, `path` |
-| `RateLimitHitsTotal` | `llm_api_rate_limit_hits_total` | CounterVec | tier |
-| `ActiveKeys` | `llm_api_active_keys` | GaugeVec | `tier` |
-| `ErrorsTotal` | `llm_api_errors_total` | CounterVec | error classification |
-| `ScraperRunsTotal` | `llm_scraper_runs_total` | CounterVec | scraper, outcome |
-| `ReconcilerEventsTotal` | `llm_reconciler_events_total` | CounterVec | event kind |
-| `WebhookDeliveriesTotal` | `llm_webhook_deliveries_total` | CounterVec | delivery outcome |
-| `BenchmarkScrapeRunsTotal` | `llm_benchmark_scrape_runs_total` | CounterVec | `source`, `status` |
-| `BenchmarkScrapeDurationSeconds` | `llm_benchmark_scrape_duration_seconds` | HistogramVec | `source` |
-| `SlugResolutionsTotal` | `llm_slug_resolutions_total` | CounterVec | `result` |
-| `BenchmarkEvidenceActive` | `llm_benchmark_evidence_active` | GaugeVec | `benchmark` |
-| `BenchmarkEvidenceStaleRatio` | `llm_benchmark_evidence_stale_ratio` | GaugeVec | `benchmark` |
-| `CapabilityRecomputeDurationSeconds` | `llm_capability_recompute_duration_seconds` | Histogram | — |
-| `CapabilityRecomputeFailuresTotal` | `llm_capability_recompute_failures_total` | Counter | — |
-| `CapabilityLastRecomputeTimestampSeconds` | `llm_capability_last_recompute_timestamp_seconds` | Gauge | — |
-| `SourceLastSuccessTimestampSeconds` | `llm_source_last_success_timestamp_seconds` | GaugeVec | `source` |
-| `PricesStaleRatio` | `llm_prices_stale_ratio` | GaugeVec | `source` |
-| `PricesActive` | `llm_prices_active` | GaugeVec | `source` |
-| `PricesPublished` | `llm_prices_published` | GaugeVec | `source` |
+| Variable | Prometheus name | Type | Labels | Written by |
+|---|---|---|---|---|
+| `RequestsTotal` | `llm_api_requests_total` | CounterVec | `method`, `path`, `status`, `tier` | API |
+| `RequestDurationSeconds` | `llm_api_request_duration_seconds` | HistogramVec | `method`, `path` | API |
+| `RateLimitHitsTotal` | `llm_api_rate_limit_hits_total` | CounterVec | `tier` | API |
+| `ActiveKeys` | `llm_api_active_keys` | GaugeVec | `tier` | API |
+| `ErrorsTotal` | `llm_api_errors_total` | CounterVec | `method`, `path`, `error_type` | API |
+| `ScraperRunsTotal` | `llm_scraper_runs_total` | CounterVec | `source`, `status` | worker |
+| `ReconcilerEventsTotal` | `llm_reconciler_events_total` | CounterVec | `event_type` | worker |
+| `WebhookDeliveriesTotal` | `llm_webhook_deliveries_total` | CounterVec | `status` | worker |
+| `BenchmarkScrapeRunsTotal` | `llm_benchmark_scrape_runs_total` | CounterVec | `source`, `status` | worker |
+| `BenchmarkScrapeDurationSeconds` | `llm_benchmark_scrape_duration_seconds` | HistogramVec | `source` | worker |
+| `SlugResolutionsTotal` | `llm_slug_resolutions_total` | CounterVec | `result` | worker |
+| `BenchmarkEvidenceActive` | `llm_benchmark_evidence_active` | GaugeVec | `benchmark` | worker |
+| `BenchmarkEvidenceStaleRatio` | `llm_benchmark_evidence_stale_ratio` | GaugeVec | `benchmark` | worker |
+| `CapabilityRecomputeDurationSeconds` | `llm_capability_recompute_duration_seconds` | Histogram | — | worker |
+| `CapabilityRecomputeFailuresTotal` | `llm_capability_recompute_failures_total` | Counter | — | worker |
+| `CapabilityLastRecomputeTimestampSeconds` | `llm_capability_last_recompute_timestamp_seconds` | Gauge | — | worker |
+| `SourceLastSuccessTimestampSeconds` | `llm_source_last_success_timestamp_seconds` | GaugeVec | `source` | worker |
+| `PricesStaleRatio` | `llm_prices_stale_ratio` | GaugeVec | `source` | worker |
+| `PricesActive` | `llm_prices_active` | GaugeVec | `source` | worker |
+| `PricesPublished` | `llm_prices_published` | GaugeVec | `source` | worker |
+| `QueueTasks` | `llm_asynq_queue_tasks` | GaugeVec | `queue`, `state` | worker |
+| `QueueLatencySeconds` | `llm_asynq_queue_latency_seconds` | GaugeVec | `queue` | worker |
+| `QueuePaused` | `llm_asynq_queue_paused` | GaugeVec | `queue` | worker |
+
+**Written by** is the binary whose `/metrics` endpoint carries the series. Prometheus scrapes per process, so a metric written only in the worker is not on the API's endpoint, and vice versa — a dashboard panel pointed at the wrong service renders empty rather than erroring.
+
+Every label value is bounded: `path` is the registered route pattern (not the raw path), `status`, `error_type`, `result` and `state` are closed sets, and no metric carries an API key, key hash, or model id.
 
 The pipeline and freshness metrics are written from the worker, so both binaries link this package.
 
@@ -63,6 +70,18 @@ Sources with no published prices emit **no sample** rather than a zero: a zeroed
 > **Why the ratio is windowed (#217).** `MarkVerified` stamps only the slugs present in the latest scrape, so a model upstream delists or renames is never re-verified again and nothing prunes it. Counting every published row therefore made the ratio climb monotonically with upstream churn — OpenRouter's reached 27% with *every* stale row genuinely delisted — until it fired permanently on healthy feeds. Restricting the denominator to models verified within the activity window restores the alert's meaning. A source that stops scraping entirely still alerts: its rows stay active (and stale) for a week while the ratio climbs, and `LLMSourceFreshnessStale` fires immediately from the last-success timestamp.
 
 > **Deviation from the issue draft.** The draft proposed labelling the ratio by `confidence`. `confidence` is derived per API response by `api.ComputeTrustMeta` and is not a column on `prices`, so a `confidence` label would require recomputing it for every row on every sample and would still not say *which feed* went quiet. The ratio is labelled by `source` instead — cheaper (one `GROUP BY`) and directly actionable.
+
+### Job queue
+
+Written by `worker.QueueSampler`, which the worker runs on a **60-second ticker** using an `asynq.Inspector` over the same Redis the workers use.
+
+- `llm_asynq_queue_tasks{queue,state}` — task counts per asynq state (`pending`, `active`, `scheduled`, `retry`, `archived`, `completed`, `aggregating`).
+- `llm_asynq_queue_latency_seconds{queue}` — age of the oldest pending task. **This is the backlog signal**: a handful of tasks being worked through is healthy, while a single task waiting an hour is not, and a count cannot tell those two apart.
+- `llm_asynq_queue_paused{queue}` — 1 when a queue is paused, so a queue paused by an operator (or by a bug) is visible rather than merely quiet.
+
+Unlike the freshness gauges these publish **every state including zeroes**. Absence here would be ambiguous — sampler down, or queue empty? — and the label values are bounded by asynq's own state list, so being explicit costs nothing.
+
+The failure this exists for: a task that keeps failing retries with its asynq `Unique(24h)` lock still held, so the next enqueue of the same task type is silently deduplicated. The pipeline looks idle rather than stuck, and a deployed fix appears not to have worked — which is exactly how a scraper fix was masked for a day.
 
 ### Benchmark evidence, slug resolution, and capability scoring
 
@@ -84,9 +103,9 @@ The slug-resolution counter is the one signal that is *not* written by the worke
 func PrometheusMiddleware() fiber.Handler
 ```
 
-Records `RequestsTotal` and `RequestDurationSeconds` for every request passing through the chain. It reads `tier` and `key_hash` from the Fiber locals populated by `middleware.Auth`; both are empty strings on unauthenticated routes (`/health`, discovery, `/metrics`).
+Records `RequestsTotal` and `RequestDurationSeconds` for every request passing through the chain. It reads `tier` and `key_hash` from the Fiber locals populated by `middleware.Auth`; both are empty strings on unauthenticated routes (`/health`, discovery, `/metrics`). Only `tier` becomes a metric label — `key_hash` feeds the in-memory active-key tracker, never a series.
 
-**Cardinality control:** the `path` label uses `c.Route().Path` — the registered pattern, e.g. `/v1/models/:id` — not `c.Path()`. Using the raw path would create one time series per model ID and blow up the metric cardinality.
+**Cardinality control:** the `path` label uses `c.Route().Path` — the registered pattern, e.g. `/v1/models/:id` — not `c.Path()`. Using the raw path would create one time series per model ID and blow up the metric cardinality. The same rule applies to `llm_api_rate_limit_hits_total`, which dropped its `key_hash` label for exactly this reason: one series per API key grows without bound as users sign up.
 
 ### `ObserveActiveKey`
 

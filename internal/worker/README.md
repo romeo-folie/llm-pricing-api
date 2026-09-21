@@ -11,6 +11,7 @@ This package is the bridge between the asynq job queue and the scrape→diff→r
 - **`Handlers`** — one public handler method per data source, each executing the full pipeline: fetch scraped data, fetch stored data, compute diffs, reconcile.
 - **`FreshnessSampler`** — a per-source price-freshness query that publishes the last-success timestamp and stale-ratio gauges; run on a ticker by `cmd/worker` so a scraper that stops running is still detected.
 - **`BenchmarkSampler`** — a per-benchmark evidence coverage/staleness query that publishes the active-evidence count and stale-ratio gauges; run on the same kind of ticker, independently of the daily benchmark scrapes.
+- **`QueueSampler`** — reads asynq queue depth, oldest-pending latency and pause state into gauges; the only signal that shows work *stuck* rather than failed.
 - **Webhook delivery** — `HandleWebhookDeliver` processes `webhook:deliver` asynq tasks, signs the payload with HMAC-SHA256, and POSTs to the registered URL with retry on failure.
 
 `cmd/worker/main.go` instantiates this package and wires it into the asynq server and cron scheduler.
@@ -24,10 +25,12 @@ internal/worker/
   handlers.go           # Handlers struct, runPipeline helper, scraper handler methods
   freshness.go          # FreshnessSampler — per-source freshness query + gauges
   benchmark.go          # BenchmarkSampler — per-benchmark evidence freshness query + gauges
+  queue.go              # QueueSampler — asynq queue depth/latency/paused gauges
   webhook_handler.go    # WebhookPayload, WebhookTaskPayload, NewWebhookDeliverTask, HandleWebhookDeliver
   handlers_test.go      # Unit tests using mock store and mock scraper
   freshness_test.go     # Unit tests for the sampler using a mock querier
   benchmark_test.go     # Unit tests for the benchmark sampler using a mock querier
+  queue_test.go         # Unit tests for the queue sampler using a mock inspector
   webhook_handler_test.go # Unit tests for HMAC signing and non-2xx retry
   README.md             # This file
 ```
@@ -122,6 +125,22 @@ Two properties make this sampler trustworthy rather than decorative:
 - **Staleness is measured from `evaluated_at`, never `last_observed_at`.** SWE-bench is re-scraped daily, so observation time is always fresh while the newest published evaluation is 216 days old. Measuring observation time would report the benchmark as healthy while the scorer marks its dimensions stale.
 
 `DefaultBenchmarkStaleAfter` is derived from `intelligence.StalenessThresholdDays` (90 days) rather than declared independently, so the gauge can never disagree with the rule the product applies. `Sample` returns the wrapped query error and publishes nothing on failure. Benchmarks with no active evidence are **skipped, not zeroed**: a zeroed ratio would read as "perfectly fresh" and a zeroed count is indistinguishable from "never ingested". It holds its own narrow `benchmarkEvidenceQuerier` interface for the same reason `FreshnessSampler` holds `freshnessQuerier`. `cmd/worker/main.go` runs it on a **60-second ticker with a 10-second per-sample timeout**, stopped during graceful shutdown before the metrics listener.
+
+### Queue sampler (`queue.go`)
+
+```go
+type QueueSampler struct { /* unexported: inspector */ }
+func NewQueueSampler(redisOpt asynq.RedisClientOpt) *QueueSampler
+func (s *QueueSampler) Sample() error
+```
+
+Publishes `llm_asynq_queue_tasks{queue,state}`, `llm_asynq_queue_latency_seconds{queue}` and `llm_asynq_queue_paused{queue}` from an `asynq.Inspector`.
+
+Unlike the two SQL samplers it publishes **every state including zeroes**. Absence there would be ambiguous — sampler down, or queue empty? — and asynq's state list is a closed set, so there is no cardinality cost to being explicit.
+
+`Sample` has no context parameter because `asynq.Inspector` exposes no context-aware API; its Redis client applies its own timeouts. A queue that cannot be read is skipped and the error returned via `errors.Join` after the others are sampled, so one unreadable queue cannot blank the rest. Only a failure to list queues at all short-circuits.
+
+The gap it closes: a task that keeps failing retries with its asynq `Unique(24h)` lock still held, so the next enqueue of the same task type is silently deduplicated. The pipeline looks idle rather than stuck, and a deployed fix appears not to have worked.
 
 ### Benchmark scrape handlers (`handlers.go`)
 

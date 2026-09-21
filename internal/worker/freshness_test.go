@@ -25,8 +25,8 @@ func (m *mockFreshnessQuerier) SourceFreshness(_ context.Context, staleAfter, ac
 	return m.rows, m.err
 }
 
-// sourceGaugeSamples gathers every sample of the named gauge family keyed by its
-// source label. Gathering the default registry (rather than a per-child read) is
+// gaugeSamples gathers every sample of the named gauge family keyed by the
+// value of the given label. Gathering the default registry (rather than a per-child read) is
 // what lets a test assert a source is *absent* rather than merely zero: a
 // GaugeVec child is created by the first WithLabelValues call, so reading an
 // untouched label reports 0 and cannot distinguish "never set" from "set to 0".
@@ -35,7 +35,7 @@ func (m *mockFreshnessQuerier) SourceFreshness(_ context.Context, staleAfter, ac
 // deliberately not used: testutil drags in github.com/kylelemons/godebug, which
 // is not currently a go.mod requirement, and importing it would force a
 // dependency change unrelated to this feature.
-func sourceGaugeSamples(t *testing.T, name string) map[string]float64 {
+func gaugeSamples(t *testing.T, name, label string) map[string]float64 {
 	t.Helper()
 	families, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
@@ -47,13 +47,13 @@ func sourceGaugeSamples(t *testing.T, name string) map[string]float64 {
 			continue
 		}
 		for _, m := range family.GetMetric() {
-			source := ""
-			for _, label := range m.GetLabel() {
-				if label.GetName() == "source" {
-					source = label.GetValue()
+			key := ""
+			for _, l := range m.GetLabel() {
+				if l.GetName() == label {
+					key = l.GetValue()
 				}
 			}
-			out[source] = m.GetGauge().GetValue()
+			out[key] = m.GetGauge().GetValue()
 		}
 	}
 	return out
@@ -63,7 +63,7 @@ func sourceGaugeSamples(t *testing.T, name string) map[string]float64 {
 // test if the sample does not exist.
 func gaugeValue(t *testing.T, name, source string) float64 {
 	t.Helper()
-	value, ok := sourceGaugeSamples(t, name)[source]
+	value, ok := gaugeSamples(t, name, "source")[source]
 	if !ok {
 		t.Fatalf("%s has no sample for source %q", name, source)
 	}
@@ -74,7 +74,7 @@ func gaugeValue(t *testing.T, name, source string) float64 {
 // how the "no rows must not emit a misleading zero" rule is verified.
 func assertGaugeAbsent(t *testing.T, name, source string) {
 	t.Helper()
-	if _, ok := sourceGaugeSamples(t, name)[source]; ok {
+	if _, ok := gaugeSamples(t, name, "source")[source]; ok {
 		t.Errorf("%s must have no sample for source %q; got one", name, source)
 	}
 }

@@ -80,7 +80,10 @@ func RateLimit(redisClient *redis.Client) fiber.Handler {
 		}
 
 		if int(count) > limit {
-			metrics.RateLimitHitsTotal.WithLabelValues(tier, hash).Inc()
+			// Labelled by tier only: key_hash would emit one series per API key
+			// and grow with every signup (#198). The per-key detail lives in
+			// the Redis counter above and in the request logs.
+			metrics.RateLimitHitsTotal.WithLabelValues(tier).Inc()
 
 			// Compute seconds until midnight UTC for Retry-After.
 			retryAfter := int(time.Until(midnight).Seconds())
