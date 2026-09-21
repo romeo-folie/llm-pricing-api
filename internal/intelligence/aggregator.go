@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"llm-pricing-api/internal/metrics"
 )
 
 // DimensionBenchmarks maps each capability dimension to its contributing
@@ -243,7 +245,37 @@ func computeCapabilityScoresWithBenchmarks(
 // ComputeAllCapabilityScores iterates all models with benchmark data and
 // recomputes their capability scores. The benchmarks table is fetched once
 // and reused across all models to avoid N+1 DB round-trips.
+//
+// It is the single instrumented entry point for full recomputations: every run
+// observes llm_capability_recompute_duration_seconds, a failure increments
+// llm_capability_recompute_failures_total, and only a success advances
+// llm_capability_last_recompute_timestamp_seconds. Error semantics are
+// unchanged — the error is returned so the triggering benchmark scrape task
+// fails and asynq retries it.
 func ComputeAllCapabilityScores(ctx context.Context, db *pgxpool.Pool) error {
+	start := time.Now()
+	err := computeAllCapabilityScores(ctx, db)
+	observeRecompute(start, err)
+	return err
+}
+
+// observeRecompute publishes the outcome of one full recomputation.
+//
+// It is split out from the database orchestration so the metric semantics are
+// unit-testable without a database, and so the duration is recorded on failure
+// too: a recompute that fails after 40 seconds is exactly what the dashboard
+// needs to show, not just the failures counter.
+func observeRecompute(start time.Time, err error) {
+	metrics.CapabilityRecomputeDurationSeconds.Observe(time.Since(start).Seconds())
+	if err != nil {
+		metrics.CapabilityRecomputeFailuresTotal.Inc()
+		return
+	}
+	metrics.CapabilityLastRecomputeTimestampSeconds.Set(float64(time.Now().Unix()))
+}
+
+// computeAllCapabilityScores is the uninstrumented recomputation loop.
+func computeAllCapabilityScores(ctx context.Context, db *pgxpool.Pool) error {
 	// Hoist the static benchmarks lookup out of the per-model loop.
 	benchmarksByID, err := fetchBenchmarksByID(ctx, db)
 	if err != nil {

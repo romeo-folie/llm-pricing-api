@@ -19,7 +19,9 @@ internal/intelligence/
 ├── benchmark_store.go     # CRUD for model_benchmark_scores table
 ├── capability_store.go    # CRUD for model_capability_scores table
 ├── aggregator.go          # Weighted-average computation + DB orchestration
-└── aggregator_test.go     # Table-driven unit tests for the Aggregate function
+├── aggregator_test.go     # Table-driven unit tests for the Aggregate function
+├── observability_test.go  # Unit tests for the recompute metric recording
+└── aggregator_integration_test.go  # Build-tagged DB tests (skipped without DATABASE_URL)
 ```
 
 ## Key Components
@@ -40,17 +42,18 @@ internal/intelligence/
 
 - `Aggregate(dimension, weights, scores, now)` — computes a weighted average, caps confidence by the contributing evidence, and marks the dimension stale when its oldest contributing score exceeds 90 days.
 - `ComputeCapabilityScores(ctx, db, modelID)` — transactionally replaces a model's supported capability dimensions and deletes obsolete dimensions.
-- `ComputeAllCapabilityScores(ctx, db)` — recomputes models appearing in either raw evidence or derived capability rows, so models that lose all evidence are cleaned up.
+- `ComputeAllCapabilityScores(ctx, db)` — recomputes models appearing in either raw evidence or derived capability rows, so models that lose all evidence are cleaned up. It is the instrumented entry point for full recomputations: every run observes `llm_capability_recompute_duration_seconds`, a failure increments `llm_capability_recompute_failures_total`, and only a success advances `llm_capability_last_recompute_timestamp_seconds`. Error semantics are unchanged — the error is returned so the triggering benchmark scrape fails and asynq retries it. The recording itself lives in the unexported `observeRecompute(start, err)` so its semantics are unit-testable without a database.
 
 ### Configuration
 
 - `DimensionBenchmarks` — exported map defining which benchmarks contribute to each dimension and their relative weights.
-- `StalenessThresholdDays` — 90-day threshold for marking scores as stale.
+- `StalenessThresholdDays` — 90-day threshold for marking scores as stale. `worker.DefaultBenchmarkStaleAfter` is derived from it, so the evidence-staleness gauge and the scorer's `freshness` label can never disagree.
 
 ## Dependencies
 
 - `github.com/jackc/pgx/v5/pgxpool` — PostgreSQL connection pool
 - `github.com/google/uuid` — UUID handling for benchmark IDs
+- `internal/metrics` — recompute duration, failure, and last-success metrics
 
 ## Usage
 

@@ -29,6 +29,13 @@ import (
 const (
 	freshnessSampleInterval = 60 * time.Second
 	freshnessSampleTimeout  = 10 * time.Second
+
+	// Benchmark-evidence freshness shares the cadence. The evidence itself ages
+	// slowly, but the sampler must keep running independently of the daily
+	// benchmark scrapes so a benchmark whose evidence crosses the 90-day
+	// threshold between runs is reflected without waiting for the next scrape.
+	benchmarkSampleInterval = 60 * time.Second
+	benchmarkSampleTimeout  = 10 * time.Second
 )
 
 // parseLogLevel converts a LOG_LEVEL string to a zerolog.Level.
@@ -67,6 +74,17 @@ func sampleFreshness(ctx context.Context, log zerolog.Logger, s *worker.Freshnes
 	defer cancel()
 	if err := s.Sample(sampleCtx); err != nil {
 		log.Warn().Err(err).Msg("freshness sample failed")
+	}
+}
+
+// sampleBenchmarkEvidence runs one benchmark-evidence sample under a bounded
+// deadline. Like sampleFreshness, a failure is logged at warn and never
+// returned: telemetry must not take the data pipeline down with it.
+func sampleBenchmarkEvidence(ctx context.Context, log zerolog.Logger, s *worker.BenchmarkSampler) {
+	sampleCtx, cancel := context.WithTimeout(ctx, benchmarkSampleTimeout)
+	defer cancel()
+	if err := s.Sample(sampleCtx); err != nil {
+		log.Warn().Err(err).Msg("benchmark evidence sample failed")
 	}
 }
 
@@ -392,6 +410,30 @@ func run() error {
 		}
 	}()
 
+	// Publish benchmark-evidence coverage and freshness on the same cadence.
+	// This sampler is the only source of llm_benchmark_evidence_active and
+	// llm_benchmark_evidence_stale_ratio, and it must not live inside the scrape
+	// pipeline: benchmark scrapes run daily, so a pipeline-only gauge would not
+	// notice evidence crossing the 90-day staleness threshold between runs.
+	benchmarkSampler := worker.NewBenchmarkSampler(db, worker.DefaultBenchmarkStaleAfter)
+	benchmarkSamplerCtx, stopBenchmarkSampler := context.WithCancel(context.Background())
+	defer stopBenchmarkSampler()
+	benchmarkSamplerDone := make(chan struct{})
+	go func() {
+		defer close(benchmarkSamplerDone)
+		ticker := time.NewTicker(benchmarkSampleInterval)
+		defer ticker.Stop()
+		sampleBenchmarkEvidence(benchmarkSamplerCtx, log, benchmarkSampler)
+		for {
+			select {
+			case <-benchmarkSamplerCtx.Done():
+				return
+			case <-ticker.C:
+				sampleBenchmarkEvidence(benchmarkSamplerCtx, log, benchmarkSampler)
+			}
+		}
+	}()
+
 	// Block until SIGINT/SIGTERM or a health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -421,10 +463,10 @@ func run() error {
 	}
 
 	// One budget covers the whole graceful shutdown — health, the asynq drain,
-	// the freshness sampler, and the metrics listener — so a stuck component
-	// cannot push the process past Railway's SIGKILL window. Each phase returns
-	// as soon as it is done; the deadline only bites when something is genuinely
-	// hung.
+	// the freshness and benchmark samplers, and the metrics listener — so a
+	// stuck component cannot push the process past Railway's SIGKILL window.
+	// Each phase returns as soon as it is done; the deadline only bites when
+	// something is genuinely hung.
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelShutdown()
 
@@ -453,6 +495,16 @@ func run() error {
 	case <-samplerDone:
 	case <-shutdownCtx.Done():
 		log.Warn().Msg("freshness sampler did not stop before shutdown deadline")
+	}
+
+	// Stop the benchmark sampler inside the same budget. It is stopped with the
+	// freshness sampler, before the metrics listener, so its final sample stays
+	// scrapeable and it cannot issue a query against a closing pool.
+	stopBenchmarkSampler()
+	select {
+	case <-benchmarkSamplerDone:
+	case <-shutdownCtx.Done():
+		log.Warn().Msg("benchmark sampler did not stop before shutdown deadline")
 	}
 
 	// Stop the metrics listener last, inside the same budget: a scrape during

@@ -45,6 +45,70 @@
           "legendFormat": "{{source}}"
         }
       ]
+    },
+    {
+      "id": 6,
+      "title": "Slug resolution outcomes",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_slug_resolutions_total[1h])) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Benchmark scrape runs by source/status",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_benchmark_scrape_runs_total[5m])) by (source, status)",
+          "legendFormat": "{{source}} / {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Active benchmark evidence by benchmark",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "llm_benchmark_evidence_active",
+          "legendFormat": "{{benchmark}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Stale benchmark evidence ratio by benchmark",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "llm_benchmark_evidence_stale_ratio",
+          "legendFormat": "{{benchmark}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Capability recompute duration (p95)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(llm_capability_recompute_duration_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Capability recompute failures",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_capability_recompute_failures_total[5m]))"
+        }
+      ]
     }
   ]
 }

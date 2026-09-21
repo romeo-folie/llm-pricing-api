@@ -16,9 +16,10 @@ Supplies the `coding` and `agentic` capability dimensions.
 
 ```
 internal/scraper/swebench/
-  scraper.go       # Scraper type, Fetch/parse, best-entry selection, evidence upsert
-  scraper_test.go  # Parsing, order-independence, tie-breaking, content-addressed version tests
-  README.md        # This file
+  scraper.go            # Scraper type, Fetch/parse, best-entry selection, evidence upsert
+  scraper_test.go       # Parsing, order-independence, tie-breaking, content-addressed version tests
+  slug_metrics_test.go  # Per-entry slug-resolution outcome counter tests
+  README.md             # This file
 ```
 
 ## Key Components
@@ -40,6 +41,16 @@ func (s *Scraper) Scrape(ctx context.Context) error
 ```
 
 Implements the shared `scraper.BenchmarkScraper` interface. `Scrape` fetches the leaderboard JSON, selects the Verified split, resolves each entry's model identity, picks the best submission per model, and upserts evidence.
+
+### Slug resolution observability
+
+Each entry's model name is resolved through the unexported `resolveSlug` helper, which wraps
+`slugmap.ResolveOutcome` and increments `llm_slug_resolutions_total{result}` **once per leaderboard
+entry** (`resolved` / `unknown` / `ambiguous`). The counter is what makes the audit question
+answerable: whether SWE-bench's thin coverage comes from upstream publishing few mappable models or
+from the allowlist rejecting most of them. Ambiguous names still resolve to the greedy first match,
+so adding the counter cannot shrink coverage. The helper is unit-tested in `slug_metrics_test.go`
+without a database.
 
 ### Best-entry selection
 
@@ -74,7 +85,7 @@ if err := s.Scrape(ctx); err != nil { /* task fails and asynq retries */ }
 
 ## Design Notes
 
-- **Unresolved models are skipped, never guessed.** Identity goes through [`slugmap.Resolve`](../slugmap/README.md); a miss is logged and dropped.
+- **Unresolved models are skipped, never guessed.** Identity goes through [`slugmap.ResolveOutcome`](../slugmap/README.md); a miss is logged and dropped, and the outcome is counted in `llm_slug_resolutions_total`.
 - **Failure propagates.** `Scrape` returning an error fails the asynq task so it is retried, rather than leaving a partially-updated benchmark table behind.
 - **Scores are never written to pricing tables.** This scraper only touches benchmark evidence; capability scores are derived downstream by `intelligence.ComputeAllCapabilityScores`.
 - **Untrusted input.** The leaderboard is external JSON; entries are schema- and type-checked before use, and the HTTP client must carry an explicit timeout and the SSRF-safe transport.
@@ -84,6 +95,7 @@ if err := s.Scrape(ctx); err != nil { /* task fails and asynq retries */ }
 | Dependency | Role |
 |---|---|
 | `internal/intelligence` | Benchmark evidence upsert and capability recompute |
+| `internal/metrics` | `llm_slug_resolutions_total` outcome counter |
 | `internal/scraper` | `BenchmarkScraper` interface, SSRF-safe transport |
 | `internal/scraper/slugmap` | Leaderboard name → canonical DB slug |
 | `github.com/jackc/pgx/v5/pgxpool` | Postgres access |

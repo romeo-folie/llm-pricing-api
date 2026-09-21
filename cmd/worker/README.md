@@ -16,7 +16,7 @@ cmd/worker/
 
 ## Key Components
 
-- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, starts the freshness sampler on a 60-second ticker, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, the sampler, the asynq server, and the scheduler.
+- **`main()`** — Loads `.env` via godotenv, reads config, opens a PostgreSQL connection pool with 5-attempt retry (matching `cmd/api`), creates an asynq server (concurrency 10), registers scraper handlers on the `ServeMux`, wires a cron scheduler with per-source intervals, starts a minimal HTTP health server on `APP_PORT`, starts the metrics server on `METRICS_PORT`, starts the freshness and benchmark-evidence samplers on 60-second tickers, and blocks until `SIGINT`/`SIGTERM` triggers graceful shutdown of both servers, both samplers, the asynq server, and the scheduler.
 - **`GET /health`** — Pings both PostgreSQL and Redis. Returns `{"status":"ok","db":"ok","redis":"ok"}` (200) when healthy, or `{"status":"degraded"}` (503) when either dependency is unreachable. Used by Railway's health check to verify the worker is running.
 - **`GET /metrics`** — Prometheus exposition of the process registry, served on `METRICS_PORT` by a dedicated listener that is never publicly exposed. See [Metrics](#metrics) below.
 
@@ -71,25 +71,50 @@ freshness telemetry must not take the data pipeline down with it.
 (`internal/worker.runPipeline`) so the alert has a prompt anchor, but the ticker remains the
 authority.
 
+### Benchmark-evidence sampler
+
+`worker.BenchmarkSampler` publishes `llm_benchmark_evidence_active{benchmark}` and
+`llm_benchmark_evidence_stale_ratio{benchmark}` on the **same 60-second ticker / 10-second timeout**
+pattern, seeded once at boot and stopped during graceful shutdown before the metrics listener.
+
+It must also run outside the scrape pipeline, for the opposite reason to the freshness sampler:
+benchmark scrapes are **daily**, so a gauge refreshed only on scrape success would not notice
+evidence crossing the 90-day staleness threshold between runs. The ratio is measured from
+`evaluated_at`, not `last_observed_at` — SWE-bench is re-scraped daily and looks freshly observed
+while its newest published evaluation is months old.
+
+The benchmark scrape counters (`llm_benchmark_scrape_runs_total{source,status}`,
+`llm_benchmark_scrape_duration_seconds{source}`) and the slug-resolution counter
+(`llm_slug_resolutions_total{result}`) are incremented by the asynq handlers rather than by the
+samplers, so they appear when benchmark tasks run rather than on a timer.
+
 ## Tasks and Cron Schedule
 
 | Task constant | Task type string | Scraper | Schedule |
 |---|---|---|---|
 | `TaskOpenRouterScrape` | `scrape:openrouter` | OpenRouter API | Every 6 hours |
 | `TaskLiteLLMScrape` | `scrape:litellm` | LiteLLM GitHub JSON | Every 24 hours |
+| `TaskHuggingFaceScrape` | `scrape:huggingface` | HuggingFace Inference Providers | Every 24 hours |
 | `TaskOpenAIScrape` | `scrape:openai` | OpenAI pricing page | Every 24 hours |
 | `TaskAnthropicScrape` | `scrape:anthropic` | Anthropic pricing page | Every 24 hours |
-| `TaskGoogleScrape` | `scrape:google` | Google pricing page | Every 24 hours |
-| `TaskMistralScrape` | `scrape:mistral` | Mistral pricing page | Every 24 hours |
-| `TaskAmazonScrape` | `scrape:amazon` | Amazon Bedrock pricing page | Every 24 hours |
+| `TaskGeminiScrape` | `scrape:gemini` | Google Gemini pricing page | Every 24 hours |
+| `TaskSWEBenchScrape` | `benchmark:swebench` | SWE-bench Verified leaderboard | Every 24 hours |
+| `TaskLiveCodeBenchScrape` | `benchmark:livecodebench` | LiveCodeBench leaderboard | Every 24 hours |
+| `TaskChatbotArenaScrape` | `benchmark:chatbot_arena` | Chatbot Arena (no-op compatibility stub) | on-demand only |
+| `TaskRecomputeCapabilityScores` | `intelligence:recompute_capability_scores` | Capability recompute (daily safety net) | Every 24 hours |
+| `TaskStalenessCheck` | `intelligence:staleness_check` | Legacy alias of the recompute handler | legacy |
+| `TaskBFCLScrapeDeprecated` | `benchmark:bfcl` | Pre-rename queue drain into the SWE-bench handler | legacy |
+| `TaskHuggingFaceLLMScrapeDeprecated` | `benchmark:huggingface_llm` | Pre-rename queue drain into the LiveCodeBench handler | legacy |
 
 ## Pipeline
 
-Each handler executes the same three-stage pipeline:
+Each price handler executes the same three-stage pipeline:
 
 1. **Scrape** — the handler instantiates its scraper (e.g. `openrouter.New(nil)`) and calls `Fetch(ctx)` to retrieve the latest `[]models.ScrapedModel` from the remote source.
 2. **Diff** — `diff.Diff(storedPrices, storedModels, scraped)` compares the incoming data against the values currently stored in PostgreSQL, producing a list of price changes.
 3. **Reconcile** — `reconciler.Reconcile(ctx, diffs)` applies the reconciliation rules: single-source changes are queued for a second confirming fetch; multi-source disagreements >5% are flagged to the review queue; confirmed changes are written as immutable records in `price_history`.
+
+Benchmark handlers do **not** run that pipeline: they fetch a leaderboard, resolve each entry's model name to a canonical slug, upsert immutable evidence, and then synchronously recompute capability scores. The recompute reuses the same transactional replacement path as the daily `TaskRecomputeCapabilityScores` safety net, so a failure fails the scrape task and asynq retries it.
 
 ## Dependencies
 

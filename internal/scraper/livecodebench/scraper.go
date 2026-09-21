@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"llm-pricing-api/internal/intelligence"
+	"llm-pricing-api/internal/metrics"
 	"llm-pricing-api/internal/scraper"
 	"llm-pricing-api/internal/scraper/slugmap"
 )
@@ -125,6 +126,25 @@ func modelNamesByRepresentation(models []lcbModel) map[string]string {
 	return reprToName
 }
 
+// resolveSlug resolves one leaderboard entry — by model_name first, then by
+// model_repr — and records exactly one outcome in llm_slug_resolutions_total.
+//
+// The counter is incremented here rather than inside slugmap so the resolver
+// stays pure and dependency-free (see internal/scraper/slugmap/README.md), and
+// once per entry rather than once per lookup: the two-step fallback would
+// otherwise count a single unmappable alias as two unknowns, inflating the rate
+// the LLMSlugResolutionUnknownRateHigh alert keys on. Ambiguous names are
+// counted as ambiguous but still resolve to the greedy first-match slug, so
+// adding the counter cannot shrink coverage.
+func resolveSlug(modelName, repr string) (string, slugmap.Outcome) {
+	slug, outcome := slugmap.ResolveOutcome(modelName)
+	if outcome == slugmap.OutcomeUnknown {
+		slug, outcome = slugmap.ResolveOutcome(repr)
+	}
+	metrics.SlugResolutionsTotal.WithLabelValues(outcome.String()).Inc()
+	return slug, outcome
+}
+
 func evidenceVersion(candidate resolvedModel) string {
 	payload := fmt.Sprintf("%s\x00%s\x00%.17g\x00%d",
 		candidate.modelName, candidate.repr, candidate.average, candidate.count)
@@ -172,11 +192,8 @@ func (s *Scraper) Scrape(ctx context.Context) error {
 
 		// Try resolving via model_name first, then model_repr.
 		modelName := reprToName[repr]
-		slug, ok := slugmap.Resolve(modelName)
-		if !ok {
-			slug, ok = slugmap.Resolve(repr)
-		}
-		if !ok {
+		slug, outcome := resolveSlug(modelName, repr)
+		if outcome == slugmap.OutcomeUnknown {
 			s.logger.Debug().Str("model_repr", repr).Str("model_name", modelName).Msg("livecodebench: no slug mapping — skipping")
 			skipped++
 			continue

@@ -76,6 +76,99 @@ var (
 		Help: "Total number of webhook delivery attempts, partitioned by status.",
 	}, []string{"status"})
 
+	// BenchmarkScrapeRunsTotal counts benchmark leaderboard scrape attempts.
+	//
+	// It is deliberately separate from ScraperRunsTotal: the price scrapers
+	// funnel through worker.runPipeline (which owns that counter), while the
+	// benchmark scrapers do not — they fetch a leaderboard and then trigger a
+	// capability recompute, with no diff/reconcile stage. Folding them into one
+	// counter would give the price-scrape failure alert a source it can never
+	// fix by re-running a price scrape.
+	//
+	// Labels: source (swebench, livecodebench), status (success, error).
+	BenchmarkScrapeRunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "llm_benchmark_scrape_runs_total",
+		Help: "Total number of benchmark leaderboard scrape runs, partitioned by source and status.",
+	}, []string{"source", "status"})
+
+	// BenchmarkScrapeDurationSeconds observes per-run benchmark scrape latency.
+	// The buckets run to 5 minutes because these scrapers fetch raw leaderboard
+	// artifacts (SWE-bench fetches a multi-MB JSON document) rather than a
+	// small pricing feed, so prometheus.DefBuckets — which stops at 10s — would
+	// collapse every real observation into +Inf.
+	// Labels: source.
+	BenchmarkScrapeDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "llm_benchmark_scrape_duration_seconds",
+		Help:    "Benchmark leaderboard scrape latency in seconds.",
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300},
+	}, []string{"source"})
+
+	// SlugResolutionsTotal counts leaderboard model names that reached
+	// slugmap resolution, partitioned by outcome.
+	//
+	// This is the metric that answers whether thin benchmark coverage is caused
+	// by upstream publishing few mappable models or by the resolver rejecting
+	// most entries: `unknown` means the allowlist has no row for the name,
+	// `ambiguous` means more than one fallback rule matched the same name.
+	// Labels: result (resolved, unknown, ambiguous).
+	SlugResolutionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "llm_slug_resolutions_total",
+		Help: "Total number of leaderboard model-name resolutions attempted, partitioned by outcome.",
+	}, []string{"result"})
+
+	// BenchmarkEvidenceActive is the number of active benchmark evidence rows
+	// for a benchmark. "Active" mirrors intelligence.GetActiveBenchmarkScores:
+	// exactly one normalised row per (model, benchmark), chosen by source
+	// observation time, then evaluation time. A benchmark with no active
+	// evidence emits no sample (see worker.BenchmarkSampler) so the gauge can be
+	// absent rather than reading as a misleading zero.
+	// Labels: benchmark.
+	BenchmarkEvidenceActive = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_benchmark_evidence_active",
+		Help: "Number of active benchmark evidence rows for a benchmark.",
+	}, []string{"benchmark"})
+
+	// BenchmarkEvidenceStaleRatio is the fraction (0–1) of a benchmark's active
+	// evidence whose evaluated_at is older than the scoring staleness threshold
+	// (90 days).
+	//
+	// It is measured from evaluated_at, never last_observed_at: SWE-bench is
+	// re-scraped daily, so last_observed_at is always fresh, while the newest
+	// published evaluation is months old. Measuring observation time would
+	// report a healthy benchmark whose evidence the scorer itself treats as
+	// stale.
+	// Labels: benchmark.
+	BenchmarkEvidenceStaleRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_benchmark_evidence_stale_ratio",
+		Help: "Fraction of a benchmark's active evidence older than the staleness threshold.",
+	}, []string{"benchmark"})
+
+	// CapabilityRecomputeDurationSeconds observes how long a full capability
+	// score recomputation takes.
+	CapabilityRecomputeDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "llm_capability_recompute_duration_seconds",
+		Help:    "Duration of a full capability score recomputation in seconds.",
+		Buckets: prometheus.DefBuckets,
+	})
+
+	// CapabilityRecomputeFailuresTotal counts failed full recomputations. The
+	// task that triggered the recompute still fails and retries; this counter is
+	// what makes the retry loop visible.
+	CapabilityRecomputeFailuresTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "llm_capability_recompute_failures_total",
+		Help: "Total number of failed full capability score recomputations.",
+	})
+
+	// CapabilityLastRecomputeTimestampSeconds is the Unix timestamp of the last
+	// successful full capability recomputation. A gauge rather than a monotonic
+	// counter so `time() - llm_capability_last_recompute_timestamp_seconds`
+	// stays meaningful across process restarts. It is only advanced on success,
+	// so a recompute that keeps failing leaves the value receding.
+	CapabilityLastRecomputeTimestampSeconds = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "llm_capability_last_recompute_timestamp_seconds",
+		Help: "Unix timestamp of the last successful full capability score recomputation.",
+	})
+
 	// ── Data freshness ────────────────────────────────────────────────────────
 
 	// SourceLastSuccessTimestampSeconds is the Unix timestamp of the last
