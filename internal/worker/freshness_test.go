@@ -11,15 +11,17 @@ import (
 
 // mockFreshnessQuerier is a freshnessQuerier whose result the test controls.
 type mockFreshnessQuerier struct {
-	rows          []sourceFreshness
-	err           error
-	calls         int
-	gotStaleAfter time.Duration
+	rows            []sourceFreshness
+	err             error
+	calls           int
+	gotStaleAfter   time.Duration
+	gotActiveWindow time.Duration
 }
 
-func (m *mockFreshnessQuerier) SourceFreshness(_ context.Context, staleAfter time.Duration) ([]sourceFreshness, error) {
+func (m *mockFreshnessQuerier) SourceFreshness(_ context.Context, staleAfter, activeWindow time.Duration) ([]sourceFreshness, error) {
 	m.calls++
 	m.gotStaleAfter = staleAfter
+	m.gotActiveWindow = activeWindow
 	return m.rows, m.err
 }
 
@@ -85,9 +87,9 @@ func TestFreshnessSampler_HealthyRows(t *testing.T) {
 	lastVerified := time.Unix(1_700_000_000, 0).UTC()
 
 	q := &mockFreshnessQuerier{rows: []sourceFreshness{
-		{Source: source, LastVerifiedAt: lastVerified, Prices: 4, Stale: 0},
+		{Source: source, LastVerifiedAt: lastVerified, Prices: 4, Active: 4, Stale: 0},
 	}}
-	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
 
 	if err := s.Sample(context.Background()); err != nil {
 		t.Fatalf("Sample: %v", err)
@@ -111,9 +113,9 @@ func TestFreshnessSampler_AllRowsStale(t *testing.T) {
 	lastVerified := time.Unix(1_600_000_000, 0).UTC()
 
 	q := &mockFreshnessQuerier{rows: []sourceFreshness{
-		{Source: source, LastVerifiedAt: lastVerified, Prices: 3, Stale: 3},
+		{Source: source, LastVerifiedAt: lastVerified, Prices: 3, Active: 3, Stale: 3},
 	}}
-	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
 
 	if err := s.Sample(context.Background()); err != nil {
 		t.Fatalf("Sample: %v", err)
@@ -133,9 +135,9 @@ func TestFreshnessSampler_SomeRowsStale(t *testing.T) {
 	const source = "test_fresh_some_stale"
 
 	q := &mockFreshnessQuerier{rows: []sourceFreshness{
-		{Source: source, LastVerifiedAt: time.Unix(1_700_000_500, 0).UTC(), Prices: 4, Stale: 1},
+		{Source: source, LastVerifiedAt: time.Unix(1_700_000_500, 0).UTC(), Prices: 4, Active: 4, Stale: 1},
 	}}
-	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
 
 	if err := s.Sample(context.Background()); err != nil {
 		t.Fatalf("Sample: %v", err)
@@ -144,6 +146,63 @@ func TestFreshnessSampler_SomeRowsStale(t *testing.T) {
 	if got := gaugeValue(t, "llm_prices_stale_ratio", source); got != 0.25 {
 		t.Errorf("stale ratio = %v; want 0.25", got)
 	}
+}
+
+// TestFreshnessSampler_DelistedRowsExcludedFromRatio pins the #217 behaviour:
+// rows outside the activity window — delisted upstream, or orphaned by a scraper
+// change — leave the denominator, so the ratio measures the pipeline's health
+// rather than accumulated history.
+func TestFreshnessSampler_DelistedRowsExcludedFromRatio(t *testing.T) {
+	const source = "test_fresh_delisted"
+	lastVerified := time.Unix(1_700_000_000, 0).UTC()
+
+	// 10 published rows, only 4 still active, 1 of those stale: the ratio is
+	// 1/4 = 0.25, not 1/10 = 0.1.
+	q := &mockFreshnessQuerier{rows: []sourceFreshness{
+		{Source: source, LastVerifiedAt: lastVerified, Prices: 10, Active: 4, Stale: 1},
+	}}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+
+	if got := gaugeValue(t, "llm_prices_stale_ratio", source); got != 0.25 {
+		t.Errorf("stale ratio = %v; want 0.25 (active denominator)", got)
+	}
+	if got := gaugeValue(t, "llm_prices_active", source); got != 4 {
+		t.Errorf("active = %v; want 4", got)
+	}
+	if got := gaugeValue(t, "llm_prices_published", source); got != 10 {
+		t.Errorf("published = %v; want 10", got)
+	}
+}
+
+// TestFreshnessSampler_NoActiveRowsSkipsRatio covers a source whose entire
+// published set has aged out of the activity window: the timestamps are still
+// published, but there is no denominator, so no ratio is emitted. A ratio here
+// would divide by zero, and a zeroed one would read as "perfectly fresh".
+func TestFreshnessSampler_NoActiveRowsSkipsRatio(t *testing.T) {
+	const source = "test_fresh_no_active"
+	lastVerified := time.Unix(1_600_000_000, 0).UTC()
+
+	q := &mockFreshnessQuerier{rows: []sourceFreshness{
+		{Source: source, LastVerifiedAt: lastVerified, Prices: 5, Active: 0, Stale: 0},
+	}}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
+
+	if err := s.Sample(context.Background()); err != nil {
+		t.Fatalf("Sample: %v", err)
+	}
+
+	if got := gaugeValue(t, "llm_prices_published", source); got != 5 {
+		t.Errorf("published = %v; want 5", got)
+	}
+	if got := gaugeValue(t, "llm_source_last_success_timestamp_seconds", source); got != float64(lastVerified.Unix()) {
+		t.Errorf("last success = %v; want %v", got, lastVerified.Unix())
+	}
+	assertGaugeAbsent(t, "llm_prices_stale_ratio", source)
+	assertGaugeAbsent(t, "llm_prices_active", source)
 }
 
 // TestFreshnessSampler_SourceWithNoRowsIsSkipped verifies that a source the
@@ -156,10 +215,10 @@ func TestFreshnessSampler_SourceWithNoRowsIsSkipped(t *testing.T) {
 	const realSource = "test_fresh_no_rows_real"
 
 	q := &mockFreshnessQuerier{rows: []sourceFreshness{
-		{Source: emptySource, Prices: 0, Stale: 0},
-		{Source: realSource, LastVerifiedAt: time.Unix(1_700_000_100, 0).UTC(), Prices: 2, Stale: 0},
+		{Source: emptySource, Prices: 0, Active: 0, Stale: 0},
+		{Source: realSource, LastVerifiedAt: time.Unix(1_700_000_100, 0).UTC(), Prices: 2, Active: 2, Stale: 0},
 	}}
-	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
 
 	if err := s.Sample(context.Background()); err != nil {
 		t.Fatalf("Sample: %v", err)
@@ -168,6 +227,7 @@ func TestFreshnessSampler_SourceWithNoRowsIsSkipped(t *testing.T) {
 	for _, name := range []string{
 		"llm_source_last_success_timestamp_seconds",
 		"llm_prices_stale_ratio",
+		"llm_prices_active",
 		"llm_prices_published",
 	} {
 		assertGaugeAbsent(t, name, emptySource)
@@ -184,7 +244,7 @@ func TestFreshnessSampler_SourceWithNoRowsIsSkipped(t *testing.T) {
 // nothing.
 func TestFreshnessSampler_EmptyResultSetsNothing(t *testing.T) {
 	q := &mockFreshnessQuerier{}
-	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
 
 	if err := s.Sample(context.Background()); err != nil {
 		t.Fatalf("Sample: %v", err)
@@ -201,10 +261,10 @@ func TestFreshnessSampler_QueryError(t *testing.T) {
 	queryErr := errors.New("connection reset")
 
 	q := &mockFreshnessQuerier{
-		rows: []sourceFreshness{{Source: source, Prices: 1, Stale: 1}},
+		rows: []sourceFreshness{{Source: source, Prices: 1, Active: 1, Stale: 1}},
 		err:  queryErr,
 	}
-	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: DefaultStaleAfter, activeWindow: DefaultActiveWindow}
 
 	err := s.Sample(context.Background())
 	if err == nil {
@@ -217,25 +277,29 @@ func TestFreshnessSampler_QueryError(t *testing.T) {
 	for _, name := range []string{
 		"llm_source_last_success_timestamp_seconds",
 		"llm_prices_stale_ratio",
+		"llm_prices_active",
 		"llm_prices_published",
 	} {
 		assertGaugeAbsent(t, name, source)
 	}
 }
 
-// TestFreshnessSampler_PassesStaleAfter verifies the configured threshold is
-// forwarded to the querier rather than hard-coded, since the SQL binds it as a
-// parameter.
-func TestFreshnessSampler_PassesStaleAfter(t *testing.T) {
+// TestFreshnessSampler_PassesWindows verifies the configured thresholds are
+// forwarded to the querier rather than hard-coded, since the SQL binds both as
+// parameters.
+func TestFreshnessSampler_PassesWindows(t *testing.T) {
 	const staleAfter = 6 * time.Hour
 	q := &mockFreshnessQuerier{}
-	s := &FreshnessSampler{querier: q, staleAfter: staleAfter}
+	s := &FreshnessSampler{querier: q, staleAfter: staleAfter, activeWindow: DefaultActiveWindow}
 
 	if err := s.Sample(context.Background()); err != nil {
 		t.Fatalf("Sample: %v", err)
 	}
 	if q.gotStaleAfter != staleAfter {
 		t.Errorf("querier staleAfter = %v; want %v", q.gotStaleAfter, staleAfter)
+	}
+	if q.gotActiveWindow != DefaultActiveWindow {
+		t.Errorf("querier activeWindow = %v; want %v", q.gotActiveWindow, DefaultActiveWindow)
 	}
 }
 
@@ -245,5 +309,16 @@ func TestFreshnessSampler_PassesStaleAfter(t *testing.T) {
 func TestDefaultStaleAfterMatchesProductPromise(t *testing.T) {
 	if DefaultStaleAfter != 24*time.Hour {
 		t.Errorf("DefaultStaleAfter = %v; want 24h", DefaultStaleAfter)
+	}
+}
+
+// TestDefaultActiveWindow pins the activity window to comfortably more than the
+// scrape cadence: every price source runs at least daily, so a week of silence
+// means a model is gone (delisted, renamed, or orphaned) rather than merely
+// slow. Too short a window would drop models between scrapes; too long a one
+// would let delisted rows inflate the ratio again (#217).
+func TestDefaultActiveWindow(t *testing.T) {
+	if DefaultActiveWindow != 7*24*time.Hour {
+		t.Errorf("DefaultActiveWindow = %v; want 168h", DefaultActiveWindow)
 	}
 }

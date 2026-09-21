@@ -185,15 +185,29 @@ var (
 		Help: "Unix timestamp of the last successful verification for a source.",
 	}, []string{"source"})
 
-	// PricesStaleRatio is the fraction (0–1) of a source's published prices whose
-	// last_verified_at is older than the staleness threshold. Labelled by source
-	// rather than by confidence: confidence is computed per API response and is
-	// not stored on the prices rows, so it is neither cheap nor actionable here —
-	// the source label names the feed that went quiet.
+	// PricesStaleRatio is the fraction (0–1) of a source's *active* prices whose
+	// last_verified_at is older than the staleness threshold. Active means
+	// verified inside the activity window, so models upstream has delisted or
+	// renamed — which the pipeline will never see again — drop out instead of
+	// inflating the ratio forever (#217). Labelled by source rather than by
+	// confidence: confidence is computed per API response and is not stored on
+	// the prices rows, so it is neither cheap nor actionable here — the source
+	// label names the feed that went quiet.
 	// Labels: source.
 	PricesStaleRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "llm_prices_stale_ratio",
-		Help: "Fraction of a source's published prices older than the staleness threshold.",
+		Help: "Fraction of a source's active published prices older than the staleness threshold.",
+	}, []string{"source"})
+
+	// PricesActive is the denominator of llm_prices_stale_ratio: the number of a
+	// source's prices verified inside the activity window. Published alongside
+	// the ratio so a spike can be read against the population it was computed
+	// over, and so the excluded (delisted or orphaned) rows are quantified by
+	// the gap between it and llm_prices_published.
+	// Labels: source.
+	PricesActive = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "llm_prices_active",
+		Help: "Number of a source's prices verified inside the activity window.",
 	}, []string{"source"})
 
 	// PricesPublished is the number of published prices for a source. It gives
