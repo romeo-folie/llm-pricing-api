@@ -29,6 +29,17 @@ gRPC exporter and needs no change when the backend moves.
 | `alerts/rules.yaml` | Prometheus-format alert rules (source of truth) |
 | `provision/` | Provisioning script and its README |
 
+### Alert rule convention
+
+An alert that fires on the *presence* of a bad event must still evaluate when
+that event has never happened. A label-filtered counter such as
+`llm_api_requests_total{status=~"5.."}` has no series until the first 5xx, so
+the bare expression returns nothing and Grafana raises `DatasourceNoData` —
+which notifies. Guard such expressions with `or vector(0)` and set
+`no_data_state: OK` (#213). Rules that watch a continuously-present gauge keep
+the `NoData` default, because for those, silence really is a failure; detecting
+"all metrics went silent" is #194's job.
+
 `grafana-agent` was removed: Grafana Agent is on a deprecation path in favour of
 Alloy, and the Collector already matches the intended topology.
 

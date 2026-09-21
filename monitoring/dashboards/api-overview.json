@@ -22,7 +22,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(llm_api_requests_total{status=~\"5..\"}[5m])) / sum(rate(llm_api_requests_total[5m]))"
+          "expr": "(sum(rate(llm_api_requests_total{status=~\"5..\"}[5m])) or vector(0)) / (sum(rate(llm_api_requests_total[5m])) or vector(0))"
         }
       ]
     },

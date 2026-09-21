@@ -207,6 +207,11 @@ _EXPR_INLINE_RE = re.compile(r"^(\s*)expr:\s*(.+?)\s*$")
 _FOR_RE = re.compile(r"^(\s*)for:\s*(.+?)\s*$")
 _SEVERITY_RE = re.compile(r"^(\s*)severity:\s*(.+?)\s*$")
 _SUMMARY_RE = re.compile(r"^(\s*)summary:\s*(.+?)\s*$")
+_NO_DATA_STATE_RE = re.compile(r"^(\s*)no_data_state:\s*(.+?)\s*$")
+
+# Grafana's four NoData handling modes. Rules that alert on the presence of a
+# bad event opt into OK (see rules.yaml); anything else keeps the safe default.
+_NO_DATA_STATES = ("OK", "NoData", "Alerting", "Error")
 
 
 def _unquote(value):
@@ -230,13 +235,15 @@ def parse_rules_yaml(text):
     """Parse the specific shape used by monitoring/alerts/rules.yaml.
 
     Returns ``(group_name, rules)`` where each rule is a dict with keys
-    ``alert``, ``expr``, ``for``, ``severity`` and ``summary``.
+    ``alert``, ``expr``, ``for``, ``severity``, ``summary`` and the optional
+    ``no_data_state`` (one of OK/NoData/Alerting/Error; defaults to NoData).
 
     This is not a general YAML parser. It understands only: a top-level
     ``groups:`` list, one ``- name:`` group entry, a ``rules:`` list, and rule
     entries built from ``- alert:``, an ``expr:`` block or inline scalar,
-    ``for:``, and single-key ``labels:`` / ``annotations:`` mappings. Anything
-    outside that shape raises ProvisionError instead of being silently
+    ``for:``, ``no_data_state:``, and single-key ``labels:`` /
+    ``annotations:`` mappings. Anything outside that shape raises
+    ProvisionError instead of being silently
     misread.
     """
     group_name = None
@@ -262,6 +269,7 @@ def parse_rules_yaml(text):
                 "for": None,
                 "severity": None,
                 "summary": None,
+                "no_data_state": None,
             }
             rules.append(current)
             index += 1
@@ -312,6 +320,12 @@ def parse_rules_yaml(text):
                 index += 1
                 continue
 
+            match = _NO_DATA_STATE_RE.match(line)
+            if match:
+                current["no_data_state"] = _unquote(match.group(2))
+                index += 1
+                continue
+
         index += 1
 
     if group_name is None:
@@ -331,6 +345,13 @@ def parse_rules_yaml(text):
             raise ProvisionError(
                 f"{RULES_PATH}: rule '{rule['alert']}' is missing "
                 f"{', '.join(missing)}; refusing to guess"
+            )
+        state = rule.get("no_data_state")
+        if state is not None and state not in _NO_DATA_STATES:
+            raise ProvisionError(
+                f"{RULES_PATH}: rule '{rule['alert']}' has invalid "
+                f"no_data_state {state!r}; expected one of "
+                f"{', '.join(_NO_DATA_STATES)}"
             )
     return group_name, rules
 
@@ -503,7 +524,7 @@ def build_alert_rule(rule, folder_uid, org_id, group_name):
         "condition": CONDITION_REF_ID,
         "data": data,
         "for": rule["for"],
-        "noDataState": "NoData",
+        "noDataState": rule.get("no_data_state") or "NoData",
         "execErrState": "Error",
         "labels": {"severity": rule["severity"]},
         "annotations": {"summary": rule["summary"]},

@@ -2,10 +2,26 @@ groups:
   - name: llm-pricing-api-alerts
     interval: 1m
     rules:
+      # Convention: an alert that fires on the *presence* of a bad event must
+      # still evaluate when that event has never happened. A label-filtered
+      # counter (status=~"5..", status="error", result="unknown", …) has no
+      # series until the event occurs, so the bare expression returns no data
+      # and Grafana raises DatasourceNoData — which notifies. That paged for
+      # hours while the API was perfectly healthy (#213).
+      #
+      # Guard such expressions with `or vector(0)` and set `no_data_state: OK`
+      # so "nothing bad has happened" reads as 0 / OK. Rules that watch a
+      # continuously-present gauge (freshness, stale ratio, connection count)
+      # need neither: for those, absence of data really is the problem.
+      #
+      # Every expression must still end in a single comparison — the
+      # provisioning parser extracts the Grafana threshold from it.
+
       - alert: LLMAPIErrorRateSpike
         expr: |
-          (sum(rate(llm_api_requests_total{status=~"5.."}[5m])) / sum(rate(llm_api_requests_total[5m]))) > 0.05
+          (sum(rate(llm_api_requests_total{status=~"5.."}[5m])) or vector(0)) / (sum(rate(llm_api_requests_total[5m])) or vector(0)) > 0.05
         for: 5m
+        no_data_state: OK
         labels:
           severity: critical
         annotations:
@@ -13,8 +29,9 @@ groups:
 
       - alert: LLMAPIAbuseSingleKeyHighVolume
         expr: |
-          max(sum(increase(llm_api_rate_limit_hits_total[1h])) by (tier)) > 2000
+          (max(sum(increase(llm_api_rate_limit_hits_total[1h])) by (tier)) or vector(0)) > 2000
         for: 5m
+        no_data_state: OK
         labels:
           severity: warning
         annotations:
@@ -22,8 +39,9 @@ groups:
 
       - alert: LLMScraperFailureConsecutive
         expr: |
-          sum(increase(llm_scraper_runs_total{status="error"}[30m])) by (source) >= 3
+          (sum(increase(llm_scraper_runs_total{status="error"}[30m])) by (source) or vector(0)) >= 3
         for: 1m
+        no_data_state: OK
         labels:
           severity: critical
         annotations:
@@ -31,8 +49,9 @@ groups:
 
       - alert: LLMAPIP95LatencyHigh
         expr: |
-          histogram_quantile(0.95, sum(rate(llm_api_request_duration_seconds_bucket[10m])) by (le)) > 2
+          (histogram_quantile(0.95, sum(rate(llm_api_request_duration_seconds_bucket[10m])) by (le)) or vector(0)) > 2
         for: 10m
+        no_data_state: OK
         labels:
           severity: warning
         annotations:
@@ -50,15 +69,17 @@ groups:
       # redis_memory_max_bytes is 0 when Redis runs without a maxmemory policy,
       # which is how the managed instance is configured. The bare ratio was
       # therefore +Inf and the alert fired permanently the moment the
-      # redis-exporter was deployed (#211). Multiplying by `(max > 0)` yields no
-      # series while the limit is unset, so the alert stays silent until there
-      # is a real memory limit to measure against. Kept as a single trailing
-      # comparison because the provisioning parser extracts the Grafana
-      # threshold from it.
+      # redis-exporter was deployed (#211). Multiplying by `(max > 0)` leaves
+      # the expression with no series while the limit is unset, so the rule also
+      # opts into `no_data_state: OK`: with no limit there is nothing to measure
+      # against, and a silent exporter is #194's problem, not this rule's.
+      # Kept as a single trailing comparison because the provisioning parser
+      # extracts the Grafana threshold from it.
       - alert: LLMRedisMemoryPressure
         expr: |
           (redis_memory_used_bytes / redis_memory_max_bytes) * (redis_memory_max_bytes > 0) > 0.8
         for: 5m
+        no_data_state: OK
         labels:
           severity: warning
         annotations:
@@ -89,8 +110,9 @@ groups:
       # retry burst of one run, the same shape as LLMScraperFailureConsecutive.
       - alert: LLMBenchmarkScrapeFailureConsecutive
         expr: |
-          sum(increase(llm_benchmark_scrape_runs_total{status="error"}[30m])) by (source) >= 3
+          (sum(increase(llm_benchmark_scrape_runs_total{status="error"}[30m])) by (source) or vector(0)) >= 3
         for: 1m
+        no_data_state: OK
         labels:
           severity: critical
         annotations:
@@ -104,8 +126,9 @@ groups:
       # producing a spurious ratio.
       - alert: LLMSlugResolutionUnknownRateHigh
         expr: |
-          sum(rate(llm_slug_resolutions_total{result="unknown"}[1h])) / clamp_min(sum(rate(llm_slug_resolutions_total[1h])), 1) > 0.5
+          (sum(rate(llm_slug_resolutions_total{result="unknown"}[1h])) or vector(0)) / clamp_min((sum(rate(llm_slug_resolutions_total[1h])) or vector(0)), 1) > 0.5
         for: 15m
+        no_data_state: OK
         labels:
           severity: warning
         annotations:
@@ -129,8 +152,9 @@ groups:
       # visible instead of only appearing as a task-level error.
       - alert: LLMCapabilityRecomputeFailure
         expr: |
-          increase(llm_capability_recompute_failures_total[1h]) > 0
+          (increase(llm_capability_recompute_failures_total[1h]) or vector(0)) > 0
         for: 5m
+        no_data_state: OK
         labels:
           severity: critical
         annotations:
