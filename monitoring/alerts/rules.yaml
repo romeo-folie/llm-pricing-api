@@ -47,14 +47,22 @@ groups:
         annotations:
           summary: "Postgres active connections above threshold"
 
+      # redis_memory_max_bytes is 0 when Redis runs without a maxmemory policy,
+      # which is how the managed instance is configured. The bare ratio was
+      # therefore +Inf and the alert fired permanently the moment the
+      # redis-exporter was deployed (#211). Multiplying by `(max > 0)` yields no
+      # series while the limit is unset, so the alert stays silent until there
+      # is a real memory limit to measure against. Kept as a single trailing
+      # comparison because the provisioning parser extracts the Grafana
+      # threshold from it.
       - alert: LLMRedisMemoryPressure
         expr: |
-          (redis_memory_used_bytes / redis_memory_max_bytes) > 0.8
+          (redis_memory_used_bytes / redis_memory_max_bytes) * (redis_memory_max_bytes > 0) > 0.8
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Redis memory usage > 80%"
+          summary: "Redis memory usage > 80% of maxmemory"
 
       - alert: LLMSourceFreshnessStale
         expr: |

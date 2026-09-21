@@ -241,8 +241,31 @@ endpoint does not carry the worker's pipeline counters:
 - Worker — `http://llm-pricing-worker.railway.internal:<METRICS_PORT>/metrics`
 
 Confirm the exact private hostname for each service in the Railway dashboard.
-Postgres and Redis exporters need their own services for the `pg_*` / `redis_*`
-metrics that the infrastructure dashboard and two alert rules depend on.
+
+### Postgres and Redis exporters
+
+The infrastructure dashboard's `pg_*` / `redis_*` panels and the
+`LLMPostgresConnectionPressure` / `LLMRedisMemoryPressure` alert rules need two
+more image-only services in the same project. Their names **must** match the
+configured targets, because Railway private domains are
+`<service-name>.railway.internal`:
+
+| Service name | Image | Variables |
+|---|---|---|
+| `postgres-exporter` | `prometheuscommunity/postgres-exporter:v0.20.1` | `DATA_SOURCE_URI=${{Timescale.PGHOST}}:${{Timescale.PGPORT}}/${{Timescale.PGDATABASE}}?sslmode=disable`, `DATA_SOURCE_USER=${{Timescale.PGUSER}}`, `DATA_SOURCE_PASS=${{Timescale.PGPASSWORD}}` |
+| `redis-exporter` | `oliver006/redis_exporter:v1.91.1` | `REDIS_ADDR=${{Redis.REDIS_URL}}` |
+
+Both listen on their default ports (`9187`, `9121`), need no public domain, and
+need no build step. Keep them pinned; `postgres-exporter` must be ≥ `v0.16.0` for
+PostgreSQL 17 (`pg_stat_bgwriter` was split into `pg_stat_checkpointer`).
+
+Railway's CLI can create them, but `railway redeploy` replays the *previous*
+deployment spec — after changing a service's image, trigger a real deployment
+(the `serviceInstanceDeployV2` mutation) or the old image keeps running.
+
+Note: the managed Redis runs without a `maxmemory` policy, so
+`redis_memory_max_bytes` is `0`. `LLMRedisMemoryPressure` guards against that
+(`* (redis_memory_max_bytes > 0)`) and stays silent until a real limit exists.
 
 ### Dashboards, alert rules and notifications
 
