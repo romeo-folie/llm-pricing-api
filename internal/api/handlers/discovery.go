@@ -153,12 +153,12 @@ func (h *DiscoveryHandler) GetLLMsTxt(c *fiber.Ctx) error {
 
 	// Cache hit: serve from Redis without touching the DB.
 	if h.rdb != nil {
-		if cached, err := h.rdb.Get(c.Context(), llmsTxtCacheKey).Bytes(); err == nil {
+		if cached, err := h.rdb.Get(c.UserContext(), llmsTxtCacheKey).Bytes(); err == nil {
 			return c.Send(cached)
 		}
 	}
 
-	models, err := h.store.ListModelsForContext(c.Context(), 1000)
+	models, err := h.store.ListModelsForContext(c.UserContext(), 1000)
 	if err != nil {
 		return api.NewInternalError("failed to fetch model list")
 	}
@@ -178,7 +178,7 @@ func (h *DiscoveryHandler) GetLLMsTxt(c *fiber.Ctx) error {
 
 	// Best-effort cache write; a Redis failure must not degrade the response.
 	if h.rdb != nil {
-		_ = h.rdb.Set(c.Context(), llmsTxtCacheKey, body, llmsTxtCacheTTL).Err()
+		_ = h.rdb.Set(c.UserContext(), llmsTxtCacheKey, body, llmsTxtCacheTTL).Err()
 	}
 
 	return c.SendString(body)

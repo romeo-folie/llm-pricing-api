@@ -90,7 +90,7 @@ func (h *Handlers) ListModels(c *fiber.Ctx) error {
 		filter.PerPage = v
 	}
 
-	models, total, err := h.store.ListModels(c.Context(), filter)
+	models, total, err := h.store.ListModels(c.UserContext(), filter)
 	if err != nil {
 		log.Error().Err(err).Msg("list models failed")
 		return api.NewInternalError("failed to list models")
@@ -124,12 +124,12 @@ func (h *Handlers) GetModel(c *fiber.Ctx) error {
 	var err error
 
 	if id, intErr := strconv.Atoi(idStr); intErr == nil && id > 0 {
-		model, err = h.store.GetModel(c.Context(), id)
+		model, err = h.store.GetModel(c.UserContext(), id)
 	} else {
 		// Fiber does not auto-decode %2F in path params; decode manually so
 		// slugs like "openai%2Fgpt-4o" resolve correctly to "openai/gpt-4o".
 		slug, _ := url.PathUnescape(idStr)
-		model, err = h.store.GetModelBySlug(c.Context(), slug)
+		model, err = h.store.GetModelBySlug(c.UserContext(), slug)
 	}
 
 	if err != nil {

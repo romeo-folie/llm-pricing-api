@@ -63,7 +63,7 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 	}
 
 	// Use a cheap existence check rather than the full GetModel join.
-	exists, err := h.store.ModelExists(c.Context(), id)
+	exists, err := h.store.ModelExists(c.UserContext(), id)
 	if err != nil {
 		return api.NewInternalError("failed to look up model")
 	}
@@ -71,7 +71,7 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 		return api.NewNotFound("model not found")
 	}
 
-	history, err := h.store.GetModelHistory(c.Context(), id, filter)
+	history, err := h.store.GetModelHistory(c.UserContext(), id, filter)
 	if err != nil {
 		return api.NewInternalError("failed to retrieve price history")
 	}
@@ -86,7 +86,7 @@ func (h *Handlers) GetModelHistory(c *fiber.Ctx) error {
 	// than the subset selected by the caller's date window.
 	metaHistory := history
 	if filter.From != nil || filter.To != nil {
-		metaHistory, err = h.store.GetModelHistory(c.Context(), id, HistoryFilter{})
+		metaHistory, err = h.store.GetModelHistory(c.UserContext(), id, HistoryFilter{})
 		if err != nil {
 			// Non-fatal: fall back to filtered history for meta computation.
 			metaHistory = history

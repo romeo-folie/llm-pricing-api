@@ -45,6 +45,11 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	cfg.MinConns = 2
 	cfg.MaxConnIdleTime = 5 * time.Minute
 
+	// Bound connection establishment. Without this, dialling a black-holed
+	// database host blocks until the caller's own deadline — and callers that
+	// forgot one (the pre-#183 health check) blocked forever.
+	cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)

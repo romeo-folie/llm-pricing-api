@@ -44,7 +44,7 @@ func NewHandler(store Store) *Handler {
 // still return a proper 500 status rather than appending an error message to
 // a partially-written 200 response.
 func (h *Handler) List(c *fiber.Ctx) error {
-	items, err := h.store.ListPending(c.Context())
+	items, err := h.store.ListPending(c.UserContext())
 	if err != nil {
 		slog.Error("review handler: list pending", "err", err)
 		return c.Status(fiber.StatusInternalServerError).SendString("internal server error")
@@ -71,7 +71,7 @@ func (h *Handler) Approve(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("invalid id: must be a positive integer")
 	}
 
-	if err := h.store.Approve(c.Context(), id); err != nil {
+	if err := h.store.Approve(c.UserContext(), id); err != nil {
 		if errors.Is(err, ErrNotPending) {
 			return c.Status(fiber.StatusConflict).SendString("entry not found or already resolved")
 		}
@@ -93,7 +93,7 @@ func (h *Handler) Reject(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("invalid id: must be a positive integer")
 	}
 
-	if err := h.store.Reject(c.Context(), id); err != nil {
+	if err := h.store.Reject(c.UserContext(), id); err != nil {
 		if errors.Is(err, ErrNotPending) {
 			return c.Status(fiber.StatusConflict).SendString("entry not found or already resolved")
 		}

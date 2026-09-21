@@ -25,6 +25,7 @@ internal/database/
 | `MaxConns` | 20 | Sufficient for API + worker under expected load |
 | `MinConns` | 2 | Keeps warm connections ready for low-traffic periods |
 | `MaxConnIdleTime` | 5 min | Reclaims idle connections to limit resource usage |
+| `ConnConfig.ConnectTimeout` | 5 s | Bounds dialling a black-holed host. This covers connection *establishment* only — `pool.Acquire` when all 20 connections are checked out is bounded by the caller's context, which is what `middleware.RequestTimeout` supplies |
 
 ## Dependencies
 

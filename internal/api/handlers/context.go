@@ -61,7 +61,7 @@ func estimateTokens(jsonBytes []byte) int {
 // Optional query parameters:
 //   - format=markdown: return a plain-text markdown table instead of the JSON envelope.
 func (h *Handlers) GetContext(c *fiber.Ctx) error {
-	rows, err := h.store.ListModelsForContext(c.Context(), contextMaxModels)
+	rows, err := h.store.ListModelsForContext(c.UserContext(), contextMaxModels)
 	if err != nil {
 		return api.NewInternalError("failed to retrieve pricing context")
 	}

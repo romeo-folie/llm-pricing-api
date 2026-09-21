@@ -19,6 +19,7 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `aliases.go` | `ModelAliases` map — ~50 common model name shortcuts → canonical slugs; used by `/v1/ask` parser |
 | `discovery.go` | `GET /openapi.json`, `GET /.well-known/ai-plugin.json`, `GET /llms.txt` (public) |
 | `sse.go` | `GET /v1/stream/changes` (SSE price-change stream) |
+| `sse_write_test.go` | Regression tests for the bounded SSE write path (`writeWithDeadline`): deadline set, nil-connection path, error propagation |
 | `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (no tier gating); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
 | `handlers_test.go` | Unit tests for Free-tier handlers using Fiber's `app.Test()` and an in-memory mock store |
 | `dev_handlers_test.go` | Unit tests for the `RegisterDev` handlers (history, recommend, context + markdown/metadata) |
@@ -96,6 +97,29 @@ List endpoints aggregate metadata by choosing the most recently confirmed model'
 - **OTel metrics**:
   - `llm_pricing.sse.active_connections` (UpDownCounter) — live connection count.
   - `llm_pricing.sse.events_emitted_total` (Counter) — events sent, labelled by `provider`.
+
+### Resilience (`sse.go`)
+
+The stream outlives the HTTP handler: the body stream writer runs in its own goroutine, started by
+fasthttp while the handler is still on the stack. Two consequences are load-bearing:
+
+- **The handler chain unwinds promptly** only because `otelfiber` skips reading `Response.Body()` for
+  `Content-Type: text/event-stream`. Without that, the serving goroutine would block for the life of
+  the stream. The dependency is worth knowing before touching either side.
+- **No request-derived context is usable inside the writer.** A `context.WithCancel(context.Background())`
+  is created for the subscription and cancelled by the cleanup defer; `c.UserContext()` is unusable
+  because `otelfiber` cancels its span context as it unwinds.
+- **Every write is bounded** by `sseWriteTimeout` (60s) through `writeWithDeadline`, using the
+  connection captured as `c.Context().Conn()`. `w` wraps fasthttp's in-memory pipe rather than the
+  socket, so the deadline bounds *fasthttp's* socket write; that error closes the pipe reader, which
+  unblocks the pending `Flush`. A peer that vanishes without an RST therefore surfaces as a write
+  error within one timeout instead of blocking the loop forever — which previously leaked its
+  goroutines, the Redis Pub/Sub subscription, and the per-key connection slot (issue #183).
+
+The per-key counter's TTL **is** refreshed on every heartbeat, so a healthy long-lived stream keeps
+its slot. A stream blocked on a dead peer cannot reach the heartbeat tick, so it cannot pin a slot —
+the write deadline ends it. The decrement is skipped when the matching `INCR` failed, so a Redis
+error cannot drive the counter negative.
 
 ### Error responses
 

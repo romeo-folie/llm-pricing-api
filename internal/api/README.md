@@ -60,6 +60,13 @@ It also implements the `error` interface so handlers can `return api.NewNotFound
 | `NewTooManyRequests(detail)` | 429 |
 | `NewInternalError(detail)` | 500 |
 
+### Deadline handling
+
+`ErrorHandler` maps `context.DeadlineExceeded` — located with `errors.Is`, so wrapped store errors are
+caught — to **503 Service Unavailable** rather than letting it fall through to a 500. A request that
+overran its `middleware.RequestTimeout` budget is an overload worth retrying, not an internal fault,
+and the distinction is what lets callers and the frontend tell "busy" from "broken".
+
 ### `TrustMeta` and `ComputeTrustMeta` (`trust.go`)
 
 `TrustMeta` is included in every successful API response under the `"meta"` key:

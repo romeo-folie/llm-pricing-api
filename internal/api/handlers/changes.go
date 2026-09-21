@@ -72,7 +72,7 @@ func (h *Handlers) ListChanges(c *fiber.Ctx) error {
 		filter.Limit = v
 	}
 
-	changes, total, err := h.store.ListChanges(c.Context(), filter)
+	changes, total, err := h.store.ListChanges(c.UserContext(), filter)
 	if err != nil {
 		return api.NewInternalError("failed to list changes")
 	}
@@ -141,7 +141,7 @@ func (h *Handlers) GetChangesSummary(c *fiber.Ctx) error {
 		filter.Since = &t
 	}
 
-	summary, err := h.store.GetChangesSummary(c.Context(), filter)
+	summary, err := h.store.GetChangesSummary(c.UserContext(), filter)
 	if err != nil {
 		return api.NewInternalError("failed to get changes summary")
 	}

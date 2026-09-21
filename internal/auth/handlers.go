@@ -128,7 +128,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 		return api.NewServiceUnavailable("signup is currently disabled")
 	}
 
-	log := logger.FromContext(c.Context(), h.log)
+	log := logger.FromContext(c.UserContext(), h.log)
 
 	var body requestLinkBody
 	if err := c.BodyParser(&body); err != nil {
@@ -139,7 +139,7 @@ func (h *Handler) RequestLink(c *fiber.Ctx) error {
 		return api.NewBadRequest("invalid email address")
 	}
 
-	ctx := c.Context()
+	ctx := c.UserContext()
 
 	if h.guard != nil {
 		switch err := h.guard.CheckRequestLink(ctx, middleware.RealIP(c), email); {
@@ -221,7 +221,7 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 		return api.NewBadRequest("missing token")
 	}
 
-	ctx := c.Context()
+	ctx := c.UserContext()
 	log := logger.FromContext(ctx, h.log)
 
 	// Hash the raw token before looking it up — the DB stores the hash, not
@@ -293,7 +293,7 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 		return api.NewUnauthorized("not authenticated")
 	}
 
-	ident, err := h.store.GetIdentityByID(c.Context(), session.IdentityID)
+	ident, err := h.store.GetIdentityByID(c.UserContext(), session.IdentityID)
 	if err != nil {
 		if errors.Is(err, signup.ErrNotFound) {
 			return api.NewUnauthorized("identity not found")
@@ -305,10 +305,10 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 	// ErrNotFound → no key yet. Any other error is a real DB failure — log it
 	// and fall through with hasActiveKey=false so the /me response still succeeds,
 	// but surface the error so it's visible in logs.
-	_, keyErr := h.store.GetActiveKey(c.Context(), ident.ID)
+	_, keyErr := h.store.GetActiveKey(c.UserContext(), ident.ID)
 	hasActiveKey := keyErr == nil
 	if keyErr != nil && !errors.Is(keyErr, signup.ErrNotFound) {
-		log := logger.FromContext(c.Context(), h.log)
+		log := logger.FromContext(c.UserContext(), h.log)
 		log.Warn().Err(keyErr).Str("identity_id", ident.ID).Msg("auth: GetActiveKey error in /me — reporting has_active_key=false")
 	}
 
@@ -331,10 +331,10 @@ func (h *Handler) IssueKey(c *fiber.Ctx) error {
 		return api.NewUnauthorized("not authenticated")
 	}
 
-	log := logger.FromContext(c.Context(), h.log)
+	log := logger.FromContext(c.UserContext(), h.log)
 
 	// Verify identity still exists.
-	if _, err := h.store.GetIdentityByID(c.Context(), session.IdentityID); err != nil {
+	if _, err := h.store.GetIdentityByID(c.UserContext(), session.IdentityID); err != nil {
 		if errors.Is(err, signup.ErrNotFound) {
 			return api.NewUnauthorized("identity not found")
 		}
@@ -342,7 +342,7 @@ func (h *Handler) IssueKey(c *fiber.Ctx) error {
 	}
 
 	// Return metadata only if a key already exists — plaintext is shown once on issue.
-	existing, err := h.store.GetActiveKey(c.Context(), session.IdentityID)
+	existing, err := h.store.GetActiveKey(c.UserContext(), session.IdentityID)
 	if err == nil {
 		return c.JSON(fiber.Map{
 			"status":     "existing",
@@ -356,14 +356,14 @@ func (h *Handler) IssueKey(c *fiber.Ctx) error {
 	}
 
 	// Create a new Unkey key.
-	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.UserContext(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
 	if err != nil {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create Unkey key failed")
 		return api.NewInternalError("could not issue API key")
 	}
 
 	// Persist the key record.
-	if _, err := h.store.InsertKey(c.Context(), session.IdentityID, providerKeyID); err != nil {
+	if _, err := h.store.InsertKey(c.UserContext(), session.IdentityID, providerKeyID); err != nil {
 		// Clean up the dangling Unkey key — use a background context so
 		// request cancellation doesn't silently skip the revocation.
 		_ = h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), providerKeyID)
@@ -388,10 +388,10 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 		return api.NewUnauthorized("not authenticated")
 	}
 
-	log := logger.FromContext(c.Context(), h.log)
+	log := logger.FromContext(c.UserContext(), h.log)
 
 	if h.guard != nil {
-		if err := h.guard.CheckRegenerateKey(c.Context(), session.IdentityID); err != nil {
+		if err := h.guard.CheckRegenerateKey(c.UserContext(), session.IdentityID); err != nil {
 			if errors.Is(err, signup.ErrRegenerateCooldown) {
 				return api.NewTooManyRequests(err.Error())
 			}
@@ -400,7 +400,7 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 	}
 
 	// Verify identity still exists.
-	if _, err := h.store.GetIdentityByID(c.Context(), session.IdentityID); err != nil {
+	if _, err := h.store.GetIdentityByID(c.UserContext(), session.IdentityID); err != nil {
 		if errors.Is(err, signup.ErrNotFound) {
 			return api.NewUnauthorized("identity not found")
 		}
@@ -409,7 +409,7 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 
 	// Fetch existing key (may not exist for first-time callers hitting regenerate).
 	var oldProviderKeyID string
-	existing, err := h.store.GetActiveKey(c.Context(), session.IdentityID)
+	existing, err := h.store.GetActiveKey(c.UserContext(), session.IdentityID)
 	if err != nil && !errors.Is(err, signup.ErrNotFound) {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: get active key failed (regenerate)")
 		return api.NewInternalError("could not fetch existing key")
@@ -421,14 +421,14 @@ func (h *Handler) RegenerateKey(c *fiber.Ctx) error {
 	// Safe order: CREATE new key first, THEN revoke old one.
 	// Reversing this risks leaving the user with no key if CreateKey fails after
 	// the old key is already revoked.
-	providerKeyID, plaintext, err := h.issuer.CreateKey(c.Context(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
+	providerKeyID, plaintext, err := h.issuer.CreateKey(c.UserContext(), "", session.IdentityID) // apiID omitted — issuer uses its stored value
 	if err != nil {
 		log.Error().Err(err).Str("identity_id", session.IdentityID).Msg("auth: create replacement key failed")
 		return api.NewInternalError("could not issue replacement key")
 	}
 
 	// Atomically revoke old DB record and insert new one.
-	if _, err := h.store.RevokeAndInsertKey(c.Context(), session.IdentityID, oldProviderKeyID, providerKeyID); err != nil {
+	if _, err := h.store.RevokeAndInsertKey(c.UserContext(), session.IdentityID, oldProviderKeyID, providerKeyID); err != nil {
 		// Clean up the newly created Unkey key — use a background context so
 		// cancellation of the request context doesn't silently skip the revocation.
 		_ = h.issuer.RevokeKey(context.WithoutCancel(c.UserContext()), providerKeyID)

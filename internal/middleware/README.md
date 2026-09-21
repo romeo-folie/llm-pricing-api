@@ -8,6 +8,8 @@ Fiber middleware for the LLM Pricing API. This package provides authentication, 
 | --- | --- |
 | `auth.go` | Unkey API-key authentication + tier extraction + Redis caching of verification results |
 | `ratelimit.go` | Per-key, per-calendar-day rate limiting backed by Redis INCR |
+| `timeout.go` | Per-request deadline on `c.UserContext()` for bounded dependency work; excludes `/v1/stream/*` |
+| `timeout_test.go` | Unit tests for `timeout.go` — deadline installed, streaming routes exempt, context cancelled on expiry |
 | `auth_test.go` | Unit tests for `auth.go` — covers all acceptance-criteria cases |
 | `ratelimit_test.go` | Unit tests for `ratelimit.go` — covers all tier limits and Redis error paths |
 | `cache.go` | Response caching middleware (see Issue #16) |
@@ -139,6 +141,46 @@ When the limit is exceeded:
 ```
 
 ---
+
+## Request Timeout (`timeout.go`)
+
+### Overview
+
+`RequestTimeout(timeout)` installs a deadline on `c.UserContext()` for every request in the group it
+is applied to. Database and Redis work is then released when a request overruns, instead of pinning a
+pooled connection indefinitely. This is the fix for the four-day wedge in issue #183: all 20 pooled
+connections were checked out, later requests blocked forever on pool acquire, and nothing cancelled
+them.
+
+### Why `UserContext` and not `Context`
+
+The deadline only cancels work that is handed a derived context. `c.Context()` is fasthttp's request
+context and carries no deadline — in fasthttp v1.51 it is cancelled only on server shutdown — so
+handlers and middleware must pass `c.UserContext()` to store and Redis calls. `otelfiber` also
+installs the request span on `UserContext`, so the switch additionally restores `trace_id`
+correlation in database spans and request logs, which `c.Context()` silently dropped.
+
+### Exempt routes
+
+`/v1/stream/*` is deliberately excluded. An SSE connection is expected to outlive any request
+deadline, and cancelling its context would sever a live feed and risk leaking the per-key connection
+slot the handler releases on exit.
+
+### Failure surface
+
+A request that hits the deadline returns **503 Service Unavailable** as an RFC 7807 Problem Detail —
+`api.ErrorHandler` maps `context.DeadlineExceeded` to `NewServiceUnavailable` rather than letting it
+fall through to an opaque 500. An overload is a retryable capacity condition, not a bug report.
+
+### Design notes
+
+- **No goroutine.** The middleware narrows the existing context and lets the handler chain unwind
+  normally. A handler that ignores its context is therefore still not interrupted — but every pgx
+  pool acquire and query respects it, which is what actually frees the connection.
+- **Registered first** in the `/v1`, `/auth` and `/admin` groups so every later stage inherits the
+  deadline. All three reach the same database pool, so an unbounded request on any of them can
+  exhaust it.
+- **`defer cancel()`** runs when the chain unwinds, releasing the timer.
 
 ## Cache Middleware
 

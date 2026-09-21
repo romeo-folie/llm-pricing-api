@@ -57,7 +57,7 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)
 		windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
 
-		count, err := redisClient.Incr(c.Context(), windowKey).Result()
+		count, err := redisClient.Incr(c.UserContext(), windowKey).Result()
 		if err != nil {
 			// Redis hiccup: let the request through.
 			return c.Next()
@@ -66,12 +66,12 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 		if count == 1 {
 			// Use ExpireAt to align the key lifetime with the fixed window boundary,
 			// rather than Expire which could keep keys around for almost an extra window.
-			if expErr := redisClient.ExpireAt(c.Context(), windowKey, windowEnd).Err(); expErr != nil {
+			if expErr := redisClient.ExpireAt(c.UserContext(), windowKey, windowEnd).Err(); expErr != nil {
 				// Key has no TTL — will leak. Log but don't block the request.
-				l := logger.FromContext(c.Context(), fallback)
+				l := logger.FromContext(c.UserContext(), fallback)
 				l.Error().Err(expErr).Str("key", windowKey[:8]+"...").Msg("ipratelimit: ExpireAt failed — key may have no TTL")
 				// Belt-and-suspenders: fall back to relative TTL.
-				_ = redisClient.Expire(c.Context(), windowKey, ipRateLimitWindow).Err()
+				_ = redisClient.Expire(c.UserContext(), windowKey, ipRateLimitWindow).Err()
 			}
 		}
 
