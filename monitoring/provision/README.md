@@ -50,7 +50,7 @@ Everything lives in a folder titled **`LLM Pricing`** with the stable uid
 | Folder | `llm-pricing` / `LLM Pricing` | container for everything below |
 | Dashboards | `llm-api-overview`, `llm-data-pipeline`, `llm-infrastructure`, `llm-usage-abuse` | imported with `overwrite: true` |
 | Contact point | `llm-pricing-email` | type `email`, `addresses: romeofolie1@gmail.com` |
-| Alert rules | six rules in group `llm-pricing-api-alerts` | one per entry in `../alerts/rules.yaml`, in the `llm-pricing` folder |
+| Alert rules | eight rules in group `llm-pricing-api-alerts` | one per entry in `../alerts/rules.yaml`, in the `llm-pricing` folder |
 | Notification policy | root receiver `llm-pricing-email` | existing routes are preserved verbatim |
 
 ### Datasource injection

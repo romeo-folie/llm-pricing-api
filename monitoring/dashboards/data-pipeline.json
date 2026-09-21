@@ -23,6 +23,28 @@
       "title": "Webhook deliveries by status",
       "type": "timeseries",
       "targets": [{ "expr": "sum(rate(llm_webhook_deliveries_total[5m])) by (status)" }]
+    },
+    {
+      "id": 4,
+      "title": "Time since last successful verification by source",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - llm_source_last_success_timestamp_seconds",
+          "legendFormat": "{{source}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Stale price ratio by source",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "llm_prices_stale_ratio",
+          "legendFormat": "{{source}}"
+        }
+      ]
     }
   ]
 }

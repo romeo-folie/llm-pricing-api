@@ -22,6 +22,15 @@ import (
 	"llm-pricing-api/internal/worker"
 )
 
+// Freshness telemetry runs on its own ticker, independently of the scrape
+// pipeline, so the gauges keep advancing even when a scraper stops running.
+// freshnessSampleTimeout bounds a single query so slow samples cannot pile up
+// on the ticker.
+const (
+	freshnessSampleInterval = 60 * time.Second
+	freshnessSampleTimeout  = 10 * time.Second
+)
+
 // parseLogLevel converts a LOG_LEVEL string to a zerolog.Level.
 // Unknown or empty strings default to InfoLevel.
 func parseLogLevel(s string) zerolog.Level {
@@ -47,6 +56,17 @@ func asynqOptFromURL(rawURL string) asynq.RedisClientOpt {
 		Username: opts.Username,
 		Password: opts.Password,
 		DB:       opts.DB,
+	}
+}
+
+// sampleFreshness runs one freshness sample under a bounded deadline. A failure
+// is logged, never returned: freshness telemetry must not take the data pipeline
+// down with it.
+func sampleFreshness(ctx context.Context, log zerolog.Logger, s *worker.FreshnessSampler) {
+	sampleCtx, cancel := context.WithTimeout(ctx, freshnessSampleTimeout)
+	defer cancel()
+	if err := s.Sample(sampleCtx); err != nil {
+		log.Warn().Err(err).Msg("freshness sample failed")
 	}
 }
 
@@ -344,6 +364,34 @@ func run() error {
 		}()
 	}
 
+	// Publish data-freshness gauges on a ticker, independently of the scrape
+	// pipeline. Updating them only when a scrape succeeded would let a scraper
+	// that stopped running freeze the gauges at their last good values, so
+	// time() - llm_source_last_success_timestamp_seconds would stay small and the
+	// staleness alert could never fire — the exact outage it exists to catch.
+	//
+	// The sampler is seeded immediately (so the gauges are populated before the
+	// first tick) and stopped on shutdown, before the metrics listener, so its
+	// final published sample is still scrapeable during the drain.
+	sampler := worker.NewFreshnessSampler(db, worker.DefaultStaleAfter)
+	samplerCtx, stopSampler := context.WithCancel(context.Background())
+	defer stopSampler()
+	samplerDone := make(chan struct{})
+	go func() {
+		defer close(samplerDone)
+		ticker := time.NewTicker(freshnessSampleInterval)
+		defer ticker.Stop()
+		sampleFreshness(samplerCtx, log, sampler)
+		for {
+			select {
+			case <-samplerCtx.Done():
+				return
+			case <-ticker.C:
+				sampleFreshness(samplerCtx, log, sampler)
+			}
+		}
+	}()
+
 	// Block until SIGINT/SIGTERM or a health server bind failure.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -373,9 +421,10 @@ func run() error {
 	}
 
 	// One budget covers the whole graceful shutdown — health, the asynq drain,
-	// and the metrics listener — so a stuck component cannot push the process
-	// past Railway's SIGKILL window. Each phase returns as soon as it is done;
-	// the deadline only bites when something is genuinely hung.
+	// the freshness sampler, and the metrics listener — so a stuck component
+	// cannot push the process past Railway's SIGKILL window. Each phase returns
+	// as soon as it is done; the deadline only bites when something is genuinely
+	// hung.
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelShutdown()
 
@@ -393,6 +442,17 @@ func run() error {
 	case <-shutdownCtx.Done():
 		log.Warn().Msg("worker shutdown timed out — forcing exit")
 		return fmt.Errorf("worker shutdown timed out")
+	}
+
+	// Stop the freshness sampler inside the same budget, before the metrics
+	// listener: samples already published stay scrapeable while the endpoint
+	// drains, and stopping here keeps the sampler from issuing a fresh query
+	// against a pool that is about to be closed.
+	stopSampler()
+	select {
+	case <-samplerDone:
+	case <-shutdownCtx.Done():
+		log.Warn().Msg("freshness sampler did not stop before shutdown deadline")
 	}
 
 	// Stop the metrics listener last, inside the same budget: a scrape during
