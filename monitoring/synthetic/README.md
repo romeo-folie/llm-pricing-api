@@ -54,6 +54,26 @@ python3 monitoring/synthetic/provision_checks.py --probe London
 | `GRAFANA_SM_ACCESS_TOKEN` | SM access token (Synthetic Monitoring app → Config → Access tokens) |
 | `GRAFANA_SM_STACK_ID` | Hosted-graphs stack id |
 
+Two API details worth knowing, both learned the hard way:
+
+- The Grafana Cloud UI shows the API host **without a scheme**. The client
+  tolerates either, but `.env` is easiest to read with `https://` present.
+- The probe collection route is **`/api/v1/probe`** (singular). `/api/v1/probes`
+  returns a Go mux `404 page not found`, which looks like a wrong token.
+
+## Verified
+
+Configured and exercised end to end on 2026-09-21:
+
+- Check `llm-pricing-api-health` created; `probe_success{job="llm-pricing-api-health",probe="London"}`
+  = `1` in the hosted Prometheus.
+- `LLMAPIHealthProbeFailing` provisioned into Grafana Cloud.
+- Live-fire: a temporary check pointed at a 404 path plus a temporary rule
+  (`min_over_time(probe_success{job="llm-pricing-livefire"}[5m]) < 1`) reached
+  **firing** and dispatched a notification through the `llm-pricing-email`
+  contact point. Both temporary artifacts were then deleted; only the health
+  check remains.
+
 ## Ordering when setting this up
 
 1. Run `provision_checks.py` to create the check.
