@@ -2,120 +2,119 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/net/html"
 )
 
-// minimalPricingHTML is a trimmed but structurally faithful replica of the
-// OpenAI pricing page.  It contains:
-//   - A "Text tokens" section with a standard two-column (Input/Output) table
-//   - A "Text tokens" section with a short/long context table (colSpan headers)
-//   - A "Fine-tuning" section that must be skipped (training cost + inference)
-//   - An "Image tokens" section that must be skipped (non-text modality)
-const minimalPricingHTML = `<!DOCTYPE html><html><body>
-<!-- Text tokens section – simple table -->
-<span class="heading">Text tokens</span>
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Input</th>
-      <th>Cached input</th>
-      <th>Output</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>gpt-4.1</td><td>$2.00</td><td>$0.50</td><td>$8.00</td></tr>
-    <tr><td>gpt-4.1-mini</td><td>$0.40</td><td>$0.10</td><td>$1.60</td></tr>
-    <tr><td>gpt-4.1-nano</td><td>$0.10</td><td>$0.025</td><td>$0.40</td></tr>
-    <tr><td>no-price-model</td><td>-</td><td>-</td><td>-</td></tr>
-  </tbody>
-</table>
+// --- Fixtures -------------------------------------------------------------
+//
+// The live page is an Astro site: each pricing component is an <astro-island>
+// whose `props` attribute holds serialized JSON, and whose children are the
+// server-rendered table markup. These fixtures reproduce that shape — including
+// the &quot; character-reference encoding the real page uses — without the
+// hundreds of kilobytes of collapsed table markup.
 
-<!-- Text tokens section – short/long context (colSpan headers) -->
-<span class="heading">Text tokens</span>
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th colspan="3">Short context</th>
-      <th colspan="3">Long context</th>
-    </tr>
-    <tr>
-      <th></th>
-      <th>Input</th>
-      <th>Cached input</th>
-      <th>Output</th>
-      <th>Input</th>
-      <th>Cached input</th>
-      <th>Output</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>gpt-5.4</td><td>$1.25</td><td>$0.13</td><td>$7.50</td><td>-</td><td>-</td><td>-</td></tr>
-    <tr><td>gpt-5.4-pro</td><td>$15.00</td><td>-</td><td>$90.00</td><td>-</td><td>-</td><td>-</td></tr>
-  </tbody>
-</table>
+// island renders an <astro-island> with component-export set and the given
+// serialized props JSON, character-reference encoded the way the live page
+// encodes it.
+func island(component, propsJSON string) string {
+	escaped := strings.NewReplacer(`"`, "&quot;").Replace(propsJSON)
+	return `<astro-island component-export="` + component + `" props="` + escaped + `">` +
+		`<div>server-rendered collapsed table</div></astro-island>`
+}
 
-<!-- Fine-tuning section – must be skipped -->
-<span class="heading">Fine-tuning</span>
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Training</th>
-      <th>Input</th>
-      <th>Output</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>gpt-4.1-2025-04-14</td><td>$25.00</td><td>$1.50</td><td>$6.00</td></tr>
-  </tbody>
-</table>
+// propsStandard mirrors the standard-tier TextTokenPricingTables island. Rows
+// vary in arity because the cache-write column is omitted for some models; the
+// "-" and "Free" rows must be skipped.
+const propsStandard = `{"tier":[0,"standard"],"collapsedLatestRowCount":[0,4],"rows":[1,[` +
+	`[1,[[0,"gpt-6-astra"],[0,10],[0,1],[0,12.5],[0,50]]],` +
+	`[1,[[0,"gpt-4o"],[0,2.5],[0,1.25],[0,10]]],` +
+	`[1,[[0,"gpt-4.1"],[0,2],[0,0.5],[0,8]]],` +
+	`[1,[[0,"gpt-5.5 (<272K context length)"],[0,5],[0,0.5],[0,"-"],[0,30]]],` +
+	`[1,[[0,"no-price-model"],[0,"-"],[0,"-"],[0,"-"]]],` +
+	`[1,[[0,"free-model"],[0,"Free"],[0,"-"],[0,"-"]]],` +
+	`[1,[[0,"truncated-row"],[0,5]]]` +
+	`]]}`
 
-<!-- Image tokens section – must be skipped -->
-<span class="heading">Image tokens</span>
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Input</th>
-      <th>Cached Input</th>
-      <th>Output</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>gpt-image-1</td><td>$8.00</td><td>$2.00</td><td>$32.00</td></tr>
-  </tbody>
-</table>
-</body></html>`
+// propsBatch is the same component on a non-standard tier; it must be ignored.
+const propsBatch = `{"tier":[0,"batch"],"rows":[1,[` +
+	`[1,[[0,"gpt-6-astra"],[0,5],[0,0.5],[0,6.25],[0,25]]]` +
+	`]]}`
 
-func TestFetch(t *testing.T) {
+// propsDaybreak uses the model-per-group layout with short/long context columns.
+const propsDaybreak = `{"headings":[1,[[0,"Model"],[0,"Short context input"],[0,"Short context cached input"],[0,"Short context cache writes"],[0,"Short context output"],[0,"Long context input"],[0,"Long context cached input"],[0,"Long context cache writes"],[0,"Long context output"]]],"groups":[1,[` +
+	`[0,{"model":[0,"gpt-5.6-sol"],"rows":[1,[[1,[[0,4],[0,0.4],[0,5],[0,20],[0,8],[0,0.8],[0,10],[0,30]]]]]}],` +
+	`[0,{"model":[0,"gpt-5.6-cyber"],"rows":[1,[[1,[[0,12.5],[0,1.25],[0,15.625],[0,75],[0,"-"],[0,"-"],[0,"-"],[0,"-"]]]]]}]` +
+	`]]}`
+
+// propsSpecialized uses the category-per-group layout; the model name is the
+// first value of each row and the embedding row has no output price.
+const propsSpecialized = `{"headings":[1,[[0,"Category"],[0,"Model"],[0,"Input"],[0,"Cached input"],[0,"Output"]]],"groups":[1,[` +
+	`[0,{"model":[0,"ChatGPT"],"rows":[1,[[1,[[0,"chat-latest"],[0,5],[0,0.5],[0,30]]]]]}],` +
+	`[0,{"model":[0,"Embedding"],"rows":[1,[[1,[[0,"text-embedding-3-small"],[0,0.02],[0,"-"],[0,"-"]]]]]}]` +
+	`]]}`
+
+// propsImage is a grouped table whose section is not in the per-token allowlist.
+const propsImage = `{"headings":[1,[[0,"Model"],[0,"Modality"],[0,"Input"],[0,"Cached input"],[0,"Output"]]],"groups":[1,[` +
+	`[0,{"model":[0,"gpt-image-2.5"],"rows":[1,[[1,[[0,"Image"],[0,8],[0,2],[0,30]]]]]}]` +
+	`]]}`
+
+// propsFinetuning uses a component this scraper does not handle at all.
+const propsFinetuning = `{"headings":[1,[[0,"Model"],[0,"Training"],[0,"Input"],[0,"Cached input"],[0,"Output"]]],"rows":[1,[` +
+	`[1,[[0,"o4-mini-2025-04-16"],[0,"$100.00 / hour"],[0,4],[0,1],[0,16]]]` +
+	`]]}`
+
+// pricingPage assembles the fixture sections in document order.
+func pricingPage() string {
+	return `<!DOCTYPE html><html><body>` +
+		`<h2 id="text-tokens"><p>Flagship models</p></h2>` +
+		`<div class="pricing-switcher-subheading">Our latest models</div>` +
+		island(componentTextTokenPricing, propsStandard) +
+		island(componentTextTokenPricing, propsBatch) +
+		`<div class="pricing-switcher-subheading">Our latest Daybreak models.</div>` +
+		island(componentGroupedPricing, propsDaybreak) +
+		`<h2>Image generation models</h2>` +
+		island(componentGroupedPricing, propsImage) +
+		`<h2>Specialized models</h2>` +
+		island(componentGroupedPricing, propsSpecialized) +
+		`<h2>Finetuning</h2>` +
+		island("PricingTable", propsFinetuning) +
+		`</body></html>`
+}
+
+func serve(t *testing.T, body string) *Scraper {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(minimalPricingHTML))
+		_, _ = w.Write([]byte(body))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
+	return &Scraper{client: srv.Client(), url: srv.URL}
+}
 
-	s := &Scraper{client: srv.Client(), url: srv.URL}
+// --- Fetch ----------------------------------------------------------------
+
+func TestFetch(t *testing.T) {
+	s := serve(t, pricingPage())
+
 	models, err := s.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
-	// Expect: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-5.4, gpt-5.4-pro
-	// (no-price-model skipped; fine-tuning and image sections skipped)
 	want := map[string]struct{}{
-		"openai/gpt-4.1":      {},
-		"openai/gpt-4.1-mini": {},
-		"openai/gpt-4.1-nano": {},
-		"openai/gpt-5.4":      {},
-		"openai/gpt-5.4-pro":  {},
+		"openai/gpt-6-astra":   {},
+		"openai/gpt-4o":        {},
+		"openai/gpt-4.1":       {},
+		"openai/gpt-5.5":       {}, // parenthetical context annotation stripped
+		"openai/gpt-5.6-sol":   {},
+		"openai/gpt-5.6-cyber": {},
+		"openai/chat-latest":   {},
 	}
 
 	if len(models) != len(want) {
@@ -128,7 +127,6 @@ func TestFetch(t *testing.T) {
 	got := make(map[string]struct{}, len(models))
 	for _, m := range models {
 		got[m.Slug] = struct{}{}
-
 		if _, ok := want[m.Slug]; !ok {
 			t.Errorf("unexpected model slug: %s", m.Slug)
 		}
@@ -159,68 +157,99 @@ func TestFetch(t *testing.T) {
 	}
 }
 
-func TestFetch_PriceConversion(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(minimalPricingHTML))
-	}))
-	defer srv.Close()
+// TestFetch_ExcludedSources pins everything the scraper must *not* publish:
+// non-standard tiers, unit-priced sections, unhandled components and rows
+// without a usable price.
+func TestFetch_ExcludedSources(t *testing.T) {
+	s := serve(t, pricingPage())
 
-	s := &Scraper{client: srv.Client(), url: srv.URL}
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+
+	excluded := []string{
+		"openai/no-price-model",                 // "-" input
+		"openai/free-model",                     // "Free" input
+		"openai/gpt-image-2.5",                  // image section
+		"openai/text-embedding-3-small",         // no output price
+		"openai/o4-mini-2025-04-16",             // unhandled component
+		"openai/truncated-row",                  // name + input only; output would be misread
+		"openai/gpt-5.5-(<272k-context-length)", // annotation must not leak into the slug
+	}
+	for _, m := range models {
+		for _, bad := range excluded {
+			if m.Slug == bad {
+				t.Errorf("model %s must not be published", bad)
+			}
+		}
+	}
+
+	// The batch tier prices gpt-6-astra at 5/25; standard is 10/50 and must win.
+	for _, m := range models {
+		if m.Slug != "openai/gpt-6-astra" {
+			continue
+		}
+		if got, want := m.InputCostPerToken, 10.0/1_000_000; got != want {
+			t.Errorf("gpt-6-astra input: got %v, want standard-tier %v", got, want)
+		}
+		if got, want := m.OutputCostPerToken, 50.0/1_000_000; got != want {
+			t.Errorf("gpt-6-astra output: got %v, want standard-tier %v", got, want)
+		}
+	}
+}
+
+func TestFetch_PriceConversion(t *testing.T) {
+	s := serve(t, pricingPage())
+
 	models, err := s.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var found bool
+	cases := map[string]struct{ input, output float64 }{
+		"openai/gpt-4o":      {2.5 / 1_000_000, 10.0 / 1_000_000},
+		"openai/gpt-6-astra": {10.0 / 1_000_000, 50.0 / 1_000_000},
+		"openai/gpt-5.6-sol": {4.0 / 1_000_000, 20.0 / 1_000_000}, // short context
+		"openai/chat-latest": {5.0 / 1_000_000, 30.0 / 1_000_000}, // category layout
+		"openai/gpt-4.1":     {2.0 / 1_000_000, 8.0 / 1_000_000},  // 3-price row
+		"openai/gpt-5.5":     {5.0 / 1_000_000, 30.0 / 1_000_000}, // "-" cache write column
+	}
+
+	got := make(map[string]scraperPrices, len(models))
 	for _, m := range models {
-		if m.Slug != "openai/gpt-4.1" {
+		got[m.Slug] = scraperPrices{m.InputCostPerToken, m.OutputCostPerToken}
+	}
+
+	for slug, want := range cases {
+		p, ok := got[slug]
+		if !ok {
+			t.Errorf("missing expected model: %s", slug)
 			continue
 		}
-		found = true
-		// $2.00 / 1M = 0.000002
-		const wantInput = 2.0 / 1_000_000
-		if m.InputCostPerToken != wantInput {
-			t.Errorf("gpt-4.1 InputCostPerToken: got %v, want %v", m.InputCostPerToken, wantInput)
+		if p.input != want.input || p.output != want.output {
+			t.Errorf("%s: got (%v, %v), want (%v, %v)", slug, p.input, p.output, want.input, want.output)
 		}
-		// $8.00 / 1M = 0.000008
-		const wantOutput = 8.0 / 1_000_000
-		if m.OutputCostPerToken != wantOutput {
-			t.Errorf("gpt-4.1 OutputCostPerToken: got %v, want %v", m.OutputCostPerToken, wantOutput)
-		}
-	}
-	if !found {
-		t.Errorf("expected model openai/gpt-4.1 not found in Fetch result; got %d models", len(models))
 	}
 }
 
+type scraperPrices struct{ input, output float64 }
+
 func TestFetch_Deduplication(t *testing.T) {
-	// The page can have duplicate tables (e.g. flex + standard pricing).
-	// The first occurrence of each model wins; subsequent duplicates are dropped.
-	html := `<!DOCTYPE html><html><body>
-<span class="heading">Text tokens</span>
-<table>
-  <thead><tr><th></th><th>Input</th><th>Output</th></tr></thead>
-  <tbody>
-    <tr><td>gpt-4o</td><td>$2.50</td><td>$10.00</td></tr>
-  </tbody>
-</table>
-<span class="heading">Text tokens</span>
-<table>
-  <thead><tr><th></th><th>Input</th><th>Output</th></tr></thead>
-  <tbody>
-    <tr><td>gpt-4o</td><td>$5.00</td><td>$20.00</td></tr>
-  </tbody>
-</table>
-</body></html>`
+	// The same model can appear in more than one text table (standard and
+	// Daybreak). The first occurrence wins.
+	standard := `{"tier":[0,"standard"],"rows":[1,[[1,[[0,"gpt-4o"],[0,2.5],[0,10]]]]]}`
+	daybreak := `{"headings":[1,[[0,"Model"],[0,"Short context input"],[0,"Short context output"]]],"groups":[1,[` +
+		`[0,{"model":[0,"gpt-4o"],"rows":[1,[[1,[[0,9.99],[0,99.9]]]]]}]` +
+		`]]}`
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(html))
-	}))
-	defer srv.Close()
+	page := `<!DOCTYPE html><html><body>` +
+		island(componentTextTokenPricing, standard) +
+		`<div class="pricing-switcher-subheading">Our latest Daybreak models.</div>` +
+		island(componentGroupedPricing, daybreak) +
+		`</body></html>`
 
-	s := &Scraper{client: srv.Client(), url: srv.URL}
+	s := serve(t, page)
 	models, err := s.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -228,10 +257,94 @@ func TestFetch_Deduplication(t *testing.T) {
 	if len(models) != 1 {
 		t.Fatalf("want 1 deduplicated model, got %d", len(models))
 	}
-	// First occurrence ($2.50 input) wins.
-	const wantInput = 2.50 / 1_000_000
-	if models[0].InputCostPerToken != wantInput {
-		t.Errorf("want first-occurrence price %v, got %v", wantInput, models[0].InputCostPerToken)
+	if want := 2.5 / 1_000_000; models[0].InputCostPerToken != want {
+		t.Errorf("first occurrence must win: got input %v, want %v", models[0].InputCostPerToken, want)
+	}
+}
+
+// TestFetch_OnlyFirstPanelPerSection pins the tier-panel rule: a section with a
+// service-tier switcher emits one grouped island per panel, standard first, and
+// a fast-mode-only model must never be published as standard pricing.
+func TestFetch_OnlyFirstPanelPerSection(t *testing.T) {
+	standard := `{"headings":[1,[[0,"Category"],[0,"Model"],[0,"Input"],[0,"Output"]]],"groups":[1,[` +
+		`[0,{"model":[0,"Codex"],"rows":[1,[[1,[[0,"gpt-5.3-codex"],[0,1.75],[0,14]]]]]}]` +
+		`]]}`
+	fast := `{"headings":[1,[[0,"Category"],[0,"Model"],[0,"Input"],[0,"Output"]]],"groups":[1,[` +
+		`[0,{"model":[0,"Codex"],"rows":[1,[[1,[[0,"gpt-5.3-codex"],[0,3.5],[0,28]]]]]}],` +
+		`[0,{"model":[0,"Codex"],"rows":[1,[[1,[[0,"gpt-5.3-fast-only"],[0,9],[0,90]]]]]}]` +
+		`]]}`
+
+	page := `<!DOCTYPE html><html><body><h2>Specialized models</h2>` +
+		island(componentGroupedPricing, standard) +
+		island(componentGroupedPricing, fast) +
+		`</body></html>`
+
+	s := serve(t, page)
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(models) != 1 {
+		for _, m := range models {
+			t.Logf("  got: %s", m.Slug)
+		}
+		t.Fatalf("got %d models, want 1", len(models))
+	}
+	if models[0].Slug != "openai/gpt-5.3-codex" {
+		t.Errorf("got slug %s, want openai/gpt-5.3-codex", models[0].Slug)
+	}
+	if want := 1.75 / 1_000_000; models[0].InputCostPerToken != want {
+		t.Errorf("standard panel must win: got input %v, want %v", models[0].InputCostPerToken, want)
+	}
+}
+
+// TestFetch_BatchOnlyPageFails verifies that a page carrying only non-standard
+// tiers surfaces as an error rather than a silent empty success — the failure
+// mode that let #209 go unnoticed.
+func TestFetch_BatchOnlyPageFails(t *testing.T) {
+	page := `<!DOCTYPE html><html><body>` +
+		island(componentTextTokenPricing, propsBatch) +
+		`</body></html>`
+
+	s := serve(t, page)
+	_, err := s.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected error when only non-standard tiers are present, got nil")
+	}
+}
+
+// TestFetch_TextTokenIslandWithoutTierFails verifies that an island whose tier
+// prop disappeared is skipped loudly rather than silently treated as standard.
+func TestFetch_TextTokenIslandWithoutTierFails(t *testing.T) {
+	noTier := `{"rows":[1,[[1,[[0,"gpt-4o"],[0,2.5],[0,10]]]]]}`
+
+	s := serve(t, `<!DOCTYPE html><html><body>`+island(componentTextTokenPricing, noTier)+`</body></html>`)
+	_, err := s.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected error when the tier prop is missing, got nil")
+	}
+}
+
+// TestFetch_SectionWithoutTrailingPeriod verifies section matching is
+// punctuation-tolerant: the live heading ends in ".", but it must still match
+// if upstream drops it.
+func TestFetch_SectionWithoutTrailingPeriod(t *testing.T) {
+	daybreak := `{"headings":[1,[[0,"Model"],[0,"Short context input"],[0,"Short context output"]]],"groups":[1,[` +
+		`[0,{"model":[0,"gpt-5.6-sol"],"rows":[1,[[1,[[0,4],[0,20]]]]]}]` +
+		`]]}`
+
+	page := `<!DOCTYPE html><html><body>` +
+		`<div class="pricing-switcher-subheading">Our latest Daybreak models</div>` +
+		island(componentGroupedPricing, daybreak) +
+		`</body></html>`
+
+	s := serve(t, page)
+	models, err := s.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(models) != 1 || models[0].Slug != "openai/gpt-5.6-sol" {
+		t.Fatalf("got %d models (%v), want [openai/gpt-5.6-sol]", len(models), models)
 	}
 }
 
@@ -253,132 +366,16 @@ func TestFetch_NonOKStatus(t *testing.T) {
 }
 
 func TestFetch_EmptyHTML(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`<!DOCTYPE html><html><body></body></html>`))
-	}))
-	defer srv.Close()
+	s := serve(t, `<!DOCTYPE html><html><body></body></html>`)
 
-	s := &Scraper{client: srv.Client(), url: srv.URL}
 	_, err := s.Fetch(context.Background())
 	if err == nil {
 		t.Fatal("expected error when no models found, got nil")
 	}
 }
 
-func TestParsePricePerMillion(t *testing.T) {
-	const eps = 1e-16 // tolerance for IEEE-754 rounding in division
-	cases := []struct {
-		input   string
-		wantVal float64
-		wantErr bool
-	}{
-		{"$1.25", 1.25 / 1_000_000, false},
-		{"$100.00", 100.0 / 1_000_000, false},
-		{"$0.025", 0.025 / 1_000_000, false},
-		{"-", 0, true},
-		{"—", 0, true},
-		{"", 0, true},
-		{"$0.00", 0, true}, // zero price rejected
-		{"not-a-number", 0, true},
-		{"$100.00 / hour", 100.0 / 1_000_000, false}, // strip trailing text
-	}
-
-	abs := func(x float64) float64 {
-		if x < 0 {
-			return -x
-		}
-		return x
-	}
-
-	for _, tc := range cases {
-		v, err := parsePricePerMillion(tc.input)
-		if (err != nil) != tc.wantErr {
-			t.Errorf("parsePricePerMillion(%q): wantErr=%v, got err=%v", tc.input, tc.wantErr, err)
-			continue
-		}
-		if !tc.wantErr && abs(v-tc.wantVal) > eps {
-			t.Errorf("parsePricePerMillion(%q): got %v, want %v", tc.input, v, tc.wantVal)
-		}
-	}
-}
-
-func TestNormalizeSlug(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"gpt-4.1", "gpt-4.1"},
-		{"GPT Image 1.5", "gpt-image-1.5"},
-		{"gpt-4o", "gpt-4o"},
-		{"text-embedding-3-small", "text-embedding-3-small"},
-	}
-	for _, tc := range cases {
-		if got := normalizeSlug(tc.in); got != tc.want {
-			t.Errorf("normalizeSlug(%q): got %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-// TestExtractHeaders_ColSpanInLastRow verifies that colSpan attributes on cells
-// in the *last* header row are expanded correctly.  This exercises the path
-// inside extractHeaders that expands cells with colspan > 1 — a path that the
-// top-level Fetch tests don't reach because their colSpan attributes are on the
-// *first* header row (the group-label row), not the last one.
-func TestExtractHeaders_ColSpanInLastRow(t *testing.T) {
-	const raw = `<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th colspan="2">Context window</th>
-      <th colspan="2">Pricing</th>
-    </tr>
-    <tr>
-      <th></th>
-      <th colspan="2">Context window</th>
-      <th>Input</th>
-      <th>Output</th>
-    </tr>
-  </thead>
-</table>`
-	doc, err := html.Parse(strings.NewReader(raw))
-	if err != nil {
-		t.Fatalf("html.Parse: %v", err)
-	}
-	// Find the <thead> element.
-	var thead *html.Node
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if thead != nil {
-			return
-		}
-		if n.Type == html.ElementNode && n.Data == "thead" {
-			thead = n
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	if thead == nil {
-		t.Fatal("could not locate <thead>")
-	}
-
-	got := extractHeaders(thead)
-	// Last header row: colspan=2 "Context window" expands to 2 × "Context window",
-	// then "Input", "Output".  The first <th> (model name) is skipped.
-	want := []string{"Context window", "Context window", "Input", "Output"}
-	if len(got) != len(want) {
-		t.Fatalf("extractHeaders: got %v (len %d), want %v (len %d)", got, len(got), want, len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("extractHeaders[%d]: got %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
 func TestFetch_ContextCancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Block until the client cancels.
 		<-r.Context().Done()
 	}))
 	defer srv.Close()
@@ -390,5 +387,166 @@ func TestFetch_ContextCancellation(t *testing.T) {
 	_, err := s.Fetch(ctx)
 	if err == nil {
 		t.Fatal("expected error on context cancellation, got nil")
+	}
+}
+
+// --- Serialization --------------------------------------------------------
+
+func TestDecodeAstroValue(t *testing.T) {
+	// Equivalent plain object: {"tier":"standard","rows":[["a",1],["b",2]],"meta":{"ok":true,"none":null}}
+	const raw = `{"tier":[0,"standard"],` +
+		`"rows":[1,[[1,[[0,"a"],[0,1]]],[1,[[0,"b"],[0,2]]]]],` +
+		`"meta":[0,{"ok":[0,true],"none":[0,null]}]}`
+
+	var encoded any
+	if err := json.Unmarshal([]byte(raw), &encoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	decoded, ok := decodeAstroValue(encoded).(map[string]any)
+	if !ok {
+		t.Fatalf("decoded props is %T, want map", decodeAstroValue(encoded))
+	}
+
+	if tier, _ := decoded["tier"].(string); tier != "standard" {
+		t.Errorf("tier: got %v, want standard", decoded["tier"])
+	}
+
+	rows, ok := decoded["rows"].([]any)
+	if !ok || len(rows) != 2 {
+		t.Fatalf("rows: got %#v, want 2 entries", decoded["rows"])
+	}
+	second, _ := rows[1].([]any)
+	if len(second) != 2 || second[0] != "b" || second[1] != float64(2) {
+		t.Errorf("rows[1]: got %#v, want [b 2]", rows[1])
+	}
+
+	meta, _ := decoded["meta"].(map[string]any)
+	if meta["ok"] != true {
+		t.Errorf("meta.ok: got %#v, want true", meta["ok"])
+	}
+	if v, present := meta["none"]; !present || v != nil {
+		t.Errorf("meta.none: got %#v (present=%v), want nil", v, present)
+	}
+}
+
+func TestDecodeIslandProps_CharacterReferences(t *testing.T) {
+	// The fallback path: props that are still character-reference encoded.
+	props, err := decodeIslandProps(`{&quot;tier&quot;:[0,&quot;standard&quot;]}`)
+	if err != nil {
+		t.Fatalf("decodeIslandProps: %v", err)
+	}
+	if tier, _ := propString(props, "tier"); tier != "standard" {
+		t.Errorf("tier: got %q, want standard", tier)
+	}
+
+	if _, err := decodeIslandProps(""); err == nil {
+		t.Error("expected error for missing props attribute")
+	}
+	if _, err := decodeIslandProps("not json"); err == nil {
+		t.Error("expected error for non-JSON props")
+	}
+}
+
+// --- Row helpers ----------------------------------------------------------
+
+func TestPricePerMillion(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  any
+		want   float64
+		wantOK bool
+	}{
+		{"number", 1.25, 1.25, true},
+		{"integer", float64(10), 10, true},
+		{"dash placeholder", "-", 0, false},
+		{"word", "Free", 0, false},
+		{"null", nil, 0, false},
+		{"zero", float64(0), 0, false},
+		{"negative", -1.0, 0, false},
+		{"NaN", math.NaN(), 0, false},
+		{"Inf", math.Inf(1), 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := pricePerMillion(tc.input)
+		if ok != tc.wantOK || (ok && got != tc.want) {
+			t.Errorf("%s: pricePerMillion(%v) = (%v, %v), want (%v, %v)",
+				tc.name, tc.input, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+func TestPriceColumnIndex(t *testing.T) {
+	cols := []string{
+		"Short context input",
+		"Short context cached input",
+		"Short context cache writes",
+		"Short context output",
+		"Long context input",
+		"Long context output",
+	}
+	if got := priceColumnIndex(cols, "input"); got != 0 {
+		t.Errorf("input index: got %d, want 0 (short context, not cached)", got)
+	}
+	if got := priceColumnIndex(cols, "output"); got != 3 {
+		t.Errorf("output index: got %d, want 3 (short context)", got)
+	}
+	if got := priceColumnIndex([]string{"Cached input", "Output"}, "input"); got != -1 {
+		t.Errorf("cached input must not match: got %d, want -1", got)
+	}
+	// Long-context columns are a different price and must never be selected.
+	longFirst := []string{"Long context input", "Long context cached input", "Long context output"}
+	if got := priceColumnIndex(longFirst, "input"); got != -1 {
+		t.Errorf("long-context input must not match: got %d, want -1", got)
+	}
+	if got := priceColumnIndex(longFirst, "output"); got != -1 {
+		t.Errorf("long-context output must not match: got %d, want -1", got)
+	}
+	mixed := []string{"Long context input", "Long context output", "Input", "Output"}
+	if got := priceColumnIndex(mixed, "input"); got != 2 {
+		t.Errorf("input index: got %d, want 2 (skip long context)", got)
+	}
+	if got := priceColumnIndex(mixed, "output"); got != 3 {
+		t.Errorf("output index: got %d, want 3 (skip long context)", got)
+	}
+}
+
+func TestNormalizeSection(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Specialized models", "specialized models"},
+		{"Our latest Daybreak models.", "our latest daybreak models"},
+		{"  Our latest Daybreak models  ", "our latest daybreak models"},
+	}
+	for _, tc := range cases {
+		if got := normalizeSection(tc.in); got != tc.want {
+			t.Errorf("normalizeSection(%q): got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeSlug(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"gpt-4.1", "gpt-4.1"},
+		{"gpt-4o", "gpt-4o"},
+		{"gpt-5.5 (<272K context length)", "gpt-5.5"},
+		{"text-embedding-3-small", "text-embedding-3-small"},
+		{"GPT Image 1.5", "gpt-image-1.5"},
+	}
+	for _, tc := range cases {
+		if got := normalizeSlug(tc.in); got != tc.want {
+			t.Errorf("normalizeSlug(%q): got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCleanHeading(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Specialized models", "Specialized models"},
+		{"Specialized models\ue09a", "Specialized models"},
+		{"  Our latest models  ", "Our latest models"},
+	}
+	for _, tc := range cases {
+		if got := cleanHeading(tc.in); got != tc.want {
+			t.Errorf("cleanHeading(%q): got %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

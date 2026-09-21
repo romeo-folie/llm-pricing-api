@@ -12,7 +12,7 @@ Runs daily as an asynq cron task (`TaskAnthropicScrape`). Emits records with `So
 
 ```
 internal/scraper/anthropic/
-  scraper.go       # Scraper, New, Fetch, table parsing, slug canonicalisation
+  scraper.go       # Scraper, New, Fetch, table parsing, heading sanitisation, slug canonicalisation
   scraper_test.go  # Parsing tests against embedded HTML fixtures
   README.md        # This file
 ```
@@ -43,6 +43,10 @@ Intermediate parsed-table representation (headers plus rows) built before conver
 | Concern | Test |
 |---|---|
 | Per-MTok → per-token conversion | `TestFetch_PriceConversion`, `TestParsePricePerMTok` |
+| Non-finite prices (`NaN`, `Inf`) rejected | `TestParsePricePerMTok` |
+| Ragged rows (cell count ≠ header count) skipped, not misread | `TestFetch` |
+| Section headings match despite decorative icon glyphs | `TestCleanHeading`, `TestFetch` |
+| Version-first names not misread as variant-first | `TestCanonicalAnthropicSlug` |
 | Marketing name → clean model name | `TestCleanModelName` |
 | Clean name → canonical `anthropic/...` slug | `TestCanonicalAnthropicSlug` |
 | `(deprecated)` and similar suffixes stripped | `TestFetch_DeprecatedSuffix` |
@@ -73,6 +77,7 @@ if err != nil {
 
 ## Design Notes
 
+- **Heading text is sanitised before section matching.** The docs site renders a "copy link" button inside each heading whose icon is the private-use character U+E09A. `textContent` collects it, so a literal `section == "Model pricing"` comparison silently failed and the source returned zero models for ~190 days (#209). `cleanHeading` strips private-use, zero-width and variation-selector runes; the fixture in `scraper_test.go` carries the real glyph so the regression stays covered.
 - **A layout change yields zero rows, not wrong prices.** `TestFetch_EmptyHTML` pins this. The diff engine ignores models missing from an incoming batch, so a parser break cannot zero out stored prices.
 - **Deprecated models are still reported** with the suffix stripped from the name — the reconciler decides what to do with them rather than the scraper dropping data.
 - **Untrusted external input**: prices must be finite and non-negative; `NaN`, `Inf`, and negatives are rejected before storage.

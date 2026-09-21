@@ -9,20 +9,26 @@ import (
 	"time"
 )
 
+// iconGlyph is U+E09A, the private-use character the Anthropic docs site
+// renders inside each heading's "copy link" button. It has no visible text but
+// is a text node, so it lands in the heading's textContent. The fixture keeps
+// it so the whole suite runs against markup shaped like the live page (#209).
+const iconGlyph = "\ue09a"
+
 // minimalPricingHTML is a structurally faithful replica of the Anthropic
 // pricing page trimmed to the cases under test.
 const minimalPricingHTML = `<!DOCTYPE html><html><body>
 
-<h2>Model pricing</h2>
+<h2 id="model-pricing" class="group">Model pricing<span class="relative"><span aria-hidden="true">` + iconGlyph + `</span></span></h2>
 <table class="w-full border-collapse">
   <thead>
     <tr>
       <th>Model</th>
-      <th>Base Input Tokens</th>
-      <th>5m Cache Writes</th>
-      <th>1h Cache Writes</th>
-      <th>Cache Hits &amp; Refreshes</th>
-      <th>Output Tokens</th>
+      <th>Base input tokens</th>
+      <th>5m cache writes</th>
+      <th>1h cache writes</th>
+      <th>Cache hits and refreshes</th>
+      <th>Output tokens</th>
     </tr>
   </thead>
   <tbody>
@@ -65,6 +71,13 @@ const minimalPricingHTML = `<!DOCTYPE html><html><body>
       <td>-</td>
       <td>-</td>
       <td>-</td>
+    </tr>
+    <!-- Malformed row: fewer cells than headers. Its prices would align to the
+         wrong columns, so it must be skipped rather than misread (#209 review). -->
+    <tr>
+      <td>Claude Ragged 9.9</td>
+      <td>$1 / MTok</td>
+      <td>$2 / MTok</td>
     </tr>
   </tbody>
 </table>
@@ -289,6 +302,9 @@ func TestParsePricePerMTok(t *testing.T) {
 		{"", 0, true},
 		{"not-a-number", 0, true},
 		{"$0 / MTok", 0, true}, // zero price rejected
+		{"NaN", 0, true},       // ParseFloat accepts these; they must be rejected
+		{"Inf", 0, true},
+		{"-Inf", 0, true},
 	}
 
 	for _, tc := range cases {
@@ -318,6 +334,25 @@ func TestCleanModelName(t *testing.T) {
 	}
 }
 
+func TestCleanHeading(t *testing.T) {
+	// Pins the #209 regression: the live "Model pricing" heading carries a
+	// private-use icon glyph, so an exact section comparison that does not
+	// strip it drops every model on the page.
+	cases := []struct{ in, want string }{
+		{"Model pricing" + iconGlyph, "Model pricing"},
+		{"Model pricing\u200b", "Model pricing"},
+		{"Model pricing\ufe0f", "Model pricing"},
+		{"  Model pricing  ", "Model pricing"},
+		{"Claude Opus 4.6", "Claude Opus 4.6"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := cleanHeading(tc.in); got != tc.want {
+			t.Errorf("cleanHeading(%q): got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestCanonicalAnthropicSlug(t *testing.T) {
 	cases := []struct{ in, want string }{
 		// Major.Minor format → claude-<major>-<minor>-<variant>
@@ -332,6 +367,9 @@ func TestCanonicalAnthropicSlug(t *testing.T) {
 		// Parenthetical suffix stripped before slugging
 		{"Claude Haiku 3.5 (deprecated)", "claude-3-5-haiku"},
 		{"Claude Next (beta)", "claude-next"},
+		// Version-first names are not misread as variant-first
+		{"Claude 3.5 Sonnet", "claude-3-5-sonnet"},
+		{"Claude 3.5 Haiku", "claude-3-5-haiku"},
 		// Fallback: unknown format → lowercase-hyphenated
 		{"Some Future Model", "some-future-model"},
 		{"claude-already-a-slug", "claude-already-a-slug"},
