@@ -10,6 +10,8 @@ interface Props {
 type KeyState =
   | { phase: "loading" }
   | { phase: "ready"; plaintext: string }
+  // A key exists but its plaintext cannot be shown again (reveal-once).
+  | { phase: "existing"; message: string }
   | { phase: "error"; message: string }
 
 export default function VerifiedKeyPanel({ identity }: Props) {
@@ -35,7 +37,20 @@ export default function VerifiedKeyPanel({ identity }: Props) {
 
       if (cancelled) return
       if (result.ok) {
-        setKeyState({ phase: "ready", plaintext: result.key.plaintext })
+        const { plaintext, message } = result.key
+        if (plaintext) {
+          setKeyState({ phase: "ready", plaintext })
+        } else {
+          // The reveal-once guard fired: a key already exists and its plaintext
+          // cannot be re-derived. Showing an empty key here would let the user
+          // copy the string "undefined".
+          setKeyState({
+            phase: "existing",
+            message:
+              message ??
+              "You already have an active API key. A key is only shown when it is created, so rotate one to get a new value.",
+          })
+        }
       } else {
         if (result.error.code === "aborted") return
         setKeyState({ phase: "error", message: result.error.message })
@@ -86,6 +101,26 @@ export default function VerifiedKeyPanel({ identity }: Props) {
         <p className="verified-sub">{keyState.message}</p>
         <a href="/signup/free" className="verified-btn">
           Back to signup
+        </a>
+      </div>
+    )
+  }
+
+  if (keyState.phase === "existing") {
+    // A key exists but its value was revealed once, when it was created. This is
+    // not an error, so it gets neutral treatment and a way forward.
+    return (
+      <div className="verified-card animate-reveal-card">
+        <div className="verified-icon" aria-hidden="true">
+          <ErrorIcon />
+        </div>
+        <h1 className="verified-heading">A key is already active</h1>
+        <p className="verified-sub">{keyState.message}</p>
+        <a href="/docs" className="verified-btn">
+          View API docs
+        </a>
+        <a href="/signup/free" className="verified-link">
+          Back to signup →
         </a>
       </div>
     )

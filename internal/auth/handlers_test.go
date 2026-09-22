@@ -28,6 +28,16 @@ type mockStore struct {
 	identities map[string]*signup.Identity // keyed by email
 	tokens     map[string]mockToken        // keyed by tokenHash (SHA-256 of rawToken)
 	keys       []*signup.KeyRecord         // append-only; active = last with status "active"
+
+	grants []*signup.AgentGrant
+	// deviceCodes maps a raw device code to its grant, standing in for the
+	// hash-based lookup the production store performs.
+	deviceCodes map[string]*signup.AgentGrant
+	// createGrantErr, when set, is returned by CreateAgentGrant.
+	createGrantErr error
+	// insertKeyErr, when set, is returned by InsertKeyWithLabel, letting tests
+	// exercise the post-Unkey persist-failure path.
+	insertKeyErr error
 }
 
 type mockToken struct {
@@ -40,8 +50,9 @@ type mockToken struct {
 
 func newMockStore() *mockStore {
 	return &mockStore{
-		identities: make(map[string]*signup.Identity),
-		tokens:     make(map[string]mockToken),
+		identities:  make(map[string]*signup.Identity),
+		tokens:      make(map[string]mockToken),
+		deviceCodes: make(map[string]*signup.AgentGrant),
 	}
 }
 
@@ -153,45 +164,228 @@ func (m *mockStore) GetActiveKey(_ context.Context, identityID string) (*signup.
 	return nil, signup.ErrNotFound
 }
 
-func (m *mockStore) InsertKey(_ context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error) {
+func (m *mockStore) InsertKey(ctx context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error) {
+	return m.InsertKeyWithLabel(ctx, identityID, providerKeyID, "", signup.CreatedViaMagicLink)
+}
+
+func (m *mockStore) InsertKeyWithLabel(_ context.Context, identityID, providerKeyID, label, createdVia string) (*signup.KeyRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.insertKeyLocked(identityID, providerKeyID, label, createdVia)
+}
+
+// insertKeyLocked must be called with m.mu held.
+func (m *mockStore) insertKeyLocked(identityID, providerKeyID, label, createdVia string) (*signup.KeyRecord, error) {
+	if m.insertKeyErr != nil {
+		return nil, m.insertKeyErr
+	}
+	active := 0
+	for _, k := range m.keys {
+		if k.IdentityID == identityID && k.Status == "active" {
+			active++
+		}
+	}
+	if active >= signup.MaxActiveKeysPerIdentity {
+		return nil, signup.ErrActiveKeyLimitReached
+	}
+	if createdVia == "" {
+		createdVia = signup.CreatedViaMagicLink
+	}
 	k := &signup.KeyRecord{
 		ID:            "key-" + providerKeyID,
 		IdentityID:    identityID,
 		ProviderKeyID: providerKeyID,
+		Label:         label,
+		CreatedVia:    createdVia,
 		Status:        "active",
 		CreatedAt:     time.Now(),
 	}
 	m.keys = append(m.keys, k)
 	return k, nil
+}
+
+func (m *mockStore) ListActiveKeys(_ context.Context, identityID string) ([]signup.KeyRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]signup.KeyRecord, 0, 1)
+	for i := len(m.keys) - 1; i >= 0; i-- {
+		k := m.keys[i]
+		if k.IdentityID == identityID && k.Status == "active" {
+			out = append(out, *k)
+		}
+	}
+	return out, nil
+}
+
+func (m *mockStore) RevokeKeyByID(_ context.Context, identityID, keyID string) (string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.keys {
+		if k.IdentityID == identityID && k.ID == keyID {
+			if k.Status != "active" {
+				// Mirrors the production store: an already-revoked row is still
+				// returned, so the upstream revocation can be retried.
+				return k.ProviderKeyID, true, nil
+			}
+			now := time.Now()
+			k.Status = "revoked"
+			k.RevokedAt = &now
+			return k.ProviderKeyID, false, nil
+		}
+	}
+	return "", false, signup.ErrNotFound
 }
 
 func (m *mockStore) RevokeAndInsertKey(_ context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Mark old key revoked if present.
+	// Mark old key revoked if present, inheriting its label and provenance the
+	// way the production SQL does.
+	label, createdVia := "", signup.CreatedViaMagicLink
 	for i, k := range m.keys {
 		if k.IdentityID == identityID && k.ProviderKeyID == oldProviderKeyID {
 			now := time.Now()
 			m.keys[i].Status = "revoked"
 			m.keys[i].RevokedAt = &now
+			label, createdVia = k.Label, k.CreatedVia
 		}
 	}
-	// Insert new key.
-	k := &signup.KeyRecord{
-		ID:            "key-" + newProviderKeyID,
-		IdentityID:    identityID,
-		ProviderKeyID: newProviderKeyID,
-		Status:        "active",
-		CreatedAt:     time.Now(),
-	}
-	m.keys = append(m.keys, k)
-	return k, nil
+	return m.insertKeyLocked(identityID, newProviderKeyID, label, createdVia)
 }
 
 func (m *mockStore) DeleteExpiredTokens(_ context.Context) (int64, error) {
 	return 0, nil
+}
+
+// ── Agent device-grant mock surface ─────────────────────────────────────────
+
+// mockUserCode returns a valid Crockford base32 code for ordinal n.
+// The prefix uses only symbols in the alphabet (no I, L, O or U) so the code
+// satisfies signup.ValidUserCode and the DB CHECK constraint it mirrors.
+func mockUserCode(n int) string {
+	return fmt.Sprintf("ACDF%04d", n)
+}
+
+func cloneGrant(g *signup.AgentGrant) *signup.AgentGrant {
+	if g == nil {
+		return nil
+	}
+	c := *g
+	return &c
+}
+
+func (m *mockStore) CreateAgentGrant(_ context.Context, clientName, platform string, expiresAt time.Time) (*signup.AgentGrant, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.createGrantErr != nil {
+		return nil, "", m.createGrantErr
+	}
+	rawDeviceCode := fmt.Sprintf("raw-device-code-%d", len(m.grants)+1)
+	g := &signup.AgentGrant{
+		ID:             fmt.Sprintf("grant-%d", len(m.grants)+1),
+		DeviceCodeHash: signup.HashToken(rawDeviceCode),
+		UserCode:       mockUserCode(len(m.grants) + 1),
+		ClientName:     clientName,
+		Platform:       platform,
+		Status:         "pending",
+		ExpiresAt:      expiresAt,
+		CreatedAt:      time.Now(),
+	}
+	m.grants = append(m.grants, g)
+	m.deviceCodes[rawDeviceCode] = g
+	return cloneGrant(g), rawDeviceCode, nil
+}
+
+func (m *mockStore) GetAgentGrantByDeviceCode(_ context.Context, rawDeviceCode string) (*signup.AgentGrant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g, ok := m.deviceCodes[rawDeviceCode]
+	if !ok {
+		return nil, signup.ErrNotFound
+	}
+	return cloneGrant(g), nil
+}
+
+func (m *mockStore) GetAgentGrantByUserCode(_ context.Context, userCode string) (*signup.AgentGrant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, g := range m.grants {
+		if g.UserCode == userCode {
+			return cloneGrant(g), nil
+		}
+	}
+	return nil, signup.ErrNotFound
+}
+
+func (m *mockStore) DecideAgentGrant(_ context.Context, userCode, identityID string, approve bool) (*signup.AgentGrant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, g := range m.grants {
+		if g.UserCode != userCode {
+			continue
+		}
+		if g.Status != "pending" {
+			switch g.Status {
+			case "redeemed":
+				return nil, signup.ErrGrantRedeemed
+			default:
+				return nil, signup.ErrNotFound
+			}
+		}
+		if !g.ExpiresAt.After(time.Now()) {
+			return nil, signup.ErrGrantExpired
+		}
+		now := time.Now()
+		g.DecidedAt = &now
+		if approve {
+			g.Status = "approved"
+			id := identityID
+			g.IdentityID = &id
+		} else {
+			// A denial must not record who was signed in.
+			g.Status = "denied"
+			g.IdentityID = nil
+		}
+		return cloneGrant(g), nil
+	}
+	return nil, signup.ErrNotFound
+}
+
+func (m *mockStore) RedeemAgentGrant(_ context.Context, rawDeviceCode string) (*signup.AgentGrant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g, ok := m.deviceCodes[rawDeviceCode]
+	if !ok {
+		return nil, signup.ErrNotFound
+	}
+	if !g.ExpiresAt.After(time.Now()) {
+		return nil, signup.ErrGrantExpired
+	}
+	switch g.Status {
+	case "pending":
+		return nil, signup.ErrGrantPending
+	case "denied":
+		return nil, signup.ErrGrantDenied
+	case "redeemed":
+		return nil, signup.ErrGrantRedeemed
+	}
+	now := time.Now()
+	g.Status = "redeemed"
+	g.RedeemedAt = &now
+	return cloneGrant(g), nil
+}
+
+func (m *mockStore) RevertAgentGrantRedemption(_ context.Context, grantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, g := range m.grants {
+		if g.ID == grantID && g.Status == "redeemed" {
+			g.Status = "approved"
+			g.RedeemedAt = nil
+			return nil
+		}
+	}
+	return signup.ErrNotFound
 }
 
 // ── Mock mailer ─────────────────────────────────────────────────────────────────
@@ -267,6 +461,7 @@ func newTestAppWithIssuer(store auth.Store, mailer auth.Mailer, issuer auth.KeyI
 	h := auth.New(store, mailer, issuer, nil, testCfg, log)
 	authGroup := app.Group("/auth")
 	auth.Register(authGroup, h)
+	auth.RegisterAgent(app.Group("/auth/agent"), h)
 	return app
 }
 
@@ -505,6 +700,7 @@ func TestRequestLink_SignupDisabled_Returns503(t *testing.T) {
 	h := auth.New(store, mailer, &mockIssuer{}, nil, disabledCfg, log)
 	authGroup := app.Group("/auth")
 	auth.Register(authGroup, h)
+	auth.RegisterAgent(app.Group("/auth/agent"), h)
 
 	resp := doRequest(t, app, "POST", "/auth/signup/request-link", `{"email":"alice@example.com"}`)
 	if resp.StatusCode != 503 {
@@ -711,11 +907,13 @@ func TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew(t *testing.T) {
 		ID:    "id-alice",
 		Email: "alice@example.com",
 	}
-	// Seed an existing active key.
+	// Seed an existing active magic-link key: this is the key the browser flow
+	// owns and the one regenerate-key is expected to replace.
 	store.keys = append(store.keys, &signup.KeyRecord{
 		ID:            "k-old",
 		IdentityID:    "id-alice",
 		ProviderKeyID: "old-prov-id",
+		CreatedVia:    signup.CreatedViaMagicLink,
 		Status:        "active",
 		CreatedAt:     time.Now().Add(-1 * time.Hour),
 	})
@@ -768,20 +966,31 @@ func TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew(t *testing.T) {
 
 // ── AbuseGuard wiring ────────────────────────────────────────────────────────
 
-// stubGuard returns a fixed error from CheckRequestLink so the handler's
+// stubGuard returns fixed errors from the abuse checks so the handler's
 // error-mapping can be exercised without Redis.
 type stubGuard struct {
-	requestErr    error
-	regenerateErr error
+	requestErr     error
+	regenerateErr  error
+	agentDeviceErr error
+	userCodeErr    error
+	codeProbeErr   error
+	agentPollErr   error
 }
 
 func (g *stubGuard) CheckRequestLink(_ context.Context, _, _ string) error { return g.requestErr }
 func (g *stubGuard) CheckRegenerateKey(_ context.Context, _ string) error  { return g.regenerateErr }
+func (g *stubGuard) CheckAgentDevice(_ context.Context, _ string) error    { return g.agentDeviceErr }
+func (g *stubGuard) CheckUserCodeAttempt(_ context.Context, _ string) error {
+	return g.userCodeErr
+}
+func (g *stubGuard) CheckCodeProbe(_ context.Context, _ string) error { return g.codeProbeErr }
+func (g *stubGuard) CheckAgentPoll(_ context.Context, _ string) error { return g.agentPollErr }
 
 func newTestAppWithGuard(store auth.Store, mailer auth.Mailer, guard auth.AbuseGuard) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	h := auth.New(store, mailer, &mockIssuer{}, guard, testCfg, zerolog.Nop())
 	auth.Register(app.Group("/auth"), h)
+	auth.RegisterAgent(app.Group("/auth/agent"), h)
 	return app
 }
 

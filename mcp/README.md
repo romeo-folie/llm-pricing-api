@@ -48,12 +48,16 @@ npx @llmrates/mcp
 }
 ```
 
+The `env` block can be omitted entirely. The server then starts unauthenticated and the
+`authenticate` tool walks the user through approving a key, which is stored locally for later runs.
+
 ---
 
 ## Tools
 
 | Tool | Description | Required params | Access |
 |------|-------------|-----------------|--------|
+| `authenticate` | Get an API key for the user, or replace a missing/revoked one. Returns a code and a URL for them to approve, then stores the key locally. | — | None |
 | `get_cheapest_model` | Find the cheapest model matching your task requirements. Returns a ranked list with pricing and trust metadata. | `task` | API key |
 | `compare_models` | Compare up to 5 models side-by-side with current pricing and trust metadata. | `models` (array, 2–5 IDs) | API key |
 | `get_price_history` | Retrieve the full pricing history for a specific model with timestamped records and source attribution. | `model_id` | API key |
@@ -62,6 +66,26 @@ npx @llmrates/mcp
 | `subscribe_to_changes` | Register an HTTPS webhook URL to receive real-time notifications when prices change. | `url` | API key |
 
 ### Tool details
+
+#### `authenticate`
+
+Call this when a tool reports that no API key is configured, or when the API rejects the current
+key. It is a two-phase flow, because the URL has to reach the user before they can approve, and a
+tool result is not delivered until the call returns:
+
+```json
+{ "client_name": "Claude Code", "wait_seconds": 90 }
+```
+
+1. **First call** (no pending request) starts an authorization and returns a short code plus a URL.
+   Show both to the user and ask them to open the URL and approve. No arguments are required;
+   `client_name` is how this client is identified on their approval screen.
+2. **Second call** collects the key, which is then stored locally so every other tool works. It
+   waits up to `wait_seconds` (default 90, max 300) for the approval, so if the user is quick the
+   flow completes in two calls.
+
+The key is delivered straight to this process. It never has to be copied, pasted, or shown in a
+chat, and the user's only action is a decision.
 
 #### `get_cheapest_model`
 
@@ -165,25 +189,54 @@ npx @llmrates/mcp
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `LLMRATES_API_KEY` | Yes | — | Your LLM Rates API key. Get one at [llmrates.com](https://llmrates.com). |
-| `LLMRATES_API_URL` | No | `https://api.llmrates.com` | Override the API base URL (useful for self-hosted or staging deployments). |
+| `LLMRATES_API_KEY` | No | — | Your LLM Rates API key. Optional: when unset, the server starts anyway and the `authenticate` tool obtains one. |
+| `LLMRATES_API_URL` | No | `https://api.llmrates.live` | Override the API base URL (useful for self-hosted or staging deployments). |
+| `LLMRATES_CONFIG_DIR` | No | `~/.llmrates` | Where the credential file is read and written. |
+| `LLMRATES_CLIENT_NAME` | No | `MCP client` | Default name shown to the user on the approval screen, overridden by the `client_name` argument. |
+
+### Stored credentials
+
+With no `LLMRATES_API_KEY`, the server starts in an unauthenticated state: every tool returns a
+message telling the agent to call `authenticate`. Previously the server exited, which made that
+tool unreachable and left the user with nothing to do but edit config by hand.
+
+A key obtained through `authenticate` is written to:
+
+```
+~/.llmrates/credentials.json     # mode 0600, directory 0700
+```
+
+The containing directory must not be group- or world-accessible. If it is, the write is **refused**
+with an error naming the fix (`chmod 700 ~/.llmrates`) rather than silently tightening a directory
+you may have widened on purpose. The key is still installed for the current session in that case, so
+an approval is never wasted, but it will not survive a restart until the directory is restricted.
+
+The write is atomic (temp file plus `rename`), so a crash cannot leave a truncated file that
+would read as "no key" and silently re-trigger the flow. `LLMRATES_API_KEY` still takes precedence
+over the stored key, so an operator can override without deleting anything.
+
+An in-flight authorization is kept in `<configDir>/pending-grant.json` and removed once the key is
+collected, denied, or expired.
 
 ---
 
 ## Access
 
 **The API is free.** Every tool works with any valid API key — there is no paid plan, no per-tool
-entitlement, and no meaningful daily request cap.
-
-Keys carry a `free` / `developer` / `pro` tier in their Unkey metadata, but nothing gates on it.
-All three behave identically, including for `subscribe_to_changes`.
+entitlement, and no meaningful daily request cap. There are no tiers; an earlier version of this
+file described Free/Developer/Pro plans that no longer exist.
 
 `subscribe_to_changes` only accepts `https` URLs, and rejects any URL resolving to a private or
 loopback address. Each API key may hold at most **5 active webhooks**; a 6th returns a conflict
 error. Unsubscribing frees a slot. All failures return a descriptive error — no silent failures.
 
+An account may hold up to **5 active API keys**, one per agent by default, so each can be revoked
+independently. Keys are labelled with the client name that requested them.
+
 ---
 
 ## Get your API key
 
-[https://llmrates.com](https://llmrates.com)
+Ask the agent to call the `authenticate` tool, or visit
+[https://llmrates.live/signup/free](https://llmrates.live/signup/free) to do it yourself in a
+browser. Either way the API is free.

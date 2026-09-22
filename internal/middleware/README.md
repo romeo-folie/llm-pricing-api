@@ -41,7 +41,6 @@ Fiber middleware for the LLM Pricing API. This package provides authentication, 
 | Symbol | Type | Description |
 | --- | --- | --- |
 | `Auth(verifier, redis, apiID)` | `fiber.Handler` | Main authentication middleware |
-| `RequireTier(minTier)` | `fiber.Handler` | Per-route tier enforcement — returns 403 with `tier_required` field if caller is below `minTier` |
 | `NewUnkeyClient(rootKey, apiID)` | `UnkeyVerifier` | Production Unkey client (wraps the official SDK) |
 | `UnkeyVerifier` | interface | Testable abstraction over the Unkey `VerifyKey` call |
 | `LocalKeyTier` | `string` constant | Key used to read the tier from `c.Locals` |
@@ -55,8 +54,22 @@ free  <  developer  <  pro
 ```
 
 **There is no tier gating.** `RequireTier` was removed once the API became free — no endpoint,
-including webhook registration, checks the tier. The tier constants remain because the rate limiter
-and the Prometheus `tier` label still read them.
+including webhook registration, checks the tier, and no 403 carries a `tier_required` field. The
+tier constants remain because the rate limiter and the Prometheus `tier` label still read them.
+
+### The 401 Bearer challenge
+
+Every `401` from `Auth` sets a `WWW-Authenticate` header alongside the RFC 7807 body:
+
+```
+WWW-Authenticate: Bearer realm="llmrates", resource_metadata="https://api.llmrates.live/.well-known/oauth-protected-resource"
+```
+
+The header is how a client learns *how* to authenticate rather than only that it failed. The
+`resource_metadata` pointer lets an MCP client that implements OAuth discovery fetch that document
+on its own and find out that keys come from a device-authorization flow instead of an OAuth server.
+The URL is hardcoded to production for the same reason `/llms.txt` is: it describes the public API,
+not the current deployment.
 
 ### RFC 7807 error format
 
@@ -71,27 +84,39 @@ All errors from this package use `Content-Type: application/problem+json`:
 }
 ```
 
-`RequireTier` failures add a `tier_required` field:
-
-```json
-{
-  "type": "https://llmrates.live/errors/forbidden",
-  "title": "Forbidden",
-  "status": 403,
-  "detail": "this endpoint requires the developer tier or above",
-  "tier_required": "developer"
-}
-```
-
 ### Exempt routes
 
-Register `GET /health` and discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`) **outside** the `/v1` route group so they bypass auth automatically.
+Register `GET /health` and discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/.well-known/oauth-protected-resource`, `/llms.txt`) **outside** the `/v1` route group so they bypass auth automatically.
 
 ---
 
 ## Rate Limiting (`ratelimit.go`)
 
-### Overview
+### IP rate limiting (`ipratelimit.go`)
+
+`IPRateLimit(redis, log, trustedProxies...)` bounds public, unauthenticated routes by client IP over a
+fixed 15-minute window, defaulting to **10 requests**. `IPRateLimitWithConfig` accepts an
+`IPRateLimitConfig` whose `Max` overrides that, and `TimeNow` overrides the clock for deterministic
+tests.
+
+`Max` exists because one limit cannot serve both a human signup form and an agent polling for
+approval: a device grant legitimately produces a request every few seconds for its whole lifetime
+(~120 for a 10-minute grant), which exhausts a signup-shaped bucket in under a minute.
+
+**`Bucket` and `SkipPrefixes` are what make a nested limit actually apply.** Fiber's `Group`/`Use`
+match by path **prefix**, so a limiter mounted at `/auth` also runs for `/auth/agent`; and two
+limiters that share a Redis counter increment each other's. A nested group therefore needs (a) the
+broader limiter to list the nested prefix in `SkipPrefixes`, and (b) its own `Bucket`. Getting either
+wrong silently reduces the nested limit rather than raising an error. `cmd/api` mounts `/auth` with
+`SkipPrefixes: ["/auth/agent"]` at the default limit and `/auth/agent` with `Bucket: "agent"` and
+`Max: agentIPRateLimitMax`. `TestIPRateLimit_NestedGroupKeepsItsOwnBudget` guards the composition.
+
+Client IP comes from `RealIP`, which honours `X-Forwarded-For` only from configured trusted proxies.
+The Fiber app sets `EnableIPValidation: true`, so a proxy-header value that does not parse as an IP
+falls back instead of being hashed straight into a fresh Redis bucket — without it, a client able to
+influence the header would get a new rate-limit bucket per request.
+
+### Per-key rate limiting
 
 `RateLimit` enforces a per-key, per-calendar-day (UTC) request cap. The counter is stored in Redis using an atomic `INCR` + `EXPIREAT` pattern.
 

@@ -5,7 +5,7 @@ import { formatMcpError, validationError } from "../errors.js";
 export const definition = {
   name: "get_price_history",
   description:
-    "Retrieve the full pricing history for a specific model. Returns timestamped price records with source attribution. Requires Developer tier.",
+    "Retrieve the full pricing history for a specific model. Returns timestamped price records with source attribution.",
   inputSchema: {
     type: "object" as const,
     properties: {

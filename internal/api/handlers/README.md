@@ -17,7 +17,7 @@ HTTP handler functions for the LLM pricing REST API. Every handler function read
 | `context.go` | `GET /v1/context` (compact pricing snapshot ≤ 2 100 tokens; supports `?format=markdown`; returns `token_count` + `model_count` metadata) |
 | `ask.go` | `POST /v1/ask` (deterministic NL parser → 4 intents: price/compare/history/recommend; `AskHandler` with OTel counter) |
 | `aliases.go` | `ModelAliases` map — ~50 common model name shortcuts → canonical slugs; used by `/v1/ask` parser |
-| `discovery.go` | `GET /openapi.json`, `GET /.well-known/ai-plugin.json`, `GET /llms.txt` (public) |
+| `discovery.go` | `GET /openapi.json`, `GET /.well-known/ai-plugin.json`, `GET /.well-known/oauth-protected-resource`, `GET /llms.txt` (public) |
 | `sse.go` | `GET /v1/stream/changes` (SSE price-change stream) |
 | `sse_write_test.go` | Regression tests for the bounded SSE write path (`writeWithDeadline`): deadline set, nil-connection path, error propagation |
 | `webhooks.go` | `POST /v1/webhooks`, `DELETE /v1/webhooks/:id` (no tier gating); `WebhookStore` interface + `pgxWebhookStore`; `WebhookHandlerExport` test shim |
@@ -56,7 +56,7 @@ The interface exposes the list/detail methods (`ListModels`, `GetModel`, `ListPr
 
 **No tier gating is applied.** The name is historical: these were once Developer+ routes, but any valid API key now reaches them. `/v1/recommend` moved to `RegisterFree`.
 
-`RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client)` wires the three public discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/llms.txt`) on the root Fiber app (no auth required). `rdb` is passed to `DiscoveryHandler` for Redis-cached responses (e.g. `/llms.txt`).
+`RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client)` wires the four public discovery endpoints (`/openapi.json`, `/.well-known/ai-plugin.json`, `/.well-known/oauth-protected-resource`, `/llms.txt`) on the root Fiber app (no auth required). `rdb` is passed to `DiscoveryHandler` for Redis-cached responses (e.g. `/llms.txt`).
 
 `RegisterSSE(v1 fiber.Router, rdb *redis.Client) error` wires the SSE stream at `/v1/stream/changes` (any valid API key). `rdb` is the Redis client used for Pub/Sub subscription, replay-buffer access, and per-key connection limiting. Pass `nil` to run in heartbeat-only mode (no live events, no connection limits).
 
@@ -70,17 +70,22 @@ List endpoints aggregate metadata by choosing the most recently confirmed model'
 
 ### Discovery endpoints (`discovery.go`)
 
-`DiscoveryHandler` serves three public endpoints (no authentication required):
+`DiscoveryHandler` serves four public endpoints (no authentication required):
 
 - **`GET /openapi.json`** — returns the compile-time embedded OpenAPI 3.1 document. Embedding at build time eliminates runtime file I/O.
 - **`GET /.well-known/ai-plugin.json`** — returns the AI plugin manifest for agent auto-discovery. Key fields:
   - `name_for_human`: `"LLM Rates"` — display name for UI.
   - `name_for_model`: `"llmrates"` — identifier used by LLM agents.
-  - `description_for_model`: describes all Phase 4 agent capabilities including `/v1/ask`, `/v1/context`, and `/v1/stream/changes`.
+  - `description_for_model`: describes all agent capabilities including `/v1/ask`, `/v1/context`, `/v1/stream/changes`, the free (untiered) access model, and the agent key flow.
   - `api.url`: `"/openapi.json"` — points agents to the OpenAPI spec.
+- **`GET /.well-known/oauth-protected-resource`** — the discovery document an MCP client fetches when a `/v1` request returns `401`, since that response's `WWW-Authenticate` header points here. `authorization_servers` is deliberately **empty**: this API is not an OAuth authorization server, so advertising one would send clients to a dead endpoint. Standard-named extension fields (`device_authorization_endpoint`, `token_endpoint`, `signup_url`) name the flow that does exist. The response is a typed struct rather than a map so the Go field names can avoid the words "token" and "api_key" — gosec's G101 hardcoded-credential heuristic pattern-matches on field names, and a map full of URLs trips it.
 - **`GET /llms.txt`** — returns a plain-text document suitable for agent context loading. It has two sections:
-  1. A **static header** with the base URL, authentication instructions, a full endpoint listing, and example `curl` commands.
+  1. A **static header** with the base URL, authentication instructions, the agent key-acquisition flow, a full endpoint listing, and example `curl` commands.
   2. A **dynamic price listing** fetched from the DB: one line per model in the format `{provider}/{slug}: input=$N.NNNN/1M output=$N.NNNN/1M`.
+
+Both documents are agent-facing and must not describe tiers: the API is free, and an earlier revision advertised Free/Developer/Pro plans that no longer exist, which led agents to tell users to pay for something free. `TestLLMsTxt_NoStaleTierClaims` and `TestAIPlugin_NoStaleTierClaims` guard this.
+
+`/llms.txt` is cached in Redis for 30 minutes under `llmsTxtCacheKey`. That key carries a content version suffix (`:v2`), so a correction to agent-facing documentation takes effect on deploy rather than after the TTL. Bump the suffix whenever the header changes.
 
 ### SSE stream handler (`sse.go`)
 

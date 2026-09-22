@@ -5,7 +5,7 @@ import { formatMcpError } from "../errors.js";
 export const definition = {
   name: "get_cheapest_model",
   description:
-    "Find the cheapest LLM model matching your task requirements. Returns a ranked list with pricing and trust metadata. Requires Developer tier.",
+    "Find the cheapest LLM model matching your task requirements. Returns a ranked list with pricing and trust metadata.",
   inputSchema: {
     type: "object" as const,
     properties: {

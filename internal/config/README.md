@@ -51,3 +51,11 @@ fmt.Println(cfg.AppPort) // "8080"
 | `OTEL_SERVICE_NAME` | No | `llm-pricing-api` | OpenTelemetry service name |
 | `UNKEY_ROOT_KEY` | No | — | Unkey root key for API key verification (required for auth middleware) |
 | `UNKEY_API_ID` | No | — | Unkey API ID that keys belong to (required for auth middleware) |
+| `MAGIC_LINK_SIGNING_SECRET` | Yes (non-dev) | random in dev | Signs session cookies and keys the HMAC used to hash IPs, emails, user codes, and device codes before they become Redis keys |
+| `MAGIC_LINK_TTL_MINUTES` | No | `15` | Magic-link token lifetime |
+| `MAGIC_LINK_BASE_URL` | No | `https://llmrates.live` | Frontend base URL used to build magic links and the agent approval URL |
+| `MAGIC_LINK_PATH` | No | `/signup/verify` | Path the verify endpoint lives at |
+| `SIGNUP_SESSION_COOKIE_NAME` | No | `llmrates_signup` | Name of the signed session cookie |
+| `SIGNUP_SESSION_TTL_HOURS` | No | `24` | Session cookie lifetime |
+| `SIGNUP_ENABLED` | No | `true` | Kill switch for key issuance; `false` makes `request-link` and the agent device-grant endpoints return 503 |
+| `AGENT_GRANT_TTL_MINUTES` | No | `10` | How long an agent device-authorization grant stays redeemable |

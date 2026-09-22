@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/sha256"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -25,6 +26,25 @@ type IPRateLimitConfig struct {
 	// TimeNow overrides the clock used for window calculation.
 	// Defaults to time.Now when nil. Useful for deterministic tests.
 	TimeNow func() time.Time
+	// Max overrides the per-window request cap. Zero or negative uses the
+	// default ipRateLimitMax.
+	//
+	// Callers need this because a single limit cannot serve both a human signup
+	// form and an agent polling for approval: the poll loop legitimately issues a
+	// request every few seconds for the whole grant lifetime, which exhausts a
+	// signup-shaped bucket in under a minute.
+	Max int
+	// Bucket namespaces this limiter's Redis counters. Two limiters that share a
+	// counter increment each other's, halving both effective budgets, so distinct
+	// limiters must pass distinct buckets. Defaults to "default".
+	Bucket string
+	// SkipPrefixes lists path prefixes this limiter must not count.
+	//
+	// It is required whenever a broader group mount would otherwise capture a
+	// nested group that has its own limit: Fiber's Group/Use match by prefix, so
+	// a limiter mounted at /auth also runs for /auth/agent. Without a skip, the
+	// poll-scale limit on the nested group is silently capped by the broader one.
+	SkipPrefixes []string
 }
 
 // IPRateLimit returns a Fiber middleware that enforces per-IP rate limiting
@@ -46,15 +66,30 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 	if timeNow == nil {
 		timeNow = time.Now
 	}
+	limit := cfg.Max
+	if limit <= 0 {
+		limit = ipRateLimitMax
+	}
+	bucket := cfg.Bucket
+	if bucket == "" {
+		bucket = "default"
+	}
 
 	return func(c *fiber.Ctx) error {
+		// Paths owned by a more specific limiter are not counted here at all.
+		for _, prefix := range cfg.SkipPrefixes {
+			if strings.HasPrefix(c.Path(), prefix) {
+				return c.Next()
+			}
+		}
+
 		nowTime := timeNow()
 		now := nowTime.Unix()
 		windowSec := int64(ipRateLimitWindow.Seconds())
 		ip := RealIP(c, trustedProxies...)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(ip)))
 		windowIndex := now / windowSec
-		windowKey := fmt.Sprintf("iprl:%s:%d", hash[:16], windowIndex)
+		windowKey := fmt.Sprintf("iprl:%s:%s:%d", bucket, hash[:16], windowIndex)
 		windowEnd := time.Unix((windowIndex+1)*windowSec, 0)
 
 		count, err := redisClient.Incr(c.UserContext(), windowKey).Result()
@@ -75,7 +110,7 @@ func IPRateLimitWithConfig(redisClient *redis.Client, fallback zerolog.Logger, c
 			}
 		}
 
-		if count > ipRateLimitMax {
+		if count > int64(limit) {
 			// Reuse the captured nowTime so Retry-After is consistent with the
 			// window calculation above (no second clock read).
 			retryAfter := int(windowEnd.Sub(nowTime).Seconds())

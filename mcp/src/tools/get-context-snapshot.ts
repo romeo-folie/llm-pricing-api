@@ -5,7 +5,7 @@ import { formatMcpError } from "../errors.js";
 export const definition = {
   name: "get_context_snapshot",
   description:
-    "Get a ~2k-token pricing snapshot optimised for agent system prompts. Use format=markdown for a human-readable table. Requires Developer tier.",
+    "Get a ~2k-token pricing snapshot optimised for agent system prompts. Use format=markdown for a human-readable table.",
   inputSchema: {
     type: "object" as const,
     properties: {

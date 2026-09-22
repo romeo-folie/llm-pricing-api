@@ -3,7 +3,7 @@
 import Script from "next/script"
 import { usePathname, useSearchParams } from "next/navigation"
 import { useEffect, Suspense } from "react"
-import { GA_MEASUREMENT_ID, pageview } from "@/lib/analytics"
+import { GA_MEASUREMENT_ID, analyticsPath, pageview } from "@/lib/analytics"
 
 /**
  * Inner component that tracks route changes.
@@ -17,10 +17,8 @@ function RouteChangeTracker() {
 
   useEffect(() => {
     if (!GA_MEASUREMENT_ID) return
-    const url = searchParams.toString()
-      ? `${pathname}?${searchParams.toString()}`
-      : pathname
-    pageview(url)
+    // analyticsPath drops credentials that must never reach GA (see lib/analytics).
+    pageview(analyticsPath(pathname, searchParams))
   }, [pathname, searchParams])
 
   return null
@@ -48,6 +46,10 @@ export default function GoogleAnalytics() {
           gtag('js', new Date());
           gtag('config', '${GA_MEASUREMENT_ID}', {
             page_path: window.location.pathname,
+            // Override the implicit page_location, which otherwise carries the
+            // full query string. A landing directly on /activate?code=... would
+            // otherwise send a live approval code to Google.
+            page_location: window.location.origin + window.location.pathname,
           });
         `}
       </Script>

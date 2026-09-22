@@ -6,6 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ApiClient } from "./api-client.js";
+import * as authenticate from "./tools/authenticate.js";
 import * as getCheapestModel from "./tools/get-cheapest-model.js";
 import * as compareModels from "./tools/compare-models.js";
 import * as getPriceHistory from "./tools/get-price-history.js";
@@ -30,7 +31,10 @@ interface ToolModule {
   ) => Promise<CallToolResult>;
 }
 
+// authenticate comes first: it is the tool an agent needs when nothing else
+// works, so it should be the most discoverable entry in the list.
 const TOOLS: ToolModule[] = [
+  authenticate,
   getCheapestModel,
   compareModels,
   getPriceHistory,

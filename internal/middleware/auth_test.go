@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-redis/redismock/v9"
@@ -276,5 +277,82 @@ func TestAuth_ContentType_IsProblemJSON(t *testing.T) {
 	ct := resp.Header.Get("Content-Type")
 	if ct != "application/problem+json" {
 		t.Errorf("want Content-Type=application/problem+json, got %q", ct)
+	}
+}
+
+// --- Bearer challenge on 401 ---
+
+// TestAuth_UnauthorizedSetsBearerChallenge verifies that every 401 advertises
+// how to authenticate, not just that it failed.
+//
+// The resource_metadata pointer is the useful part: an MCP client that
+// implements OAuth discovery reads it from this header alone and can then fetch
+// the discovery document to learn that keys come from a device-authorization
+// flow. Without the header, such a client has nothing to follow and the only
+// remaining option is a human reading documentation.
+func TestAuth_UnauthorizedSetsBearerChallenge(t *testing.T) {
+	cases := []struct {
+		name   string
+		header string
+	}{
+		{"missing header", ""},
+		{"not bearer scheme", "Basic dXNlcjpwYXNz"},
+		{"empty bearer token", "Bearer "},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db, _ := redismock.NewClientMock()
+			app := newTestApp(middleware.Auth(&mockVerifier{}, db, "api_123"))
+
+			req := httptest.NewRequest("GET", "/v1/test", nil)
+			if tc.header != "" {
+				req.Header.Set("Authorization", tc.header)
+			}
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != fiber.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", resp.StatusCode)
+			}
+			challenge := resp.Header.Get("WWW-Authenticate")
+			if challenge == "" {
+				t.Fatal("401 response is missing a WWW-Authenticate header")
+			}
+			if !strings.Contains(challenge, `Bearer realm="llmrates"`) {
+				t.Errorf("challenge = %q, want a Bearer realm", challenge)
+			}
+			if !strings.Contains(challenge, "/.well-known/oauth-protected-resource") {
+				t.Errorf("challenge = %q, want a resource_metadata pointer", challenge)
+			}
+		})
+	}
+}
+
+// TestAuth_InvalidKeyStillSetsChallenge covers the paths that reach the cache
+// and the verifier rather than bailing out on the header.
+func TestAuth_InvalidKeyStillSetsChallenge(t *testing.T) {
+	db, mock := redismock.NewClientMock()
+	const rawKey = "llmr_bad"
+	mock.ExpectGet(cacheKey(rawKey)).RedisNil()
+
+	app := newTestApp(middleware.Auth(&mockVerifier{valid: false}, db, "api_123"))
+
+	req := httptest.NewRequest("GET", "/v1/test", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	if resp.Header.Get("WWW-Authenticate") == "" {
+		t.Error("invalid-key 401 is missing a WWW-Authenticate header")
 	}
 }

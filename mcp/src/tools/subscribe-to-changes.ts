@@ -43,7 +43,7 @@ async function isPrivateOrLoopback(hostname: string): Promise<boolean> {
 export const definition = {
   name: "subscribe_to_changes",
   description:
-    "Register a webhook URL to receive real-time notifications when LLM prices change. Requires Pro tier.",
+    "Register a webhook URL to receive real-time notifications when LLM prices change. Each key may hold up to 5 active webhooks.",
   inputSchema: {
     type: "object" as const,
     properties: {

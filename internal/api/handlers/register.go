@@ -81,13 +81,15 @@ func RegisterDev(v1 fiber.Router, db *pgxpool.Pool, _ *redis.Client) error {
 // app. These routes are intentionally placed outside any auth group so they
 // require no API key:
 //
-//   - GET /openapi.json              — OpenAPI 3.1 specification
-//   - GET /.well-known/ai-plugin.json — AI plugin manifest
-//   - GET /llms.txt                  — plain-text model price listing (Redis-cached, 30 min TTL)
+//   - GET /openapi.json                          — OpenAPI 3.1 specification
+//   - GET /.well-known/ai-plugin.json            — AI plugin manifest
+//   - GET /.well-known/oauth-protected-resource  — MCP/OAuth discovery document
+//   - GET /llms.txt                              — plain-text model price listing (Redis-cached, 30 min TTL)
 func RegisterDiscovery(app *fiber.App, db *pgxpool.Pool, rdb *redis.Client) {
 	dh := NewDiscoveryHandler(db, rdb)
 	app.Get("/openapi.json", dh.GetOpenAPI)
 	app.Get("/.well-known/ai-plugin.json", dh.GetAIPlugin)
+	app.Get("/.well-known/oauth-protected-resource", dh.GetOAuthProtectedResource)
 	app.Get("/llms.txt", dh.GetLLMsTxt)
 }
 

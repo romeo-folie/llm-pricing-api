@@ -26,6 +26,7 @@ func newDiscoveryApp(store handlers.Store) *fiber.App {
 	dh := handlers.NewDiscoveryHandlerForTest(store, nil)
 	app.Get("/openapi.json", dh.GetOpenAPI)
 	app.Get("/.well-known/ai-plugin.json", dh.GetAIPlugin)
+	app.Get("/.well-known/oauth-protected-resource", dh.GetOAuthProtectedResource)
 	app.Get("/llms.txt", dh.GetLLMsTxt)
 	return app
 }
@@ -589,7 +590,10 @@ func TestGetLLMsTxt_ContainsAuthInstructions(t *testing.T) {
 func TestGetLLMsTxt_CacheHit(t *testing.T) {
 	rc, mock := redismock.NewClientMock()
 	cachedBody := "# cached response\nopenai/gpt-4o: input=$2.5000/1M output=$10.0000/1M\n"
-	mock.ExpectGet("cache:GET:/llms.txt").SetVal(cachedBody)
+	// The ":v2" suffix is the content version of the header. Changing the key is
+	// deliberate: it is what makes a documentation fix take effect on deploy
+	// instead of after the cache TTL.
+	mock.ExpectGet("cache:GET:/llms.txt:v2").SetVal(cachedBody)
 
 	storeCalled := false
 	store := &mockStore{
@@ -630,8 +634,8 @@ func TestGetLLMsTxt_CacheHit(t *testing.T) {
 // and the result is written to Redis.
 func TestGetLLMsTxt_CacheMiss(t *testing.T) {
 	rc, mock := redismock.NewClientMock()
-	mock.ExpectGet("cache:GET:/llms.txt").RedisNil()
-	mock.Regexp().ExpectSet("cache:GET:/llms.txt", `.*`, 30*time.Minute).SetVal("OK")
+	mock.ExpectGet("cache:GET:/llms.txt:v2").RedisNil()
+	mock.Regexp().ExpectSet("cache:GET:/llms.txt:v2", `.*`, 30*time.Minute).SetVal("OK")
 
 	store := &mockStore{
 		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
@@ -728,5 +732,137 @@ func TestGetOpenAPI_AskResponseHasIntent(t *testing.T) {
 	}
 	if _, ok := askResp.Properties["answer"]; ok {
 		t.Error("AskResponse schema must NOT have stale 'answer' field")
+	}
+}
+
+// --- Agent-facing staleness guards ---------------------------------------
+
+// TestLLMsTxt_NoStaleTierClaims guards the document agents read to bootstrap.
+// An earlier revision advertised Free/Developer/Pro plans; the API is free with
+// no tier gating, and telling an agent otherwise makes it tell users to pay for
+// something that costs nothing.
+func TestLLMsTxt_NoStaleTierClaims(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return sampleContextModels(), nil
+		},
+	}
+	app := newDiscoveryApp(store)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/llms.txt", nil), -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+
+	for _, stale := range []string{"$14.99", "$29.99", "Developer tier", "Developer+", "Pro)", "(Pro"} {
+		if strings.Contains(text, stale) {
+			t.Errorf("llms.txt still advertises a removed paid tier: found %q", stale)
+		}
+	}
+	// The document must state the actual model, so an agent does not invent one.
+	if !strings.Contains(text, "The API is free") {
+		t.Error("llms.txt must state that the API is free")
+	}
+}
+
+// TestLLMsTxt_DocumentsAgentKeyFlow verifies the device-grant flow is
+// discoverable from the document an agent reads cold. Without this, an agent
+// with no key has nowhere to go.
+func TestLLMsTxt_DocumentsAgentKeyFlow(t *testing.T) {
+	store := &mockStore{
+		listModelsForCtx: func(_ context.Context, _ int) ([]handlers.ContextModelRow, error) {
+			return sampleContextModels(), nil
+		},
+	}
+	app := newDiscoveryApp(store)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/llms.txt", nil), -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+
+	for _, want := range []string{"/auth/agent/device", "/auth/agent/token", "device_code", "user_code"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("llms.txt must document the agent key flow: missing %q", want)
+		}
+	}
+}
+
+// TestAIPlugin_NoStaleTierClaims covers the other manifest an agent may read.
+func TestAIPlugin_NoStaleTierClaims(t *testing.T) {
+	app := newDiscoveryApp(&mockStore{})
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/.well-known/ai-plugin.json", nil), -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+
+	for _, stale := range []string{"Developer tier required", "$14.99", "$29.99"} {
+		if strings.Contains(text, stale) {
+			t.Errorf("ai-plugin.json still requires a removed paid tier: found %q", stale)
+		}
+	}
+	if !strings.Contains(text, "no tiers") {
+		t.Error("ai-plugin.json must state that there are no tiers")
+	}
+	if !strings.Contains(text, "/auth/agent/device") {
+		t.Error("ai-plugin.json must point at the agent key flow")
+	}
+}
+
+// --- /.well-known/oauth-protected-resource ------------------------------
+
+// TestGetOAuthProtectedResource verifies the discovery document MCP clients
+// fetch. It must not advertise an authorization server that does not exist:
+// claiming one would send clients to a dead endpoint and hide the device flow
+// that actually works.
+func TestGetOAuthProtectedResource(t *testing.T) {
+	app := newDiscoveryApp(&mockStore{})
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil), -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var doc struct {
+		Resource               string   `json:"resource"`
+		BearerMethodsSupported []string `json:"bearer_methods_supported"`
+		AuthorizationServers   []string `json:"authorization_servers"`
+		DeviceEndpoint         string   `json:"device_authorization_endpoint"`
+		TokenEndpoint          string   `json:"token_endpoint"`
+		Documentation          string   `json:"documentation"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if doc.Resource != "https://api.llmrates.live" {
+		t.Errorf("resource = %q, want the canonical production address", doc.Resource)
+	}
+	if len(doc.AuthorizationServers) != 0 {
+		t.Errorf("authorization_servers = %v, want empty (no OAuth server exists)", doc.AuthorizationServers)
+	}
+	if len(doc.BearerMethodsSupported) != 1 || doc.BearerMethodsSupported[0] != "header" {
+		t.Errorf("bearer_methods_supported = %v, want [header]", doc.BearerMethodsSupported)
+	}
+	if !strings.HasSuffix(doc.DeviceEndpoint, "/auth/agent/device") {
+		t.Errorf("device endpoint = %q, want the real /auth/agent/device route", doc.DeviceEndpoint)
+	}
+	if !strings.HasSuffix(doc.TokenEndpoint, "/auth/agent/token") {
+		t.Errorf("token endpoint = %q, want the real /auth/agent/token route", doc.TokenEndpoint)
 	}
 }

@@ -137,20 +137,40 @@ func Auth(verifier UnkeyVerifier, redisClient *redis.Client, apiID string) fiber
 	return cfg.handle
 }
 
+// protectedResourceMetadataURL is the discovery document advertised in the
+// WWW-Authenticate challenge. Like /llms.txt, it names the canonical production
+// address rather than the current deployment: it is agent-facing metadata about
+// the public API, not a description of this process.
+const protectedResourceMetadataURL = "https://api.llmrates.live/.well-known/oauth-protected-resource"
+
+// unauthorizedWithChallenge returns an RFC 7807 problem detail and, on the same
+// response, an RFC 6750 Bearer challenge.
+//
+// The WWW-Authenticate header is how a client learns *how* to authenticate
+// rather than just that it failed. resource_metadata points at the discovery
+// document, so an MCP client that implements OAuth discovery can find out that
+// keys here come from a device-authorization flow instead of an OAuth server,
+// and can then follow that flow without a human reading documentation.
+func unauthorizedWithChallenge(c *fiber.Ctx, detail string) error {
+	c.Set(fiber.HeaderWWWAuthenticate,
+		`Bearer realm="llmrates", resource_metadata="`+protectedResourceMetadataURL+`"`)
+	return api.NewUnauthorized(detail)
+}
+
 func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		return api.NewUnauthorized("Authorization header is required")
+		return unauthorizedWithChallenge(c, "Authorization header is required")
 	}
 
 	const prefix = "Bearer "
 	if !strings.HasPrefix(authHeader, prefix) {
-		return api.NewUnauthorized("Authorization header must use Bearer scheme")
+		return unauthorizedWithChallenge(c, "Authorization header must use Bearer scheme")
 	}
 
 	rawKey := strings.TrimPrefix(authHeader, prefix)
 	if rawKey == "" {
-		return api.NewUnauthorized("Bearer token must not be empty")
+		return unauthorizedWithChallenge(c, "Bearer token must not be empty")
 	}
 
 	hash := keyHash(rawKey)
@@ -161,7 +181,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	if data, err := cfg.redis.Get(c.UserContext(), cacheKey).Bytes(); err == nil {
 		if jsonErr := json.Unmarshal(data, &result); jsonErr == nil {
 			if !result.Valid {
-				return api.NewUnauthorized("Invalid API key")
+				return unauthorizedWithChallenge(c, "Invalid API key")
 			}
 			c.Locals(LocalKeyTier, result.Tier)
 			c.Locals(LocalKeyHash, hash)
@@ -173,7 +193,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	valid, tier, err := cfg.verifier.VerifyKey(c.UserContext(), rawKey, cfg.apiID)
 	if err != nil {
 		// Do not expose internal error details to the caller.
-		return api.NewUnauthorized("API key verification failed")
+		return unauthorizedWithChallenge(c, "API key verification failed")
 	}
 
 	// Persist result (valid or not) in Redis so repeated bad keys are fast.
@@ -184,7 +204,7 @@ func (cfg *authConfig) handle(c *fiber.Ctx) error {
 	}
 
 	if !valid {
-		return api.NewUnauthorized("Invalid API key")
+		return unauthorizedWithChallenge(c, "Invalid API key")
 	}
 
 	c.Locals(LocalKeyTier, tier)
