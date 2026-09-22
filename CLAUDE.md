@@ -206,7 +206,7 @@ When the `/pm` workflow creates a new worktree (e.g. during `/pm:epic-start-work
    2. Run `/pm:issue-start <N>` to claim it and read its full spec.
    3. Write tests first, then implement.
    4. Run `go test ./...` — all tests must pass before committing.
-   5. Run `/code-reviewer` — fix all findings before closing.
+   5. Delegate code review to a subagent on the most capable model available (see Code Review Gate) — fix all findings before closing.
    6. Run `/pm:issue-close <N>` to mark complete and update the status table in this file.
 
    ````
@@ -267,31 +267,81 @@ A feature is **not complete** until the README for every touched module accurate
 
 ## Code Review Gate
 
-After implementing any feature or task, you **must** run the `/code-reviewer` skill before reporting the task as complete:
+After implementing any feature or task, you **must** have the changed code reviewed before reporting
+the task as complete. **The review is always delegated to a subagent — never review your own work
+inline.** The agent that wrote the code is the worst judge of it: it already believes the code is
+correct, and it will read its own intent into anything ambiguous.
 
-1. Invoke `/code-reviewer` on the changed code using **Sonnet** as the model.
-2. Fix every issue and test recommendation it identifies.
-3. Re-run `/code-reviewer` on the fixes using **Opus** as the model.
-4. Fix any additional findings from the Opus pass.
-5. Repeat with Opus until the review comes back clean with no actionable findings.
-6. Only then may you mark the task complete or close the issue.
+### Choosing the reviewer's model
 
-If a flagged issue is intentionally skipped (e.g. out of scope, deferred, won't-fix), you **must** state the reason in the task completion summary. Do not silently skip findings. Every skipped item needs a one-line justification alongside it.
+Use the **most capable model available for complex reasoning work**. Never a fast or lightweight
+tier.
 
-A task is **not done** until the code-reviewer confirms it is clean or all remaining findings have documented skip reasons.
+Reviewing subtle security, concurrency, and data-integrity logic is exactly the work cheap models get
+wrong, and a review that misses a defect is worse than no review at all: it certifies broken code as
+having been checked. Also set the highest reasoning effort the model's route advertises.
+
+This is deliberately not tied to any vendor or model name. Use whichever model your environment
+offers that is best at hard reasoning, whatever company makes it.
+
+Discover what is actually available rather than assuming: `list_subagent_models` with no arguments
+lists registered providers; call it again with `provider` to list that provider's models, then with
+`provider` and `model` to inspect that exact route and its reasoning efforts.
+
+**How to pin the model depends on the session**, because subagent model selection is a per-deployment
+setting and defaults to off:
+
+1. If your delegation tool exposes `provider` / `model` / `reasoning_effort` fields, pass them.
+2. If it does not, delegate through a single-agent `workflow` call, whose `agent()` hook accepts
+   independent `provider` and `model` overrides.
+
+If neither is available, or the most capable route cannot be reached, **say so explicitly in the task
+completion summary** and name the model you actually used. Silently reviewing on a weaker model
+defeats the point of this gate; a documented substitution does not.
+
+### Procedure
+
+1. Delegate to a reviewer subagent on the model chosen above, scoped to the changed surface.
+2. Instruct it to be adversarial and to report only actionable findings, each with: severity, exact
+   `file:line`, a concrete failure or attack scenario (no vague "could be unsafe"), and a minimal
+   suggested fix. Require it to state which claims it could **not** verify, and to name any test that
+   would still pass if the implementation were wrong.
+3. **Give the reviewer a runnable environment.** Where the change touches a database, an external
+   service, or a migration, tell it how to exercise that for real. A reviewer that can only read code
+   will miss exactly the class of defect that matters most — a fix that looks right and does not work.
+4. Fix every issue and test recommendation it identifies.
+5. Re-delegate to a **fresh** reviewer on the fixes. Its first job is to falsify each fix (verdict per
+   finding: fixed / partially fixed / not fixed / regressed) and its second is to find anything the
+   fixes broke. Bugs introduced by a fix are the most common failure of this gate.
+6. Repeat step 5 until a review comes back with no actionable findings.
+
+If a flagged issue is intentionally skipped (e.g. out of scope, deferred, won't-fix), you **must**
+state the reason in the task completion summary. Do not silently skip findings. Every skipped item
+needs a one-line justification alongside it.
+
+A task is **not done** until a review on the most capable model available comes back clean, or all
+remaining findings have documented skip reasons. Record the model used for each pass in the
+completion summary.
 
 ## Epic Completion Review Gate
 
-When the last issue in an epic is closed, a full-epic Opus review **must** be run before declaring the epic complete:
+When the last issue in an epic is closed, a full-epic review **must** be run before declaring the epic
+complete:
 
-1. Run `/code-reviewer` across the entire epic's changed surface (all packages and files introduced or modified during the epic) using **Opus** as the model.
+1. Delegate to a reviewer subagent across the entire epic's changed surface (all packages and files
+   introduced or modified during the epic), on the most capable model available per *Choosing the
+   reviewer's model* above.
 2. Fix every issue it identifies.
-3. Re-run with **Opus** until the review comes back clean with no actionable findings.
+3. Re-run until the review comes back clean with no actionable findings.
 4. Only then may you run `/pm:epic-close` or `/pm:epic-merge`.
 
-This final gate catches cross-cutting issues that per-task reviews miss — architectural inconsistencies, duplicated patterns, missing abstractions, and accumulated technical debt across the full body of work.
+This final gate catches cross-cutting issues that per-task reviews miss — architectural
+inconsistencies, duplicated patterns, missing abstractions, and accumulated technical debt across the
+full body of work.
 
-If a finding is intentionally deferred (e.g. out of scope for this epic), document the reason before closing. An epic is **not complete** until the Opus review is clean or all skipped findings have written justifications.
+If a finding is intentionally deferred (e.g. out of scope for this epic), document the reason before
+closing. An epic is **not complete** until that review is clean or all skipped findings have written
+justifications.
 
 ## Pre-Commit Checklist
 
@@ -308,7 +358,7 @@ Before creating any commit, **all** of the following must pass. Run them in this
 1. **Lint clean** — run first, fastest feedback: `golangci-lint run ./...` returns no errors. Install once with `brew install golangci-lint`; config is in `.golangci.yml`.
 2. **All tests green**: `go test ./...` exits with zero failures.
 3. **Build succeeds**: `go build -o bin/api ./cmd/api && go build -o bin/worker ./cmd/worker` (and `cd frontend && npm run build` / `cd mcp && npm run build` for frontend/MCP changes) completes without errors. Always build into `bin/` — never `go build ./...` as it drops binaries into the project root.
-4. **Code review clean**: `/code-reviewer` returns no actionable findings (see Code Review Gate above).
+4. **Code review clean**: a subagent review on the most capable model available returns no actionable findings (see Code Review Gate above).
 
 **Do not commit if any of the above fail. This is not optional.**
 
@@ -341,7 +391,7 @@ go test -cover ./...
 
 ## Security
 
-Security is a first-class requirement, not a post-hoc concern. Every feature that touches authentication, external data, user-supplied input, or secret material must be reviewed against the rules below before the task is closed. The `/code-reviewer` gate must catch any violations — flag and fix them, do not skip.
+Security is a first-class requirement, not a post-hoc concern. Every feature that touches authentication, external data, user-supplied input, or secret material must be reviewed against the rules below before the task is closed. The Code Review Gate must catch any violations — flag and fix them, do not skip.
 
 ### Hard Rules — Never Do These
 
