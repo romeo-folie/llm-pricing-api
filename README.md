@@ -74,7 +74,7 @@ Two independent pipelines write to a shared store, which is served through one R
 │                                                                           │
 │  Global:  Security headers → OTel → Prometheus → logger → recover         │
 │  /v1:     → Auth (Unkey) → Response cache → Rate limit → Handler          │
-│  /auth:   → IP rate limit → magic-link signup handlers                    │
+│  /auth:   → IP rate limit → signup + agent device-grant handlers          │
 │  /admin:  → HTTP Basic Auth → review queue UI                             │
 │                                                                           │
 │  Prometheus /metrics is served on a separate internal port (never public) │
@@ -139,7 +139,7 @@ The two timestamps mean different things, and the distinction matters:
 ├── internal/
 │   ├── api/                    # RFC 7807 errors, TrustMeta, response envelope
 │   │   └── handlers/           # One file per endpoint group; Store interface for DB access
-│   ├── auth/                   # Magic-link signup HTTP handlers (/auth routes)
+│   ├── auth/                   # Signup + agent device-grant HTTP handlers (/auth routes)
 │   ├── cache/                  # Redis client initialisation
 │   ├── config/                 # Environment variable loader (Config struct)
 │   ├── database/               # pgxpool initialisation with connection tuning
@@ -166,7 +166,7 @@ The two timestamps mean different things, and the distinction matters:
 │   │   ├── benchmark_scraper.go # BenchmarkScraper interface
 │   │   ├── ssrf.go             # Transport that blocks private/loopback/link-local addresses
 │   │   └── slugmap/            # Allowlisted identity + delimited variant → canonical DB slug
-│   ├── signup/                 # Signup domain: store, tokens, sessions, AbuseGuard, Unkey issuance
+│   ├── signup/                 # Signup domain: store, tokens, sessions, AbuseGuard, Unkey issuance, agent grants
 │   ├── webhooks/               # Webhook domain types
 │   └── worker/                 # asynq task handlers: scrapers, benchmark jobs, webhook delivery
 ├── frontend/                   # Next.js app (llmrates.live) — SSR pages, compare, calculator, charts
@@ -230,11 +230,33 @@ Self-serve magic-link signup that provisions an Unkey API key. Disabled when `SI
 
 | Endpoint | Description |
 |---|---|
-| `POST /auth/signup/request-link` | Email a magic link |
-| `GET /auth/signup/verify` | Verify the link and open a session |
-| `GET /auth/signup/me` | Current session details (session required) |
+| `POST /auth/signup/request-link` | Email a magic link; optional `next` returns the user to `/activate?code=…` after verification |
+| `GET /auth/signup/verify` | Verify the link, open a session, redirect to `next` when it is a safe same-origin path |
+| `GET /auth/signup/me` | Current session details: `has_active_key`, `key_count`, `max_keys` (session required) |
 | `POST /auth/signup/issue-key` | Issue the account's API key (session required) |
-| `POST /auth/signup/regenerate-key` | Rotate the account's API key (session required) |
+| `POST /auth/signup/regenerate-key` | Rotate one key; `{key_id}` selects which (session required) |
+| `GET /auth/signup/keys` | List active keys with labels and provenance; never returns a secret (session required) |
+| `DELETE /auth/signup/keys/:id` | Revoke one key in the registry and at Unkey (session required) |
+
+Keys are **per-agent**: an identity may hold up to 5 active keys, so each agent can be revoked and
+attributed independently. An account's keys are labelled with the client name that requested them.
+
+### Agent onboarding (public, IP rate-limited)
+
+The device-authorization flow that lets an agent obtain a key on its user's behalf. The key travels
+server → agent over the polling channel, so the user never copies or pastes a secret; their only
+action is a decision in the browser at `/activate`.
+
+| Endpoint | Description |
+|---|---|
+| `POST /auth/agent/device` | Start a grant; returns `device_code`, `user_code`, `verification_uri(_complete)`, `expires_in`, `interval` |
+| `GET /auth/agent/grant` | Describe the pending grant to the user deciding on it (session required) |
+| `POST /auth/agent/approve` | Record approve/deny, bound to the session identity (session required) |
+| `POST /auth/agent/token` | Agent polls and collects the key exactly once |
+
+Poll responses are `200` with a `status` of `pending`, `slow_down`, `issued`, `denied`, `expired`,
+or `redeemed`, so a polling agent does not generate a stream of 4xx responses. Codes expire after
+10 minutes and the plaintext is served once.
 
 ### Public and operational
 
@@ -242,7 +264,8 @@ Self-serve magic-link signup that provisions an Unkey API key. Disabled when `SI
 |---|---|---|
 | `GET /openapi.json` | Public | OpenAPI 3.1 spec |
 | `GET /.well-known/ai-plugin.json` | Public | AI plugin manifest |
-| `GET /llms.txt` | Public | Plain-text model index for LLM discovery (Redis-cached, 30 min TTL) |
+| `GET /.well-known/oauth-protected-resource` | Public | MCP/OAuth discovery document; `authorization_servers` is empty because this is not an OAuth server |
+| `GET /llms.txt` | Public | Plain-text model index for LLM discovery, including the agent key flow (Redis-cached, 30 min TTL) |
 | `GET /health` | Public | `{"status":"ok","db":"ok","redis":"ok"}`; returns 503 + `"degraded"` if a dependency is down |
 | `GET /admin/review` | Basic auth | Review queue UI for flagged discrepancies |
 | `POST /admin/review/:id/approve` · `/reject` | Basic auth | Resolve a flagged record |

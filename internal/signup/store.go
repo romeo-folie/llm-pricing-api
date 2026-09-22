@@ -1,6 +1,7 @@
 // Package signup provides the data-access layer for the free API-key
 // onboarding flow: email identity management, magic-link token lifecycle,
-// and the Unkey-backed API key registry.
+// the Unkey-backed API key registry, and the agent device-grant records that
+// let an agent collect a key on a user's behalf.
 //
 // Use NewStore to obtain a Store from a *pgxpool.Pool. All operations are
 // safe for concurrent use; there is no package-level state.
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,9 +28,27 @@ var ErrTokenConsumed = errors.New("signup: token already used")
 // ErrTokenExpired is returned when a magic-link token is past its expires_at.
 var ErrTokenExpired = errors.New("signup: token expired")
 
-// ErrDuplicateActiveKey is returned when an identity already has an active key
-// and a second insertion is attempted.
-var ErrDuplicateActiveKey = errors.New("signup: identity already has an active key")
+// MaxActiveKeysPerIdentity caps how many keys one identity may hold at once.
+// Keys are per-agent so each can be revoked and attributed independently; the
+// cap bounds how far a single account can fan out. Mirrors the 5-webhook cap
+// and, like it, is enforced under a lock rather than by an unguarded
+// read-then-write count (which races).
+const MaxActiveKeysPerIdentity = 5
+
+// Provenance values for KeyRecord.CreatedVia. These mirror the CHECK constraint
+// on api_keys_registry.created_via added by migration 000019.
+const (
+	CreatedViaMagicLink = "magic_link"
+	CreatedViaAgent     = "agent"
+)
+
+// maxKeyLabelBytes bounds KeyRecord.Label. Mirrors the DB CHECK constraint so
+// the handler gets a clear error instead of a constraint violation.
+const maxKeyLabelBytes = 64
+
+// ErrActiveKeyLimitReached is returned when an identity already holds
+// MaxActiveKeysPerIdentity active keys.
+var ErrActiveKeyLimitReached = errors.New("signup: active key limit reached")
 
 // ── Store interface ───────────────────────────────────────────────────────────
 
@@ -50,9 +68,26 @@ type Store interface {
 
 	// Key registry operations
 	GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error)
+	ListActiveKeys(ctx context.Context, identityID string) ([]KeyRecord, error)
 	InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error)
+	InsertKeyWithLabel(ctx context.Context, identityID, providerKeyID, label, createdVia string) (*KeyRecord, error)
 	RevokeKey(ctx context.Context, identityID, providerKeyID string) error
+	// RevokeKeyByID revokes one key by its registry ID and returns the Unkey
+	// provider key ID. alreadyRevoked reports a repeat call, so the caller can
+	// retry an upstream revocation that previously failed.
+	RevokeKeyByID(ctx context.Context, identityID, keyID string) (providerKeyID string, alreadyRevoked bool, err error)
 	RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error)
+
+	// Agent device-grant operations. CreateAgentGrant generates both codes
+	// internally and returns the raw device code, which is the only moment it
+	// exists in plaintext.
+	CreateAgentGrant(ctx context.Context, clientName, platform string, expiresAt time.Time) (*AgentGrant, string, error)
+	GetAgentGrantByDeviceCode(ctx context.Context, rawDeviceCode string) (*AgentGrant, error)
+	GetAgentGrantByUserCode(ctx context.Context, userCode string) (*AgentGrant, error)
+	DecideAgentGrant(ctx context.Context, userCode, identityID string, approve bool) (*AgentGrant, error)
+	RedeemAgentGrant(ctx context.Context, rawDeviceCode string) (*AgentGrant, error)
+	RevertAgentGrantRedemption(ctx context.Context, grantID string) error
+	DeleteExpiredAgentGrants(ctx context.Context) (int64, error)
 }
 
 // ── Domain types ──────────────────────────────────────────────────────────────
@@ -83,9 +118,14 @@ type KeyRecord struct {
 	ID            string
 	IdentityID    string
 	ProviderKeyID string
-	Status        string
-	CreatedAt     time.Time
-	RevokedAt     *time.Time
+	// Label is the human-readable owner of the key — an agent's self-reported
+	// client name for agent-issued keys, empty for magic-link keys.
+	Label string
+	// CreatedVia is 'magic_link' or 'agent'.
+	CreatedVia string
+	Status     string
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
 }
 
 // ── Production implementation ─────────────────────────────────────────────────
@@ -297,12 +337,18 @@ func (s *PgxStore) DeleteExpiredTokens(ctx context.Context) (int64, error) {
 
 // ── Key registry ──────────────────────────────────────────────────────────────
 
-// GetActiveKey returns the active key for an identity, or ErrNotFound.
+// GetActiveKey returns the most recently created active key for an identity,
+// or ErrNotFound. With multiple keys per identity this is a convenience for
+// callers that only need "is there one?" — use ListActiveKeys when the
+// specific key matters. Ordered so the result is deterministic rather than
+// whichever row the planner happens to return first.
 func (s *PgxStore) GetActiveKey(ctx context.Context, identityID string) (*KeyRecord, error) {
 	row := s.db.QueryRow(ctx, `
-		SELECT id, identity_id, provider_key_id, status, created_at, revoked_at
+		SELECT id, identity_id, provider_key_id, label, created_via, status, created_at, revoked_at
 		FROM api_keys_registry
-		WHERE identity_id = $1 AND status = 'active'`,
+		WHERE identity_id = $1 AND status = 'active'
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1`,
 		identityID,
 	)
 	k, err := scanKey(row)
@@ -315,26 +361,109 @@ func (s *PgxStore) GetActiveKey(ctx context.Context, identityID string) (*KeyRec
 	return k, nil
 }
 
-// InsertKey creates a new active key record. Returns ErrDuplicateActiveKey if
-// the identity already has an active key (enforced by the unique partial index).
-// Returns an error if providerKeyID is empty or blank.
+// ListActiveKeys returns every active key for an identity, newest first.
+// Returns an empty slice (not ErrNotFound) when the identity has no keys, so
+// callers can render an empty list without special-casing the error.
+func (s *PgxStore) ListActiveKeys(ctx context.Context, identityID string) ([]KeyRecord, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, identity_id, provider_key_id, label, created_via, status, created_at, revoked_at
+		FROM api_keys_registry
+		WHERE identity_id = $1 AND status = 'active'
+		ORDER BY created_at DESC, id DESC`,
+		identityID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("signup.ListActiveKeys: %w", err)
+	}
+	defer rows.Close()
+
+	keys := make([]KeyRecord, 0, 1)
+	for rows.Next() {
+		k, err := scanKey(rows)
+		if err != nil {
+			return nil, fmt.Errorf("signup.ListActiveKeys: scan: %w", err)
+		}
+		keys = append(keys, *k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("signup.ListActiveKeys: rows: %w", err)
+	}
+	return keys, nil
+}
+
+// InsertKey creates a new active key record with no label, as a magic-link key.
+// Returns ErrActiveKeyLimitReached when the identity already holds
+// MaxActiveKeysPerIdentity active keys.
 func (s *PgxStore) InsertKey(ctx context.Context, identityID, providerKeyID string) (*KeyRecord, error) {
+	return s.InsertKeyWithLabel(ctx, identityID, providerKeyID, "", CreatedViaMagicLink)
+}
+
+// InsertKeyWithLabel creates a new active key record owned by label.
+//
+// The cap is enforced inside a transaction that first takes a row lock on the
+// identity. The lock is what makes it race-free: two concurrent inserts for the
+// same identity serialize on it, so both cannot observe an under-cap count and
+// then both insert. An unguarded count-then-insert would permit exactly that.
+//
+// Returns ErrActiveKeyLimitReached when at capacity, ErrNotFound when the
+// identity does not exist.
+func (s *PgxStore) InsertKeyWithLabel(ctx context.Context, identityID, providerKeyID, label, createdVia string) (*KeyRecord, error) {
 	providerKeyID = strings.TrimSpace(providerKeyID)
 	if providerKeyID == "" {
-		return nil, fmt.Errorf("signup.InsertKey: providerKeyID must not be empty")
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: providerKeyID must not be empty")
 	}
-	row := s.db.QueryRow(ctx, `
-		INSERT INTO api_keys_registry (identity_id, provider_key_id)
-		VALUES ($1, $2)
-		RETURNING id, identity_id, provider_key_id, status, created_at, revoked_at`,
-		identityID, providerKeyID,
+	label = strings.TrimSpace(label)
+	if len(label) > maxKeyLabelBytes {
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: label must be at most %d bytes", maxKeyLabelBytes)
+	}
+	switch createdVia {
+	case "":
+		createdVia = CreatedViaMagicLink
+	case CreatedViaMagicLink, CreatedViaAgent:
+		// valid as-is
+	default:
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: invalid createdVia %q", createdVia)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Serialize concurrent key inserts for this identity.
+	var locked int
+	err = tx.QueryRow(ctx, `SELECT 1 FROM api_identities WHERE id = $1 FOR UPDATE`, identityID).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: lock identity: %w", err)
+	}
+
+	var active int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM api_keys_registry
+		WHERE identity_id = $1 AND status = 'active'`, identityID).Scan(&active); err != nil {
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: count active keys: %w", err)
+	}
+	if active >= MaxActiveKeysPerIdentity {
+		return nil, ErrActiveKeyLimitReached
+	}
+
+	row := tx.QueryRow(ctx, `
+		INSERT INTO api_keys_registry (identity_id, provider_key_id, label, created_via)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, identity_id, provider_key_id, label, created_via, status, created_at, revoked_at`,
+		identityID, providerKeyID, label, createdVia,
 	)
 	k, err := scanKey(row)
 	if err != nil {
-		if isPgDuplicateActiveKey(err) {
-			return nil, ErrDuplicateActiveKey
-		}
-		return nil, fmt.Errorf("signup.InsertKey: %w", err)
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("signup.InsertKeyWithLabel: commit tx: %w", err)
 	}
 	return k, nil
 }
@@ -361,9 +490,69 @@ func (s *PgxStore) RevokeKey(ctx context.Context, identityID, providerKeyID stri
 	return nil
 }
 
+// RevokeKeyByID marks the registry row identified by its own primary key as
+// revoked and returns the Unkey provider key ID it held, which the caller needs
+// in order to revoke the key at Unkey. Scoped by identityID so one identity
+// cannot revoke another's key by guessing a UUID.
+//
+// alreadyRevoked reports whether the row was already revoked before this call.
+// The lookup deliberately matches already-revoked rows so the caller can retry
+// the upstream Unkey revocation: that step is separate and can fail, and on a
+// retry the row is already revoked here. Without this, a retry would get
+// ErrNotFound and the revocation could never be completed.
+//
+// Returns ErrNotFound only when no row with that id belongs to the identity.
+func (s *PgxStore) RevokeKeyByID(ctx context.Context, identityID, keyID string) (providerKeyID string, alreadyRevoked bool, err error) {
+	keyID = strings.TrimSpace(keyID)
+	identityID = strings.TrimSpace(identityID)
+	if keyID == "" || identityID == "" {
+		return "", false, ErrNotFound
+	}
+
+	// The CTE captures the pre-update status under a row lock, so the caller
+	// learns whether this call did the revoking. COALESCE preserves an existing
+	// revoked_at rather than restamping it on a retry.
+	var priorStatus string
+	err = s.db.QueryRow(ctx, `
+		WITH target AS (
+			SELECT id, status FROM api_keys_registry
+			WHERE id = $1 AND identity_id = $2
+			FOR UPDATE
+		)
+		UPDATE api_keys_registry AS k
+		SET status = 'revoked',
+		    revoked_at = COALESCE(k.revoked_at, NOW())
+		FROM target AS t
+		WHERE k.id = t.id
+		RETURNING k.provider_key_id, t.status`,
+		keyID, identityID,
+	).Scan(&providerKeyID, &priorStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, ErrNotFound
+	}
+	if err != nil {
+		// A malformed UUID reaches Postgres as a cast error rather than a
+		// missing row, so it maps to "not found" instead of a 500. Any
+		// authenticated caller can otherwise generate error-level log noise.
+		if isInvalidTextRepresentation(err) {
+			return "", false, ErrNotFound
+		}
+		return "", false, fmt.Errorf("signup.RevokeKeyByID: %w", err)
+	}
+	return providerKeyID, priorStatus != "active", nil
+}
+
 // RevokeAndInsertKey atomically revokes the old key and inserts the new one
 // in a single transaction. Returns the new KeyRecord. If oldProviderKeyID is
-// empty, only the insert is performed.
+// empty, only the insert is performed (subject to the cap).
+//
+// The cap is enforced here too, not just in InsertKeyWithLabel. Rotation is an
+// insert, so leaving it unchecked would make MaxActiveKeysPerIdentity advisory:
+// two concurrent rotations of the same target both revoke nothing (the second
+// UPDATE matches zero rows, which is deliberately non-fatal) and both insert,
+// leaving one extra key per racing pair. The same identity row lock that
+// InsertKeyWithLabel takes closes that, and the revoke runs first so the
+// replaced key is already excluded from the count.
 func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*KeyRecord, error) {
 	newProviderKeyID = strings.TrimSpace(newProviderKeyID)
 	if newProviderKeyID == "" {
@@ -376,7 +565,7 @@ func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Revoke old key if specified.
+	// Revoke old key first, so it no longer counts against the cap below.
 	if oldProviderKeyID != "" {
 		_, err := tx.Exec(ctx, `
 			UPDATE api_keys_registry
@@ -390,18 +579,42 @@ func (s *PgxStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProvid
 		// Old key already revoked or missing is not fatal for regeneration.
 	}
 
-	// Insert new key.
+	// Serialize concurrent key writes for this identity, then enforce the cap.
+	var locked int
+	err = tx.QueryRow(ctx, `SELECT 1 FROM api_identities WHERE id = $1 FOR UPDATE`, identityID).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("signup.RevokeAndInsertKey: lock identity: %w", err)
+	}
+
+	var active int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM api_keys_registry
+		WHERE identity_id = $1 AND status = 'active'`, identityID).Scan(&active); err != nil {
+		return nil, fmt.Errorf("signup.RevokeAndInsertKey: count active keys: %w", err)
+	}
+	if active >= MaxActiveKeysPerIdentity {
+		return nil, ErrActiveKeyLimitReached
+	}
+
+	// Insert the replacement, inheriting the replaced key's label and
+	// provenance: rotating an agent's key must not silently relabel it as a
+	// magic-link key, which would corrupt attribution. oldProviderKeyID may be
+	// empty, in which case both subqueries yield NULL and the defaults apply.
 	row := tx.QueryRow(ctx, `
-		INSERT INTO api_keys_registry (identity_id, provider_key_id)
-		VALUES ($1, $2)
-		RETURNING id, identity_id, provider_key_id, status, created_at, revoked_at`,
-		identityID, newProviderKeyID,
+		INSERT INTO api_keys_registry (identity_id, provider_key_id, label, created_via)
+		SELECT $1, $2,
+		       COALESCE((SELECT k.label FROM api_keys_registry k
+		                 WHERE k.identity_id = $1 AND k.provider_key_id = $3), ''),
+		       COALESCE((SELECT k.created_via FROM api_keys_registry k
+		                 WHERE k.identity_id = $1 AND k.provider_key_id = $3), 'magic_link')
+		RETURNING id, identity_id, provider_key_id, label, created_via, status, created_at, revoked_at`,
+		identityID, newProviderKeyID, oldProviderKeyID,
 	)
 	k, err := scanKey(row)
 	if err != nil {
-		if isPgDuplicateActiveKey(err) {
-			return nil, ErrDuplicateActiveKey
-		}
 		return nil, fmt.Errorf("signup.RevokeAndInsertKey: insert new key: %w", err)
 	}
 
@@ -448,7 +661,10 @@ func scanToken(row rowScanner) (*MagicLinkToken, error) {
 
 func scanKey(row rowScanner) (*KeyRecord, error) {
 	var k KeyRecord
-	err := row.Scan(&k.ID, &k.IdentityID, &k.ProviderKeyID, &k.Status, &k.CreatedAt, &k.RevokedAt)
+	err := row.Scan(
+		&k.ID, &k.IdentityID, &k.ProviderKeyID, &k.Label, &k.CreatedVia,
+		&k.Status, &k.CreatedAt, &k.RevokedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -462,20 +678,4 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
-}
-
-// isPgDuplicateActiveKey detects the specific unique constraint violation for
-// "one active key per identity" (partial unique index). Other 23505 violations
-// (e.g. provider_key_id uniqueness) are intentionally NOT matched here so they
-// surface as real errors rather than being masked as ErrDuplicateActiveKey.
-func isPgDuplicateActiveKey(err error) bool {
-	if err == nil {
-		return false
-	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505" &&
-			pgErr.ConstraintName == "idx_api_keys_registry_one_active_per_identity"
-	}
-	return false
 }

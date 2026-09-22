@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -36,10 +37,27 @@ func GenerateRawToken() (string, error) {
 // BuildVerifyURL constructs the full magic-link URL from config values and
 // the raw (un-hashed) token. Uses net/url for safe encoding.
 func BuildVerifyURL(baseURL, path, rawToken string) string {
+	return BuildVerifyURLWithNext(baseURL, path, rawToken, "")
+}
+
+// BuildVerifyURLWithNext is BuildVerifyURL plus an optional post-verification
+// redirect target — used by the agent flow so an approval survives the email
+// round trip (e.g. next=/activate?code=XXXX).
+//
+// next is re-validated here with SafeNextPath rather than trusted by the
+// caller: an unsafe value would turn the emailed link into an open redirect,
+// and an emailed link is the least convenient place for a user to notice one.
+func BuildVerifyURLWithNext(baseURL, path, rawToken, next string) string {
+	safe := SafeNextPath(next)
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		// Fallback: should not happen with validated config.
-		return baseURL + path + "?token=" + url.QueryEscape(rawToken)
+		out := baseURL + path + "?token=" + url.QueryEscape(rawToken)
+		if safe != "" {
+			out += "&next=" + url.QueryEscape(safe)
+		}
+		return out
 	}
 	if joined, err := url.JoinPath(u.Path, path); err == nil {
 		u.Path = joined
@@ -49,7 +67,69 @@ func BuildVerifyURL(baseURL, path, rawToken string) string {
 	}
 	q := u.Query()
 	q.Set("token", rawToken)
+	if safe != "" {
+		q.Set("next", safe)
+	}
 	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// maxNextPathLen bounds a caller-supplied post-verification redirect target.
+const maxNextPathLen = 512
+
+// SafeNextPath validates a caller-supplied redirect target and returns it when
+// it is safe to use, or "" when it is not.
+//
+// Only same-origin absolute paths are accepted. The value arrives in a public
+// signup request and becomes the Location of a 302 after verification, so an
+// unchecked value is an open redirect: a trusted llmrates.live URL would bounce
+// the user to an attacker's site. Rejected forms include absolute URLs
+// ("https://evil"), protocol-relative URLs ("//evil"), and backslash variants
+// that some clients normalise into "//" ("/\evil").
+//
+// A device-approval `code` parameter is stripped from the path. This is the
+// difference between "return the user to the page they were on" and "let an
+// emailed link pre-load someone else's approval screen": request-link is
+// unauthenticated and mails an arbitrary address, so if `next` could carry a
+// code, an attacker could send a victim a genuine llmrates.live email that opens
+// the approval screen for the attacker's grant, defeating the whole point of
+// showing the code for the user to compare against their own terminal. The
+// approval page restores a code it stashed locally instead, so the legitimate
+// round trip still works.
+func SafeNextPath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > maxNextPathLen {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+		return ""
+	}
+	// Backslashes and control characters anywhere: some clients treat "\" as
+	// "/", and a CR/LF here would be header injection if it ever reached one.
+	if strings.ContainsAny(raw, "\\\r\n\t") {
+		return ""
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	// Match the parameter case-insensitively. The API reads `code` exactly, so an
+	// upper-case variant would not pre-load a grant today, but stripping it too
+	// costs nothing and does not depend on every future reader being
+	// case-sensitive. RawQuery is only rewritten when something was removed, so
+	// an unrelated query string is passed through byte-for-byte.
+	q := u.Query()
+	stripped := false
+	for key := range q {
+		if strings.EqualFold(key, "code") {
+			q.Del(key)
+			stripped = true
+		}
+	}
+	if stripped {
+		u.RawQuery = q.Encode()
+	}
 	return u.String()
 }
 

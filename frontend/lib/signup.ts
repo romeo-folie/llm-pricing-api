@@ -21,24 +21,63 @@ export type IdentityResponse = {
   email: string
   email_verified: boolean
   has_active_key: boolean
+  /** Number of active keys. Keys are per-agent, so this can exceed 1. */
+  key_count?: number
+  /** Server-side cap on active keys per identity. */
+  max_keys?: number
+}
+
+export type ApiKeySummary = {
+  id: string
+  /** Agent-supplied name; empty for magic-link keys. Render as text only. */
+  label: string
+  created_via: "magic_link" | "agent"
+  created_at: string
+}
+
+export type KeyListResponse = {
+  keys: ApiKeySummary[]
+  count: number
+  max_keys: number
 }
 
 export type KeyIssueResponse = {
-  plaintext: string
-  provider_key_id: string
+  /**
+   * The API key, present only on the response that created it. The
+   * `{"status":"existing"}` response deliberately omits it: a plaintext is
+   * revealed exactly once and cannot be re-derived.
+   */
+  plaintext?: string
+  provider_key_id?: string
+  status?: "existing"
+  key_count?: number
+  max_keys?: number
+  message?: string
+  /** Set when a rotation succeeded but the replaced key could not be revoked upstream. */
+  revocation_warning?: string
 }
 
 // ── Request link ──────────────────────────────────────────────────────────────
 
+/**
+ * Request a magic-link email.
+ *
+ * `next` is an optional same-site path to land on after verification, used by
+ * the agent approval flow so the user returns to the approval page instead of
+ * the default key-reveal page. It never carries the approval code: the backend
+ * re-validates the path and strips any `code` parameter, because an emailed link
+ * must not be able to pre-load someone else's approval screen.
+ */
 export async function requestMagicLink(
   email: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  next?: string
 ): Promise<{ ok: true } | { ok: false; error: ApiError }> {
   try {
     const res = await fetch("/auth/signup/request-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify(next ? { email, next } : { email }),
       signal,
     })
     if (res.ok) return { ok: true }

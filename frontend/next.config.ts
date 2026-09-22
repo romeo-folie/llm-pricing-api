@@ -75,6 +75,10 @@ const nextConfig: NextConfig = {
       // The backend handles session cookies and issues the redirect to
       // /signup/free?verified=1 after magic-link verification.
       { source: "/auth/signup/:path*",          destination: `${API_BASE}/auth/signup/:path*`          },
+      // Agent device-grant flow. Proxied for the same reason as signup: the
+      // approval screen needs the session cookie, and that cookie lives on this
+      // origin, so the request must appear same-origin to the browser.
+      { source: "/auth/agent/:path*",           destination: `${API_BASE}/auth/agent/:path*`           },
     ]
   },
   images: {

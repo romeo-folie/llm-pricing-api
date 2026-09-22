@@ -3,6 +3,7 @@
 import { createServer as createHttpServer } from "http";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ApiClient } from "./api-client.js";
+import { credentialsPath, resolveApiKey } from "./config-store.js";
 import { createServer } from "./server.js";
 
 const DEFAULT_BASE_URL = "https://api.llmrates.live";
@@ -19,18 +20,29 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const apiKey = process.env.LLMRATES_API_KEY;
-  if (!apiKey) {
-    // Log to stderr so the MCP host sees the message without polluting stdout
+  // Resolve the key from the environment first, then from local storage.
+  //
+  // The server deliberately starts even with no key: the `authenticate` tool is
+  // how a key gets obtained, so exiting here would make that tool unreachable
+  // and leave the user with nothing to do but edit config by hand.
+  const credential = await resolveApiKey();
+  if (credential.apiKey) {
+    // Report only where it came from. Never log the key itself.
     console.error(
-      "Error: LLMRATES_API_KEY is not set. " +
-        "Add it to your MCP configuration's env block."
+      credential.source === "env"
+        ? "[llmrates] Using API key from LLMRATES_API_KEY."
+        : `[llmrates] Using API key from ${credential.path}.`
     );
-    process.exit(1);
+  } else {
+    console.error(
+      "[llmrates] No API key found (checked LLMRATES_API_KEY and " +
+        `${credentialsPath()}). Tools will return an error until you call the ` +
+        "`authenticate` tool, which asks the user to approve a key in their browser."
+    );
   }
 
   const baseUrl = process.env.LLMRATES_API_URL ?? DEFAULT_BASE_URL;
-  const client = new ApiClient(baseUrl, apiKey);
+  const client = new ApiClient(baseUrl, credential.apiKey ?? "");
   const server = createServer(client);
 
   if (transportArg === "http") {

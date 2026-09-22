@@ -1,0 +1,268 @@
+/* ── Agent authorization (consent) screen ─────────────────────────────────────
+   Full-viewport centered layout, matching verified.css. Tokens come from
+   globals.css; form controls come from signup.css (imported by layout.tsx).
+
+   This is a consent decision, so the surface reads as a discrete request
+   document rather than as ambient content: one framed panel, one decision.
+   Corners stay square (--radius: 0) to match the rest of the flow, and there is
+   no entry animation because a decision point should not make the user wait.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.activate-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 2rem 1.25rem;
+}
+
+.activate-card {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.75rem;
+}
+
+/* ── Brand strip ──────────────────────────────────────────────────────────── */
+
+.activate-brand {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.875rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.activate-logo {
+  font-family: var(--font-orbitron);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.activate-logo-accent { color: var(--accent); }
+
+.activate-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+
+.activate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.activate-centered {
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 0;
+}
+
+.activate-loading-text {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.activate-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.activate-icon-ok      { color: var(--green); }
+.activate-icon-neutral { color: var(--dim); }
+.activate-icon-warn    { color: var(--yellow); }
+
+.activate-heading {
+  font-family: var(--font-orbitron);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 0;
+  /* Focused programmatically on each state change so the new decision point is
+     announced; the element itself is not an interactive control. */
+  outline: none;
+}
+
+.activate-agent { color: var(--accent); }
+
+.activate-subheading {
+  font-family: var(--font-orbitron);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.activate-copy {
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+
+.activate-strong { color: var(--text); font-weight: 600; }
+
+.activate-mono {
+  font-family: var(--font-orbitron);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.activate-footnote {
+  font-size: 0.775rem;
+  color: var(--dim);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 60ch;
+}
+
+.activate-sep { color: var(--dim); padding: 0 0.4rem; }
+
+/* Code entry: monospace and wide-tracked so the characters are easy to check
+   against the terminal one at a time. */
+.activate-code-input {
+  font-family: var(--font-orbitron);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Code verification block ──────────────────────────────────────────────── */
+
+/* A full border rather than a side stripe: this block is the security check,
+   so it should read as a discrete thing to compare, not as a callout. */
+.activate-verify {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  background: var(--surfaceLo);
+  border: 1px solid var(--border);
+  padding: 1rem 0.875rem;
+}
+
+.activate-verify-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.activate-code {
+  font-family: var(--font-orbitron);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  /* Pull back the trailing letter-spacing so the code sits optically centered. */
+  margin-right: -0.16em;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.activate-verify-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 0.775rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.activate-timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Actions ──────────────────────────────────────────────────────────────── */
+
+.activate-actions {
+  display: flex;
+  gap: 0.625rem;
+  margin-top: 0.25rem;
+}
+
+.activate-btn {
+  flex: 1 1 0;
+  height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1.25rem;
+  border: 1px solid transparent;
+  border-radius: 0;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms, opacity 120ms;
+}
+
+.activate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.activate-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.activate-btn-approve {
+  background: var(--accent);
+  color: #fff;
+}
+
+.activate-btn-approve:hover:not(:disabled) { background: var(--accentDk); }
+
+/* Deny is a peer action, not a hidden escape hatch: it gets equal weight and a
+   clearly clickable surface, and it is never the destructive-looking one. */
+.activate-btn-deny {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--borderDk);
+}
+
+.activate-btn-deny:hover:not(:disabled) {
+  background: var(--surfaceLo);
+  border-color: var(--text);
+}
+
+/* ── Narrow viewports ─────────────────────────────────────────────────────── */
+
+@media (max-width: 420px) {
+  .activate-card { padding: 1.25rem; }
+  .activate-code { font-size: 1.35rem; }
+  .activate-actions { flex-direction: column-reverse; }
+  .activate-eyebrow { display: none; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .activate-btn { transition: none; }
+  .signup-spinner { animation: none; }
+}

@@ -28,6 +28,32 @@ declare global {
 /*  Core helpers                                                      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Query parameters that must never reach an analytics provider.
+ *
+ * `/activate?code=XXXX-XXXX` carries a live device-approval code, and
+ * `/signup/verify?token=...` carries a magic-link token. Forwarding either in a
+ * page view would put working credentials in a third-party analytics property,
+ * where anyone with read access could collect codes and approve or deny other
+ * people's device grants.
+ */
+const SENSITIVE_QUERY_PARAMS = new Set(["code", "token", "email", "key"])
+
+/**
+ * Builds the analytics page path for a route, dropping sensitive parameters.
+ *
+ * Returns the bare pathname when nothing safe remains, so a stripped query never
+ * shows up as a stray "?".
+ */
+export function analyticsPath(pathname: string, search: string | URLSearchParams): string {
+  const params = new URLSearchParams(search)
+  for (const key of Array.from(params.keys())) {
+    if (SENSITIVE_QUERY_PARAMS.has(key.toLowerCase())) params.delete(key)
+  }
+  const query = params.toString()
+  return query ? `${pathname}?${query}` : pathname
+}
+
 /** Send a GA4 page_view event (called on every client-side navigation). */
 export function pageview(url: string) {
   if (!GA_MEASUREMENT_ID) return

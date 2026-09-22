@@ -170,6 +170,21 @@ func NewServiceUnavailable(detail string) *ProblemDetail {
 	}
 }
 
+// NewBadGateway returns a 502 Bad Gateway ProblemDetail.
+//
+// Distinct from 503 on purpose: it means "an upstream dependency failed this
+// operation", not "this API is down". Used where a partial failure must not be
+// reported as success — for example when a key is disabled in our own registry
+// but the upstream revocation failed, so the credential is still live.
+func NewBadGateway(detail string) *ProblemDetail {
+	return &ProblemDetail{
+		Type:   problemTypeBase + "bad-gateway",
+		Title:  "Bad Gateway",
+		Status: fiber.StatusBadGateway,
+		Detail: detail,
+	}
+}
+
 // NewInternalError returns a 500 Internal Server Error ProblemDetail.
 // The detail message is intentionally generic to avoid leaking implementation details.
 func NewInternalError(detail string) *ProblemDetail {

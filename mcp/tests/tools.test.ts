@@ -2,16 +2,18 @@
  * E2E tests for @llmrates/mcp
  *
  * Requirements:
- *   TEST_API_KEY  — Developer-tier Unkey API key (required for most tests)
+ *   TEST_API_KEY  — Unkey API key (required for most tests)
  *   TEST_API_URL  — Override API base URL (optional; defaults to production)
- *   TEST_FREE_KEY — Free-tier Unkey API key (for tier-error tests; optional)
- *   TEST_PRO_KEY  — Pro-tier Unkey API key (for subscribe_to_changes happy-path; optional)
  *
  * Tests that require a key are skipped automatically if TEST_API_KEY is not set.
  * This allows CI to run the suite with just npm test and skip live-API tests.
  *
+ * There is no tier gating: the API is free and every valid key reaches every
+ * tool. Tests asserting a paid-tier refusal were removed along with the tiers
+ * themselves — they only passed against an API that no longer exists.
+ *
  * The auth error test verifies that an invalid key returns an error — either
- * "Authentication failed" (when the live API is reachable) or "Could not reach"
+ * "rejected this API key" (when the live API is reachable) or "Could not reach"
  * (when the API is unreachable in offline/test environments). Both indicate the
  * server correctly attempted to use the key and returned a user-facing error.
  */
@@ -19,6 +21,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -26,12 +30,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.resolve(__dirname, "../dist/index.js");
 const TEST_API_KEY = process.env.TEST_API_KEY ?? "";
 const TEST_API_URL = process.env.TEST_API_URL ?? "";
-const TEST_FREE_KEY = process.env.TEST_FREE_KEY ?? "";
-const TEST_PRO_KEY = process.env.TEST_PRO_KEY ?? "";
 
 const hasApiKey = Boolean(TEST_API_KEY);
-const hasFreeKey = Boolean(TEST_FREE_KEY);
-const hasProKey = Boolean(TEST_PRO_KEY);
+
+/**
+ * A throwaway config directory for the whole suite.
+ *
+ * Every server this suite spawns is pointed here, so the tests can never read
+ * or overwrite the developer's real ~/.config/llmrates/credentials.json — which
+ * would both make results depend on local state and risk clobbering a working key.
+ */
+let testConfigDir = "";
+async function isolatedConfigDir(): Promise<string> {
+  if (!testConfigDir) {
+    testConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "llmrates-mcp-e2e-"));
+  }
+  return testConfigDir;
+}
 
 /** Helper: create an MCP client connected to the server binary */
 async function createClient(env: Record<string, string> = {}): Promise<Client> {
@@ -41,6 +56,7 @@ async function createClient(env: Record<string, string> = {}): Promise<Client> {
     env: {
       ...process.env,
       LLMRATES_API_KEY: TEST_API_KEY,
+      LLMRATES_CONFIG_DIR: await isolatedConfigDir(),
       ...(TEST_API_URL ? { LLMRATES_API_URL: TEST_API_URL } : {}),
       ...env,
     } as Record<string, string>,
@@ -51,9 +67,9 @@ async function createClient(env: Record<string, string> = {}): Promise<Client> {
 }
 
 // ---------------------------------------------------------------------------
-// Tool listing (requires any valid API key to connect)
+// Tool listing (works with or without an API key)
 // ---------------------------------------------------------------------------
-describe.skipIf(!hasApiKey)("listTools", () => {
+describe("listTools", () => {
   let client: Client;
   beforeAll(async () => {
     client = await createClient();
@@ -62,10 +78,11 @@ describe.skipIf(!hasApiKey)("listTools", () => {
     await client.close();
   });
 
-  it("lists all 6 tools", async () => {
+  it("lists all 7 tools", async () => {
     const result = await client.listTools();
     const names = result.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "authenticate",
       "compare_models",
       "get_cheapest_model",
       "get_context_snapshot",
@@ -77,7 +94,29 @@ describe.skipIf(!hasApiKey)("listTools", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Happy-path tests (require Developer-tier key)
+// Unauthenticated startup
+// ---------------------------------------------------------------------------
+describe("unauthenticated startup", () => {
+  it("starts without a key and directs the agent to the authenticate tool", async () => {
+    // An empty key with no stored credential: the server must still start, or
+    // the tool that fixes the situation would be unreachable.
+    const client = await createClient({ LLMRATES_API_KEY: "" });
+    try {
+      const tools = await client.listTools();
+      expect(tools.tools.map((t) => t.name)).toContain("authenticate");
+
+      const result = await client.callTool({ name: "get_recent_changes", arguments: {} });
+      expect(result.isError).toBe(true);
+      // The message must name the remedy, not just report a 401.
+      expect((result.content[0] as { text: string }).text).toContain("authenticate");
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Happy-path tests (require an API key)
 // ---------------------------------------------------------------------------
 describe.skipIf(!hasApiKey)("happy paths", () => {
   let client: Client;
@@ -148,11 +187,11 @@ describe.skipIf(!hasApiKey)("happy paths", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Happy-path test for subscribe_to_changes (requires Pro-tier key)
+// Happy-path test for subscribe_to_changes
 // ---------------------------------------------------------------------------
 describe("subscribe_to_changes happy path", () => {
-  it.skipIf(!hasProKey)("registers a webhook and returns confirmation", async () => {
-    const client = await createClient({ LLMRATES_API_KEY: TEST_PRO_KEY });
+  it.skipIf(!hasApiKey)("registers a webhook and returns confirmation", async () => {
+    const client = await createClient({ LLMRATES_API_KEY: TEST_API_KEY });
     try {
       const result = await client.callTool({
         name: "subscribe_to_changes",
@@ -188,26 +227,7 @@ describe("auth errors", () => {
       });
       expect(result.isError).toBe(true);
       const text = (result.content[0] as { text: string }).text;
-      expect(text).toMatch(/Authentication failed|Could not reach/);
-    } finally {
-      await client.close();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Tier error (requires a Free-tier key that cannot call Dev+ tools)
-// ---------------------------------------------------------------------------
-describe("tier errors", () => {
-  it.skipIf(!hasFreeKey)("returns tier error when Free key calls Dev+ tool", async () => {
-    const client = await createClient({ LLMRATES_API_KEY: TEST_FREE_KEY });
-    try {
-      const result = await client.callTool({
-        name: "get_cheapest_model",
-        arguments: { task: "coding" },
-      });
-      expect(result.isError).toBe(true);
-      expect((result.content[0] as { text: string }).text).toMatch(/tier/i);
+      expect(text).toMatch(/rejected this API key|Could not reach|No LLM Rates API key/);
     } finally {
       await client.close();
     }

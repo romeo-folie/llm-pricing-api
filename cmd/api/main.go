@@ -42,6 +42,15 @@ const (
 	// stall, while still releasing a request whose dependency never answers.
 	requestTimeout = 15 * time.Second
 
+	// agentIPRateLimitMax is the per-IP request cap for /auth/agent/*.
+	//
+	// Sized for the poll loop, not for a human: a 10-minute grant polled every
+	// 5 seconds is ~120 requests, so 300 leaves headroom for retries and for
+	// several grants from one IP while still bounding abuse. The precise control
+	// is the per-device-code throttle, which is scoped to a single grant rather
+	// than to an IP that may be shared by many users behind one NAT.
+	agentIPRateLimitMax = 300
+
 	// watchdogInterval is how often the liveness watchdog probes dependencies.
 	watchdogInterval = 30 * time.Second
 
@@ -204,6 +213,13 @@ func main() {
 		// even when EnableTrustedProxyCheck is false.
 		EnableTrustedProxyCheck: len(trustedProxies) > 0,
 		TrustedProxies:          trustedProxies,
+		// Validate that the resolved client IP actually parses as an IP. With
+		// proxy trust enabled, c.IP() returns the proxy header value, and without
+		// validation that is whatever string the header contained — which every
+		// per-IP rate limit here hashes straight into a Redis key. Validation
+		// makes a malformed or injected value fall back instead of minting a
+		// fresh bucket per request.
+		EnableIPValidation: true,
 		ProxyHeader: func() string {
 			if len(trustedProxies) > 0 {
 				return fiber.HeaderXForwardedFor
@@ -296,6 +312,7 @@ func main() {
 		SignupSessionTTLHours:   cfg.SignupSessionTTLHours,
 		SignupSessionSecure:     cfg.SignupSessionSecure,
 		SignupEnabled:           cfg.SignupEnabled,
+		AgentGrantTTLMinutes:    cfg.AgentGrantTTLMinutes,
 	}, log)
 	// Rate-limit all auth routes first (DDoS protection even when signup is
 	// disabled). Handler-level checks in auth.Handler manage the 503 response
@@ -306,9 +323,33 @@ func main() {
 	// context.WithoutCancel (see internal/auth).
 	authGroup := app.Group("/auth",
 		middleware.RequestTimeout(requestTimeout),
-		middleware.IPRateLimit(redisClient, log),
+		middleware.IPRateLimitWithConfig(redisClient, log, middleware.IPRateLimitConfig{
+			// /auth/agent is mounted below with its own poll-scale limit. Fiber's
+			// Group/Use match by path PREFIX, so without this skip the signup
+			// limiter would also wrap every agent request and cap the poll loop at
+			// 10 per 15 minutes — and, because both limiters would then touch the
+			// same counter, drain the signup bucket from the same IP.
+			SkipPrefixes: []string{"/auth/agent"},
+		}),
 	)
 	auth.Register(authGroup, authHandler)
+
+	// Agent device-grant routes get their own, poll-scale IP limit rather than
+	// the signup-shaped one above.
+	//
+	// An agent legitimately polls POST /auth/agent/token every few seconds for
+	// the whole grant lifetime — up to ~120 requests for a 10-minute grant. The
+	// real poll control is the per-device-code throttle in
+	// AbuseGuard.CheckAgentPoll, which is scoped to one grant rather than to an
+	// IP shared by everyone behind it.
+	agentGroup := app.Group("/auth/agent",
+		middleware.RequestTimeout(requestTimeout),
+		middleware.IPRateLimitWithConfig(redisClient, log, middleware.IPRateLimitConfig{
+			Max:    agentIPRateLimitMax,
+			Bucket: "agent",
+		}),
+	)
+	auth.RegisterAgent(agentGroup, authHandler)
 
 	// Register public discovery routes outside the auth group.
 	handlers.RegisterDiscovery(app, db, redisClient)

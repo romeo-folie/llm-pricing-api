@@ -149,6 +149,7 @@ func newE2EApp(t *testing.T, store auth.Store, mailer auth.Mailer, cfg auth.Conf
 		authGroup.Use(middleware.IPRateLimit(rc, log))
 	}
 	auth.Register(authGroup, h)
+	auth.RegisterAgent(app.Group("/auth/agent"), h)
 	return app
 }
 
@@ -164,6 +165,7 @@ func newE2EAppWithRLConfig(t *testing.T, store auth.Store, mailer auth.Mailer, c
 		authGroup.Use(middleware.IPRateLimitWithConfig(rc, log, rlCfg))
 	}
 	auth.Register(authGroup, h)
+	auth.RegisterAgent(app.Group("/auth/agent"), h)
 	return app
 }
 
@@ -242,17 +244,18 @@ func TestE2E_RequestLink_Verify_Me(t *testing.T) {
 		t.Fatalf("GetIdentityByEmail: %v", err)
 	}
 
-	// Step 3: GET /auth/signup/verify?token=... → 200 + session cookie.
+	// Step 3: GET /auth/signup/verify?token=... → 302 to the key-reveal page,
+	// plus a session cookie.
+	//
+	// The handler redirects rather than returning JSON: the frontend page reads
+	// the session back via GET /auth/signup/me.
 	verifyResp := e2eRequest(t, app, "GET",
 		"/auth/signup/verify?token="+rawToken, "")
-	if verifyResp.StatusCode != 200 {
-		b := e2eBodyJSON(t, verifyResp)
-		t.Fatalf("verify: status = %d, want 200; body = %v", verifyResp.StatusCode, b)
+	if verifyResp.StatusCode != fiber.StatusFound {
+		t.Fatalf("verify: status = %d, want 302", verifyResp.StatusCode)
 	}
-
-	verifyBody := e2eBodyJSON(t, verifyResp)
-	if verifyBody["verified"] != true {
-		t.Error("expected verified=true")
+	if loc := verifyResp.Header.Get("Location"); !strings.HasSuffix(loc, "/signup/verified") {
+		t.Errorf("verify Location = %q, want the key-reveal page", loc)
 	}
 
 	// Extract session cookie.
@@ -310,10 +313,14 @@ func TestE2E_ExpiredToken_Rejected(t *testing.T) {
 		t.Fatalf("InsertToken: %v", err)
 	}
 
+	// An expired token redirects to the frontend error page, which renders the
+	// message. The API does not return JSON here.
 	resp := e2eRequest(t, app, "GET", "/auth/signup/verify?token="+rawToken, "")
-	if resp.StatusCode != 410 {
-		b := e2eBodyJSON(t, resp)
-		t.Fatalf("expired token: status = %d, want 410; body = %v", resp.StatusCode, b)
+	if resp.StatusCode != fiber.StatusFound {
+		t.Fatalf("expired token: status = %d, want 302", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); !strings.Contains(loc, "error=link-expired") {
+		t.Errorf("expired token Location = %q, want error=link-expired", loc)
 	}
 }
 
@@ -345,20 +352,19 @@ func TestE2E_ReusedToken_Rejected(t *testing.T) {
 		t.Fatalf("InsertToken: %v", err)
 	}
 
-	// First verify — should succeed.
+	// First verify — succeeds with a redirect to the key-reveal page.
 	resp1 := e2eRequest(t, app, "GET", "/auth/signup/verify?token="+rawToken, "")
-	if resp1.StatusCode != 200 {
-		t.Fatalf("first verify: status = %d, want 200", resp1.StatusCode)
+	if resp1.StatusCode != fiber.StatusFound {
+		t.Fatalf("first verify: status = %d, want 302", resp1.StatusCode)
 	}
 
-	// Second verify with same token — should fail.
+	// Second verify with same token — redirects to the error page instead.
 	resp2 := e2eRequest(t, app, "GET", "/auth/signup/verify?token="+rawToken, "")
-	if resp2.StatusCode != 410 {
-		t.Fatalf("reused token: status = %d, want 410", resp2.StatusCode)
+	if resp2.StatusCode != fiber.StatusFound {
+		t.Fatalf("reused token: status = %d, want 302", resp2.StatusCode)
 	}
-	b := e2eBodyJSON(t, resp2)
-	if b["detail"] != "token already used" {
-		t.Errorf("detail = %v, want 'token already used'", b["detail"])
+	if loc := resp2.Header.Get("Location"); !strings.Contains(loc, "error=link-used") {
+		t.Errorf("reused token Location = %q, want error=link-used", loc)
 	}
 }
 
@@ -469,3 +475,122 @@ func TestE2E_SignupDisabled_Returns503(t *testing.T) {
 // cmd/api/main.go (fixed in PR #137). Unit-level coverage (including RevokeKey
 // call assertion) lives in handlers_test.go: TestRegenerateKey_WithExistingKey_RevokesOldAndIssuesNew.
 // For RevokeAndInsertKey store behaviour, see internal/signup/store_integration_test.go.
+
+// ── Test 5: Agent device-grant flow, end to end against a real database ──────
+
+// TestE2E_AgentDeviceGrant_EndToEnd covers the flow this whole subsystem exists
+// for: an agent with no key starts a grant, a signed-in user approves it, and
+// the agent collects the key. It runs the real store against a real schema, so
+// it exercises the parts the mock-backed handler tests cannot: the grant state
+// machine's SQL, the label/provenance write, and single-use redemption.
+func TestE2E_AgentDeviceGrant_EndToEnd(t *testing.T) {
+	pool := newTestPool(t)
+	store := signup.NewStore(pool)
+	app := newE2EApp(t, store, &mockMailerE2E{}, e2eCfg, nil)
+	email := randEmail(t)
+	ctx := context.Background()
+
+	ident, err := store.UpsertIdentity(ctx, email, "", "")
+	if err != nil {
+		t.Fatalf("UpsertIdentity: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM api_identities WHERE id = $1`, ident.ID); err != nil {
+			t.Logf("cleanup identity failed: %v", err)
+		}
+	})
+
+	// Step 1: the agent starts a grant. Unauthenticated by design — it has no
+	// key yet, which is the whole point.
+	startResp := e2eRequest(t, app, "POST", "/auth/agent/device",
+		`{"client_name":"Claude Code","platform":"darwin"}`)
+	if startResp.StatusCode != 200 {
+		t.Fatalf("device: status = %d, want 200", startResp.StatusCode)
+	}
+	start := e2eBodyJSON(t, startResp)
+	deviceCode, _ := start["device_code"].(string)
+	userCode, _ := start["user_code"].(string)
+	if deviceCode == "" || userCode == "" {
+		t.Fatalf("device response missing codes: %v", start)
+	}
+
+	// Step 2: polling before approval is a 200 with status pending, not an
+	// error status that would pollute error-rate metrics.
+	pollResp := e2eRequest(t, app, "POST", "/auth/agent/token",
+		`{"device_code":"`+deviceCode+`"}`)
+	if pollResp.StatusCode != 200 {
+		t.Fatalf("pending poll: status = %d, want 200", pollResp.StatusCode)
+	}
+	if got := e2eBodyJSON(t, pollResp)["status"]; got != "pending" {
+		t.Fatalf("pending poll status = %v, want pending", got)
+	}
+
+	// Step 3: the user approves, authenticated by their session cookie.
+	cookie := e2eSessionCookie(t, ident.ID, ident.Email)
+	approveResp := e2eRequest(t, app, "POST", "/auth/agent/approve",
+		`{"user_code":"`+userCode+`","decision":"approve"}`, cookie)
+	if approveResp.StatusCode != 200 {
+		t.Fatalf("approve: status = %d, want 200", approveResp.StatusCode)
+	}
+	if got := e2eBodyJSON(t, approveResp)["status"]; got != "approved" {
+		t.Fatalf("approve status = %v, want approved", got)
+	}
+
+	// Step 4: the next poll collects the key.
+	issuedResp := e2eRequest(t, app, "POST", "/auth/agent/token",
+		`{"device_code":"`+deviceCode+`"}`)
+	if issuedResp.StatusCode != 200 {
+		t.Fatalf("issued poll: status = %d, want 200", issuedResp.StatusCode)
+	}
+	issued := e2eBodyJSON(t, issuedResp)
+	if issued["status"] != "issued" {
+		t.Fatalf("issued poll status = %v, want issued", issued["status"])
+	}
+	if issued["api_key"] != "llmr_test_key" {
+		t.Errorf("api_key = %v, want the issued plaintext", issued["api_key"])
+	}
+	if issued["identity_id"] != ident.ID {
+		t.Errorf("identity_id = %v, want %s", issued["identity_id"], ident.ID)
+	}
+
+	// The registry row carries the agent's name and provenance, so the key can
+	// be attributed and revoked independently of any other key.
+	keys, err := store.ListActiveKeys(ctx, ident.ID)
+	if err != nil {
+		t.Fatalf("ListActiveKeys: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("active keys = %d, want 1", len(keys))
+	}
+	if keys[0].Label != "Claude Code" {
+		t.Errorf("label = %q, want %q", keys[0].Label, "Claude Code")
+	}
+	if keys[0].CreatedVia != signup.CreatedViaAgent {
+		t.Errorf("created_via = %q, want %q", keys[0].CreatedVia, signup.CreatedViaAgent)
+	}
+
+	// Step 5: the plaintext is served exactly once.
+	secondResp := e2eRequest(t, app, "POST", "/auth/agent/token",
+		`{"device_code":"`+deviceCode+`"}`)
+	if got := e2eBodyJSON(t, secondResp)["status"]; got != "redeemed" {
+		t.Errorf("second redeem status = %v, want redeemed", got)
+	}
+}
+
+// e2eSessionCookie builds a signed session cookie for an identity, standing in
+// for the one GET /auth/signup/verify would have set.
+func e2eSessionCookie(t *testing.T, identityID, email string) *http.Cookie {
+	t.Helper()
+	now := time.Now()
+	payload := signup.SessionPayload{
+		IdentityID: identityID,
+		Email:      email,
+		IssuedAt:   now.Unix(),
+		ExpiresAt:  now.Add(time.Hour).Unix(),
+	}
+	value, err := signup.SignSession(e2eCfg.SigningSecret, payload)
+	if err != nil {
+		t.Fatalf("SignSession: %v", err)
+	}
+	return &http.Cookie{Name: e2eCfg.SignupSessionCookieName, Value: value}
+}

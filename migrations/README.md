@@ -43,6 +43,9 @@ migrations/
   000017_add_last_verified_at.down.sql
   000018_add_benchmark_provenance.up.sql   # Upstream identities + active-evidence index
   000018_add_benchmark_provenance.down.sql
+  000019_multi_agent_keys.up.sql       # Per-agent keys (label, created_via), drops the
+                                       # one-active-key index, adds agent_grants
+  000019_multi_agent_keys.down.sql
   README.md                            # This file
 ```
 
@@ -57,6 +60,8 @@ migrations/
 - **Seed data** in `000002` pre-populates the 7 known data sources.
 - **`pgcrypto` extension** is enabled in `000001` for fresh installs, guarded in `000007` (first migration using `gen_random_uuid()`) and `000012` for existing DBs that applied earlier migrations before pgcrypto was added. All declarations are `IF NOT EXISTS` and fully idempotent.
 - **Identity/signup subsystem** (`000012`) introduces `api_identities`, `magic_link_tokens`, and `api_keys_registry` to support the free-key onboarding flow. Email normalisation, token expiry, and key-status consistency are enforced at the DB level via CHECK constraints.
+- **Per-agent keys and device grants** (`000019`) replaces the one-active-key-per-identity rule. Keys are now per-agent so each can be revoked and attributed independently, and the numeric cap (5 active keys) is enforced by the application under a row lock — a partial unique index cannot express "at most 5". The migration drops `idx_api_keys_registry_one_active_per_identity` and adds a partial index on active keys to serve the cap count and per-identity listing. It also adds `agent_grants`, which backs the device-authorization flow: `device_code_hash` (never the raw code), a Crockford-base32 `user_code` with a format CHECK, and a status/timestamp consistency CHECK that makes a half-decided grant unrepresentable.
+  - The **down** migration revokes all but the newest active key per identity before recreating the unique index, since the multi-key schema permits states the old index would reject.
 
 ## Dependencies
 

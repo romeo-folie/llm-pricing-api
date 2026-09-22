@@ -43,7 +43,15 @@ frontend/
 │   │   ├── page.tsx            # Cost calculator page
 │   │   └── actions.ts          # Server action for cost calculation
 │   ├── changes/page.tsx        # Real-time price change feed (60s polling)
-│   ├── pricing/page.tsx        # Static pricing page with tier cards + FAQ
+│   ├── pricing/page.tsx        # Static pricing page (the API is free) + FAQ
+│   ├── signup/                 # Magic-link signup, verification, and key reveal
+│   │   ├── free/               # Email capture → sent confirmation
+│   │   └── verified/           # Session-gated key issuance and display
+│   ├── activate/               # Agent approval screen (consent decision)
+│   │   ├── page.tsx            # Route shell; noindex, Suspense boundary
+│   │   ├── ActivateFlow.tsx    # State machine: sign-in, review, done, closed
+│   │   ├── SignInForm.tsx      # Inline sign-in that preserves the user code
+│   │   └── activate.css        # Page-scoped styles built on the shared tokens
 │   └── api/                    # Route handlers (proxy routes for client polling)
 │       ├── health/route.ts     # Health check endpoint
 │       ├── changes/route.ts    # Changes proxy for client-side polling
@@ -75,6 +83,8 @@ frontend/
 ├── lib/
 │   ├── analytics.ts            # GA4 pageview + typed custom event helpers
 │   ├── api.ts                  # Server-only typed API client (all REST endpoints)
+│   ├── agent.ts                # Client for /auth/agent/* plus user-code normalisation
+│   ├── signup.ts               # Client for /auth/signup/* (magic link, keys)
 │   └── utils.ts                # cn() class merging utility
 ├── public/                     # Static assets (SVGs, favicon)
 ├── .env.example                # Required environment variables
@@ -119,6 +129,38 @@ Server-only module (`import 'server-only'` guard prevents accidental client-side
 | `getChanges(filter?)` | `GET /v1/changes` | Free |
 
 All fetches use `next: { revalidate: 300 }` (5-minute ISR). History uses 60s revalidation.
+
+## Auth proxying and the agent approval page
+
+The Go API owns `/auth/*`; this app proxies it. `next.config.ts` rewrites `/auth/signup/:path*` and
+`/auth/agent/:path*` to `LLM_PRICING_API_BASE_URL`, so the browser sees same-origin requests and the
+session cookie is set on this origin. That is what makes `SameSite=Lax` sufficient for the
+state-changing approval POST. A new `/auth/*` route on the API must be added to the rewrite list or
+it will 404 from the browser.
+
+`/activate` is the approval screen for the agent device-grant flow. A user arrives from a terminal
+with `?code=XXXX-XXXX`, sees which agent is asking and which account it would act as, and chooses
+Approve or Deny. Two details matter:
+
+- The user code is displayed large and monospaced so it can be compared against the terminal that
+  started the request. That comparison is the defence against a relayed code.
+- The API key never appears on this page. The agent collects it over its own polling channel, so
+  there is nothing here to copy, and nothing to leak.
+
+When the visitor has no session, `SignInForm` captures their email inline and passes
+`next=/activate` through the magic link, so the approval survives the trip through their inbox and they
+are not sent to `/signup/free` and back. **The code itself is never put in that URL.** `request-link`
+is unauthenticated and mails an arbitrary address, so a code in `next` would let an attacker send a
+victim a genuine llmrates.live email that opens the approval screen for the attacker's grant, which
+defeats the code comparison the screen exists to provide. The backend strips any `code` parameter from
+`next` as well, so the property does not depend on this app behaving. Instead the code is kept in
+`sessionStorage` for this browser only, and `/activate` asks for it by hand when nothing is stashed.
+
+The page is `noindex, nofollow`: a consent screen is per-user and per-request. `GoogleAnalytics`
+also redacts sensitive query parameters (`code`, `token`, `email`, `key`) from the reported page path,
+and the gtag config overrides `page_location`, so a live approval code never reaches GA. Note that
+`/activate` reads the code from the URL on first load, so that redaction is what keeps it out of
+analytics.
 
 ## SEO
 

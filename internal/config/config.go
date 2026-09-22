@@ -58,8 +58,13 @@ type Config struct {
 	SignupSessionSecure bool
 	// SignupEnabled controls whether the POST /auth/signup/request-link
 	// endpoint accepts new signup requests. When false, it returns 503.
-	// Defaults to true for backward compatibility.
+	// Defaults to true for backward compatibility. It also gates the agent
+	// device-grant flow, since both mint keys into the same registry.
 	SignupEnabled bool
+	// AgentGrantTTLMinutes is how long an agent's device-authorization grant
+	// stays redeemable. Defaults to 10. Short by design: the user is expected
+	// to approve while the agent is still polling.
+	AgentGrantTTLMinutes int
 }
 
 // Load reads configuration from environment variables.
@@ -108,6 +113,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid SIGNUP_ENABLED: %w", err)
 	}
+	agentGrantTTL, err := getEnvIntPositive("AGENT_GRANT_TTL_MINUTES", 10)
+	if err != nil {
+		return nil, fmt.Errorf("invalid AGENT_GRANT_TTL_MINUTES: %w", err)
+	}
 
 	return &Config{
 		DatabaseURL:      dbURL,
@@ -134,6 +143,7 @@ func Load() (*Config, error) {
 		SignupSessionTTLHours:   sessionTTL,
 		SignupSessionSecure:     appEnv != "development",
 		SignupEnabled:           signupEnabled,
+		AgentGrantTTLMinutes:    agentGrantTTL,
 	}, nil
 }
 

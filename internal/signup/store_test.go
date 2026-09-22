@@ -3,6 +3,7 @@ package signup_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -15,14 +16,15 @@ import (
 type mockStore struct {
 	identities map[string]*signup.Identity // key = lower(email)
 	tokens     map[string]*signup.MagicLinkToken
-	keys       map[string]*signup.KeyRecord // key = identityID
+	// keys is a slice, not a map keyed by identity: an identity may now hold
+	// several active keys (one per agent). Newest is appended last.
+	keys []*signup.KeyRecord
 }
 
 func newMock() *mockStore {
 	return &mockStore{
 		identities: make(map[string]*signup.Identity),
 		tokens:     make(map[string]*signup.MagicLinkToken),
-		keys:       make(map[string]*signup.KeyRecord),
 	}
 }
 
@@ -114,54 +116,93 @@ func (m *mockStore) DeleteExpiredTokens(_ context.Context) (int64, error) {
 	return deleted, nil
 }
 
-func (m *mockStore) GetActiveKey(_ context.Context, identityID string) (*signup.KeyRecord, error) {
-	k, ok := m.keys[identityID]
-	if !ok || k.Status != "active" {
+func (m *mockStore) GetActiveKey(ctx context.Context, identityID string) (*signup.KeyRecord, error) {
+	keys, _ := m.ListActiveKeys(ctx, identityID)
+	if len(keys) == 0 {
 		return nil, signup.ErrNotFound
 	}
-	return k, nil
+	return &keys[0], nil
 }
 
-func (m *mockStore) InsertKey(_ context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error) {
-	if existing, ok := m.keys[identityID]; ok && existing.Status == "active" {
-		return nil, signup.ErrDuplicateActiveKey
+// ListActiveKeys mirrors the production ordering: newest first.
+func (m *mockStore) ListActiveKeys(_ context.Context, identityID string) ([]signup.KeyRecord, error) {
+	out := make([]signup.KeyRecord, 0, 1)
+	for i := len(m.keys) - 1; i >= 0; i-- {
+		k := m.keys[i]
+		if k.IdentityID == identityID && k.Status == "active" {
+			out = append(out, *k)
+		}
+	}
+	return out, nil
+}
+
+func (m *mockStore) InsertKey(ctx context.Context, identityID, providerKeyID string) (*signup.KeyRecord, error) {
+	return m.InsertKeyWithLabel(ctx, identityID, providerKeyID, "", signup.CreatedViaMagicLink)
+}
+
+func (m *mockStore) InsertKeyWithLabel(_ context.Context, identityID, providerKeyID, label, createdVia string) (*signup.KeyRecord, error) {
+	active, _ := m.ListActiveKeys(context.Background(), identityID)
+	if len(active) >= signup.MaxActiveKeysPerIdentity {
+		return nil, signup.ErrActiveKeyLimitReached
+	}
+	if createdVia == "" {
+		createdVia = signup.CreatedViaMagicLink
 	}
 	k := &signup.KeyRecord{
-		ID:            "key-" + identityID,
+		ID:            "key-" + providerKeyID,
 		IdentityID:    identityID,
 		ProviderKeyID: providerKeyID,
+		Label:         label,
+		CreatedVia:    createdVia,
 		Status:        "active",
 		CreatedAt:     time.Now(),
 	}
-	m.keys[identityID] = k
+	m.keys = append(m.keys, k)
 	return k, nil
 }
 
 func (m *mockStore) RevokeKey(_ context.Context, identityID, providerKeyID string) error {
-	k, ok := m.keys[identityID]
-	if !ok || k.Status != "active" {
-		return signup.ErrNotFound
-	}
-	if k.ProviderKeyID != providerKeyID {
-		return signup.ErrNotFound
-	}
-	now := time.Now()
-	k.Status = "revoked"
-	k.RevokedAt = &now
-	return nil
-}
-
-func (m *mockStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
-	// Revoke old (best-effort, mirrors real implementation).
-	if oldProviderKeyID != "" {
-		if k, ok := m.keys[identityID]; ok && k.Status == "active" && k.ProviderKeyID == oldProviderKeyID {
+	for _, k := range m.keys {
+		if k.IdentityID == identityID && k.ProviderKeyID == providerKeyID && k.Status == "active" {
 			now := time.Now()
 			k.Status = "revoked"
 			k.RevokedAt = &now
+			return nil
+		}
+	}
+	return signup.ErrNotFound
+}
+
+func (m *mockStore) RevokeKeyByID(_ context.Context, identityID, keyID string) (string, bool, error) {
+	for _, k := range m.keys {
+		if k.IdentityID == identityID && k.ID == keyID {
+			if k.Status != "active" {
+				return k.ProviderKeyID, true, nil
+			}
+			now := time.Now()
+			k.Status = "revoked"
+			k.RevokedAt = &now
+			return k.ProviderKeyID, false, nil
+		}
+	}
+	return "", false, signup.ErrNotFound
+}
+
+func (m *mockStore) RevokeAndInsertKey(ctx context.Context, identityID, oldProviderKeyID, newProviderKeyID string) (*signup.KeyRecord, error) {
+	// Revoke old (best-effort, mirrors real implementation) and inherit its
+	// label/provenance, as the production SQL does.
+	label, createdVia := "", signup.CreatedViaMagicLink
+	for _, k := range m.keys {
+		if k.IdentityID == identityID && k.ProviderKeyID == oldProviderKeyID && k.Status == "active" {
+			now := time.Now()
+			k.Status = "revoked"
+			k.RevokedAt = &now
+			label, createdVia = k.Label, k.CreatedVia
+			break
 		}
 	}
 	// Insert new — pass the caller's ctx so cancellation/deadlines propagate.
-	return m.InsertKey(ctx, identityID, newProviderKeyID)
+	return m.InsertKeyWithLabel(ctx, identityID, newProviderKeyID, label, createdVia)
 }
 
 // ─── Mock store tests ─────────────────────────────────────────────────────────
@@ -301,17 +342,120 @@ func TestKey_InsertAndGet(t *testing.T) {
 	}
 }
 
-func TestKey_OneActivePerIdentity(t *testing.T) {
+func TestKey_MultipleActiveKeysUpToCap(t *testing.T) {
 	store := newMock()
 	ctx := context.Background()
 
 	id, _ := store.UpsertIdentity(ctx, "grace@example.com", "", "")
-	_, _ = store.InsertKey(ctx, id.ID, "first_key")
 
-	// Second insert should be blocked
-	_, err := store.InsertKey(ctx, id.ID, "second_key")
-	if !errors.Is(err, signup.ErrDuplicateActiveKey) {
-		t.Errorf("expected ErrDuplicateActiveKey, got %v", err)
+	// Keys are per-agent now, so several may be active at once.
+	for i := 0; i < signup.MaxActiveKeysPerIdentity; i++ {
+		if _, err := store.InsertKey(ctx, id.ID, fmt.Sprintf("key_%d", i)); err != nil {
+			t.Fatalf("insert key %d: %v", i, err)
+		}
+	}
+
+	// One past the cap is refused.
+	if _, err := store.InsertKey(ctx, id.ID, "one_too_many"); !errors.Is(err, signup.ErrActiveKeyLimitReached) {
+		t.Errorf("expected ErrActiveKeyLimitReached, got %v", err)
+	}
+
+	keys, err := store.ListActiveKeys(ctx, id.ID)
+	if err != nil {
+		t.Fatalf("list active keys: %v", err)
+	}
+	if len(keys) != signup.MaxActiveKeysPerIdentity {
+		t.Errorf("active keys = %d, want %d", len(keys), signup.MaxActiveKeysPerIdentity)
+	}
+}
+
+func TestKey_RevokeByIDFreesCapSlot(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+
+	id, _ := store.UpsertIdentity(ctx, "heidi@example.com", "", "")
+	for i := 0; i < signup.MaxActiveKeysPerIdentity; i++ {
+		if _, err := store.InsertKey(ctx, id.ID, fmt.Sprintf("key_%d", i)); err != nil {
+			t.Fatalf("insert key %d: %v", i, err)
+		}
+	}
+
+	keys, _ := store.ListActiveKeys(ctx, id.ID)
+	target := keys[0]
+
+	providerKeyID, alreadyRevoked, err := store.RevokeKeyByID(ctx, id.ID, target.ID)
+	if err != nil {
+		t.Fatalf("revoke by id: %v", err)
+	}
+	if providerKeyID != target.ProviderKeyID {
+		t.Errorf("provider key id = %q, want %q", providerKeyID, target.ProviderKeyID)
+	}
+	if alreadyRevoked {
+		t.Error("first revoke should not report alreadyRevoked")
+	}
+
+	// A repeat revoke succeeds and reports alreadyRevoked, so the caller can
+	// retry an upstream revocation that failed the first time.
+	providerKeyID, alreadyRevoked, err = store.RevokeKeyByID(ctx, id.ID, target.ID)
+	if err != nil {
+		t.Fatalf("repeat revoke must be idempotent, got %v", err)
+	}
+	if !alreadyRevoked {
+		t.Error("repeat revoke should report alreadyRevoked")
+	}
+	if providerKeyID != target.ProviderKeyID {
+		t.Errorf("repeat revoke provider key id = %q, want %q", providerKeyID, target.ProviderKeyID)
+	}
+
+	// Scoped by identity: another identity cannot revoke this key by ID.
+	if _, _, err := store.RevokeKeyByID(ctx, "someone-else", keys[1].ID); !errors.Is(err, signup.ErrNotFound) {
+		t.Errorf("cross-identity revoke: expected ErrNotFound, got %v", err)
+	}
+
+	// The freed slot can be reused.
+	if _, err := store.InsertKey(ctx, id.ID, "replacement"); err != nil {
+		t.Errorf("insert after revoke: %v", err)
+	}
+}
+
+func TestKey_LabelAndProvenanceRecorded(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+
+	id, _ := store.UpsertIdentity(ctx, "ivan2@example.com", "", "")
+	k, err := store.InsertKeyWithLabel(ctx, id.ID, "prov-agent", "Claude Code", signup.CreatedViaAgent)
+	if err != nil {
+		t.Fatalf("insert labelled key: %v", err)
+	}
+	if k.Label != "Claude Code" {
+		t.Errorf("label = %q, want %q", k.Label, "Claude Code")
+	}
+	if k.CreatedVia != signup.CreatedViaAgent {
+		t.Errorf("created_via = %q, want %q", k.CreatedVia, signup.CreatedViaAgent)
+	}
+
+	keys, _ := store.ListActiveKeys(ctx, id.ID)
+	if len(keys) != 1 || keys[0].Label != "Claude Code" {
+		t.Errorf("listed keys did not preserve the label: %+v", keys)
+	}
+}
+
+func TestKey_RegenerateInheritsLabel(t *testing.T) {
+	store := newMock()
+	ctx := context.Background()
+
+	id, _ := store.UpsertIdentity(ctx, "judy@example.com", "", "")
+	if _, err := store.InsertKeyWithLabel(ctx, id.ID, "old-prov", "Cursor", signup.CreatedViaAgent); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	k, err := store.RevokeAndInsertKey(ctx, id.ID, "old-prov", "new-prov")
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	// Rotating an agent's key must not relabel it as a magic-link key.
+	if k.Label != "Cursor" || k.CreatedVia != signup.CreatedViaAgent {
+		t.Errorf("regenerated key = {label:%q via:%q}, want {Cursor agent}", k.Label, k.CreatedVia)
 	}
 }
 

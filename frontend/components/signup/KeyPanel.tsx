@@ -46,7 +46,9 @@ export default function KeyPanel({ identity, initialKey }: Props) {
       const result = await issueKey(controller.signal)
       if (cancelled) return
       if (result.ok) {
-        setKeyState({ phase: "revealing", plaintext: result.key.plaintext })
+        setKeyState(result.key.plaintext
+          ? { phase: "revealing", plaintext: result.key.plaintext }
+          : { phase: "error", error: { code: "unknown", message: result.key.message ?? "A key already exists. A key is only shown when it is created, so rotate one to get a new value." } })
       } else {
         if (result.error.code === "aborted") return
         setKeyState({ phase: "error", error: result.error })
@@ -97,7 +99,9 @@ export default function KeyPanel({ identity, initialKey }: Props) {
       const result = await regenerateKey(controller.signal)
       if (controller.signal.aborted) return
       if (result.ok) {
-        setKeyState({ phase: "revealing", plaintext: result.key.plaintext })
+        setKeyState(result.key.plaintext
+          ? { phase: "revealing", plaintext: result.key.plaintext }
+          : { phase: "error", error: { code: "unknown", message: result.key.message ?? "A key already exists. A key is only shown when it is created, so rotate one to get a new value." } })
       } else {
         setKeyState({ phase: "error", error: result.error })
       }
