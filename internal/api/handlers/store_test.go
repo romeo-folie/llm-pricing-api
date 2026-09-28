@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -77,5 +78,25 @@ func TestChangeDeltaPct(t *testing.T) {
 				t.Errorf("changeDeltaPct(%+v) = %.4f, want %.4f", tt.c, got, tt.wantApprox)
 			}
 		})
+	}
+}
+
+// OFFSET pagination over a non-unique ORDER BY can skip or repeat rows at page
+// boundaries, so every sort must end with the unique primary key.
+func TestListModelsOrderByEndsWithUniqueTiebreaker(t *testing.T) {
+	for _, sort := range []string{"", "recent", "alpha", "unknown"} {
+		got := listModelsOrderBy(sort)
+		if !strings.HasSuffix(got, ", m.id") {
+			t.Errorf("listModelsOrderBy(%q) = %q; want it to end with \", m.id\"", sort, got)
+		}
+	}
+}
+
+func TestListModelsOrderByAlphaSortsByProviderThenName(t *testing.T) {
+	if got := listModelsOrderBy("alpha"); !strings.HasPrefix(got, "m.provider, m.name") {
+		t.Errorf("alpha order = %q; want provider, name first", got)
+	}
+	if got := listModelsOrderBy(""); !strings.HasPrefix(got, "COALESCE(p.confirmed_at, m.created_at) DESC") {
+		t.Errorf("default order = %q; want most recently confirmed first", got)
 	}
 }

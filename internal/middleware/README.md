@@ -12,7 +12,7 @@ Fiber middleware for the LLM Pricing API. This package provides authentication, 
 | `timeout_test.go` | Unit tests for `timeout.go` — deadline installed, streaming routes exempt, context cancelled on expiry |
 | `auth_test.go` | Unit tests for `auth.go` — covers all acceptance-criteria cases |
 | `ratelimit_test.go` | Unit tests for `ratelimit.go` — covers all tier limits and Redis error paths |
-| `cache.go` | Response caching middleware (see Issue #16) |
+| `cache.go` | Redis response cache for GET list/detail routes, including pagination headers |
 | `security.go` | Security headers middleware (see Issue #16) |
 
 ## Authentication (`auth.go`)
@@ -184,7 +184,13 @@ fall through to an opaque 500. An overload is a retryable capacity condition, no
 
 ## Cache Middleware
 
-See Issue #16 — `cache.go` will be documented here once merged.
+`Cache(client)` caches successful (2xx) GET responses in Redis for the routes listed in `routeTTLs`: `/v1/context` 1h, `/v1/models` and `/v1/providers` 30m, `/v1/changes` and `/v1/compare` 10m. Other routes, and all non-GET requests, pass through with `Cache-Control: no-store`.
+
+- **Key**: `cache:{METHOD}:{path}:{sorted query}:{tier}`. Query parameters are sorted so parameter order doesn't split entries.
+- **Stored value**: a JSON envelope, `{"v":2,"ct":<Content-Type>,"h":{...},"b":<body>}`. `h` holds only the allowlisted `replayedHeaders` (`X-Total-Count`, `X-Has-More`, `X-Next-Cursor`). A hit restores the body, content type and those headers. Without them, clients paging through `/v1/models` or `/v1/changes` lose their totals and cursors whenever a page is served from cache.
+- **Legacy entries**: values without `"v":2` (the original raw-body format) are treated as misses and overwritten, so a deploy needs no cache flush.
+- **Failure handling**: Redis read and write errors fail open; the request is served from the handler.
+- **Snapshots**: each page URL is cached independently, so pages of one walk can come from different moments. Clients that assemble a full list should de-duplicate by id and tolerate small gaps.
 
 ## Security Headers Middleware
 

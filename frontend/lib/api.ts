@@ -1,5 +1,8 @@
 import "server-only"
+import { unstable_cache } from "next/cache"
 import { cache } from "react"
+import { decodeCachePayload, encodeCachePayload } from "@/lib/cache-codec"
+import { filterModelsByQuery } from "@/lib/models-filter"
 
 // ─── Types (frontend-facing) ─────────────────────────────────────────────────
 // These types are what components consume. The API layer transforms raw backend
@@ -226,7 +229,8 @@ async function apiFetchWithHeaders<T>(
   init?: RequestInit,
 ): Promise<{ body: T; headers: Headers }> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    next: { revalidate: 300 },
+    // An explicit cache mode replaces the default revalidate; Next rejects both together.
+    ...(init?.cache ? {} : { next: { revalidate: 300 } }),
     ...init,
     headers: buildHeaders(init?.headers as HeadersInit | undefined),
   })
@@ -258,56 +262,144 @@ export interface ModelsFilter {
   sort?: "recent" | "alpha"
 }
 
+// The whole catalog (~4.3k models, ~1.9MB of JSON) is cached as one gzipped
+// entry per filter set. Caching each upstream page separately would cost a
+// data-cache write per page, and Vercel bills those as ISR writes. `q` is
+// deliberately not a parameter: free-text search is filtered in memory so
+// search strings never become cache keys.
+const getAllModelsEncoded = unstable_cache(
+  async (provider: string, modality: string, minContext: number): Promise<string> =>
+    encodeCachePayload(await fetchAllModels({ provider, modality, minContext })),
+  // Bump the version whenever toModel(), Model or the cached order changes:
+  // cached entries survive deploys and would otherwise be served stale-shaped.
+  ["models:all:v1"],
+  { revalidate: 300 },
+)
+
+// Decoding the full catalog (~1.9MB of JSON) costs tens of ms, so each filter
+// set and order keeps its last decoded list until the cached string changes.
+// The list is shared across requests, hence frozen.
+const decodedModels = new Map<string, { encoded: string; models: Model[] }>()
+
 export async function getModels(filter?: ModelsFilter): Promise<Model[]> {
+  const args = [
+    filter?.provider?.trim().toLowerCase() ?? "",
+    filter?.modality ?? "",
+    filter?.min_context ?? 0,
+  ] as const
+  const sort = filter?.sort === "alpha" ? "alpha" : "recent"
+  const encoded = await getAllModelsEncoded(...args)
+  const key = JSON.stringify([...args, sort])
+  let entry = decodedModels.get(key)
+  if (entry?.encoded !== encoded) {
+    const models = decodeCachePayload<Model[]>(encoded)
+    if (sort === "recent") models.sort(byMostRecentlyConfirmed)
+    entry = { encoded, models: Object.freeze(models) as Model[] }
+    decodedModels.set(key, entry)
+  }
+  return filterModelsByQuery(entry.models, filter?.q)
+}
+
+// Mirrors the backend's default "recent" order: confirmed time descending,
+// then provider, name and id.
+function confirmedTime(m: Model): number {
+  const t = Date.parse(m.updated_at)
+  return Number.isNaN(t) ? -Infinity : t
+}
+
+function byMostRecentlyConfirmed(a: Model, b: Model): number {
+  const ta = confirmedTime(a)
+  const tb = confirmedTime(b)
+  if (ta !== tb) return tb > ta ? 1 : -1
+  if (a.provider !== b.provider) return a.provider < b.provider ? -1 : 1
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1
+  return Number(a.id) - Number(b.id)
+}
+
+interface BulkModelsFilter {
+  provider: string
+  modality: string
+  minContext: number
+}
+
+class IncompleteCatalogError extends Error {}
+
+// The walk uses sort=alpha (provider, name, id), which confirming a price does
+// not reorder, so OFFSET paging stays stable during scrapes; getModels re-sorts
+// in memory. A pass can still come back short: the backend caches each page URL
+// separately (so pages can be different snapshots), and a model whose provider
+// or filtered field changes mid-walk shifts the offsets. A gap of at most
+// SHORTFALL_TOLERANCE is accepted, since one missing model for one cache window
+// is no worse than the staleness the cache already has. A larger gap is retried
+// once and then thrown: unstable_cache never stores a thrown result, and on a
+// background refresh it keeps serving the previous entry.
+async function fetchAllModels(filter: BulkModelsFilter): Promise<Model[]> {
+  try {
+    return await fetchAllModelsOnce(filter)
+  } catch (e) {
+    if (!(e instanceof IncompleteCatalogError)) throw e
+    return fetchAllModelsOnce(filter)
+  }
+}
+
+const MAX_PAGES = 100
+const SHORTFALL_TOLERANCE = 0.005
+
+async function fetchAllModelsOnce(filter: BulkModelsFilter): Promise<Model[]> {
   const params = new URLSearchParams()
-  if (filter?.provider) params.set("provider", filter.provider)
-  if (filter?.modality) params.set("modality", filter.modality)
-  if (filter?.min_context) params.set("min_context", String(filter.min_context))
-  if (filter?.q) params.set("q", filter.q)
-  if (filter?.sort) params.set("sort", filter.sort)
+  if (filter.provider) params.set("provider", filter.provider)
+  if (filter.modality) params.set("modality", filter.modality)
+  if (filter.minContext) params.set("min_context", String(filter.minContext))
+  params.set("sort", "alpha")
   params.set("per_page", "200")
 
-  // Paginate through all pages so that models beyond the first 200 are
-  // included in the compare picker. The backend caps per_page at 200, so we
-  // loop until X-Total-Count is satisfied.
-  const all: Model[] = []
+  // The backend caps per_page at 200, so loop until X-Total-Count is satisfied.
+  const byId = new Map<string, Model>()
   let page = 1
   let total = Infinity
 
-  while (all.length < total) {
+  while (byId.size < total) {
     params.set("page", String(page))
     const { body, headers } = await apiFetchWithHeaders<RawEnvelope<RawModel[]>>(
       `/v1/models?${params.toString()}`,
+      { cache: "no-store" },
     )
     const batch = body.data.map(toModel)
 
     if (page === 1) {
-      // Only narrow `total` when the header is present and parseable.
-      // If the header is absent or invalid we keep total = Infinity and rely
-      // on the batch.length === 0 exit condition + the page-50 hard cap.
+      // Without a parseable header, stop on the first empty page instead.
       const raw    = headers.get("X-Total-Count")
       const parsed = raw !== null ? parseInt(raw, 10) : NaN
       if (!isNaN(parsed) && parsed > 0) total = parsed
     }
 
-    all.push(...batch)
-    // Hard cap: never exceed 50 pages (10 000 models) regardless of header.
-    if (batch.length === 0 || all.length >= total || page >= 50) break
+    for (const m of batch) if (!byId.has(m.id)) byId.set(m.id, m)
+    if (batch.length === 0 || byId.size >= total || page >= MAX_PAGES) break
     page++
   }
 
-  return all
+  if (Number.isFinite(total) && byId.size < total) {
+    const detail = `got ${byId.size} of ${total} after ${page} pages`
+    if (total - byId.size > Math.floor(total * SHORTFALL_TOLERANCE)) {
+      throw new IncompleteCatalogError(`Incomplete model catalog: ${detail}`)
+    }
+    console.warn(`[api] caching slightly short model catalog: ${detail}`)
+  }
+  return [...byId.values()]
 }
 
-/** Paginated variant — returns a page of models + total count from X-Total-Count header. */
+/**
+ * Paginated variant — returns a page of models + total count from X-Total-Count header.
+ * Takes no `q`: each distinct search string would be its own data-cache entry.
+ * Search with getModels() instead.
+ */
 export async function getModelsPaginated(
-  filter?: ModelsFilter & { page?: number; per_page?: number },
+  filter?: Omit<ModelsFilter, "q"> & { page?: number; per_page?: number },
 ): Promise<PaginatedResult<Model[]>> {
   const params = new URLSearchParams()
   if (filter?.provider) params.set("provider", filter.provider)
   if (filter?.modality) params.set("modality", filter.modality)
   if (filter?.min_context) params.set("min_context", String(filter.min_context))
-  if (filter?.q) params.set("q", filter.q)
   if (filter?.sort) params.set("sort", filter.sort)
   params.set("page", String(filter?.page ?? 1))
   params.set("per_page", String(filter?.per_page ?? 24))
@@ -326,6 +418,12 @@ export async function getModelsPaginated(
 // server request (shared cache scope covers generateMetadata + page component),
 // preventing two upstream API calls per page render.
 export const getModel = cache(async (id: string): Promise<Model> => {
+  // The backend parses ids with strconv.Atoi, so "042" and "+42" resolve to
+  // model 42 under a different URL: each alias would be its own cache write.
+  // Values Atoi maps to <= 0 ("0", "-1") are slug lookups upstream; leave them.
+  if (/^(\+0*[1-9]\d*|0+[1-9]\d*)$/.test(id)) {
+    throw new Error(`API error 404 at /v1/models/${encodeURIComponent(id)}`)
+  }
   const res = await apiFetch<RawEnvelope<RawModel>>(
     `/v1/models/${encodeURIComponent(id)}`,
   )
@@ -343,7 +441,9 @@ export async function getModelHistory(
   const qs = params.toString() ? `?${params.toString()}` : ""
   const res = await apiFetch<RawEnvelope<RawHistoryItem[]>>(
     `/v1/models/${encodeURIComponent(id)}/history${qs}`,
-    { next: { revalidate: 60 } },
+    // Prices change a few times a day at most (6h/daily scrapes), so 15 minutes
+    // is plenty fresh and cuts data-cache writes 15x versus 60s.
+    { next: { revalidate: 900 } },
   )
   return res.data.map(toHistoryEntry)
 }

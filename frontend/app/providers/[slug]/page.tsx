@@ -70,13 +70,14 @@ export default async function ProviderPage({ params }: PageProps) {
   const { slug } = await params
   const displayName = formatProviderName(slug)
 
-  const [models, providers] = await Promise.all([
-    getModels({ provider: slug }).catch(() => []),
-    getProviders().catch(() => []),
-  ])
-
+  // Resolve the slug against the real provider list before touching the model
+  // cache: every distinct provider value is its own cache entry, and `%` or `_`
+  // would act as ILIKE wildcards upstream. If the list can't be loaded, throw to
+  // the error boundary (a 500) rather than 404 a page that may exist.
+  const providers = await getProviders()
   const provider = providers.find((p) => p.id.toLowerCase() === slug.toLowerCase())
-  if (!provider && models.length === 0) notFound()
+  if (!provider) notFound()
+  const models = await getModels({ provider: provider.id }).catch(() => [])
 
   const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://llmrates.live"
 

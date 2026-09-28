@@ -657,6 +657,57 @@ func TestIntegrationPagination_SecondPage_ReturnsCorrectSlice(t *testing.T) {
 	}
 }
 
+// Rows that tie on every sort column (same provider, name and created_at, no
+// price) must still appear exactly once when walked page by page. The frontend
+// caches the full catalog built this way and rejects incomplete walks.
+func TestIntegrationPagination_TiedSortKeys_EveryModelExactlyOnce(t *testing.T) {
+	app, db, _ := setupTestApp(t)
+
+	const n = 25
+	for i := 0; i < n; i++ {
+		_, err := db.Exec(context.Background(),
+			`INSERT INTO models (provider, name, slug, modality, created_at)
+			 VALUES ('tie-test', 'Tie', $1, 'text', '2026-01-01T00:00:00Z')`,
+			fmt.Sprintf("tie-test/tie-%02d", i))
+		if err != nil {
+			t.Fatalf("insert tied model %d: %v", i, err)
+		}
+	}
+
+	for _, sort := range []string{"recent", "alpha"} {
+		seen := make(map[int]int, n)
+		for page := 1; page <= n; page++ {
+			path := fmt.Sprintf("/v1/models?provider=tie-test&sort=%s&per_page=3&page=%d", sort, page)
+			status, body := apiGet(t, app, path, devAuth)
+			if status != fiber.StatusOK {
+				t.Fatalf("%s page %d: expected 200, got %d; body: %s", sort, page, status, body)
+			}
+			var env struct {
+				Data []struct {
+					ID int `json:"id"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(body, &env); err != nil {
+				t.Fatalf("unmarshal %s page %d: %v", sort, page, err)
+			}
+			if len(env.Data) == 0 {
+				break
+			}
+			for _, m := range env.Data {
+				seen[m.ID]++
+			}
+		}
+		if len(seen) != n {
+			t.Errorf("sort=%s: walked %d distinct models, want %d", sort, len(seen), n)
+		}
+		for id, count := range seen {
+			if count != 1 {
+				t.Errorf("sort=%s: model id=%d appeared %d times", sort, id, count)
+			}
+		}
+	}
+}
+
 // -----------------------------------------------------------------------
 // 7. Trust metadata tests
 // -----------------------------------------------------------------------

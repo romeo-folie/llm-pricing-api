@@ -2,7 +2,15 @@ import { Suspense } from "react"
 import type { Metadata } from "next"
 
 export const dynamic = "force-dynamic"
-import { getModelsPaginated, getProviders } from "@/lib/api"
+import { getModels, getProviders, type Model } from "@/lib/api"
+import {
+  MIN_CONTEXT_OPTIONS,
+  MODALITIES,
+  paginate,
+  parseModelsSearchParams,
+  resolveProvider,
+  type ModelsSearchParams,
+} from "@/lib/models-filter"
 import { safeJsonLd } from "@/lib/utils"
 import ModelCard from "@/components/model/ModelCard"
 import ModelDetailModal from "@/components/model/ModelDetailModal"
@@ -26,52 +34,43 @@ export const metadata: Metadata = {
 }
 
 interface PageProps {
-  searchParams: Promise<{
-    provider?: string
-    modality?: string
-    min_context?: string
-    model?: string
-    page?: string
-    q?: string
-  }>
+  searchParams: Promise<ModelsSearchParams & { model?: string | string[] }>
 }
 
-const MODALITIES = ["text", "multimodal", "image", "audio", "embedding"]
 const PER_PAGE = 24
 
 export default async function ModelsPage({ searchParams }: PageProps) {
-  const sp = await searchParams
-  const filter = {
-    provider:    sp.provider    || undefined,
-    modality:    sp.modality    || undefined,
-    min_context: sp.min_context ? Number(sp.min_context) : undefined,
-    q:           sp.q           || undefined,
-  }
+  const f = parseModelsSearchParams(await searchParams)
 
-  const requestedPage = sp.page ? Math.max(1, Number(sp.page) || 1) : 1
-
-  const [modelsResult, providersResult] = await Promise.allSettled([
-    getModelsPaginated({ ...filter, page: requestedPage, per_page: PER_PAGE }),
-    getProviders(),
+  // getModels() serves every search from one cached catalog per filter set;
+  // q and page are applied in memory so they never become cache keys. The
+  // provider must be a real one, or arbitrary values would each cost a write.
+  // Only a provider filter has to wait for the provider list.
+  const providersPromise = getProviders().catch(() => [])
+  const provider = f.provider ? resolveProvider(f.provider, await providersPromise) : undefined
+  const [modelsResult, providers] = await Promise.all([
+    getModels({ provider, modality: f.modality, min_context: f.min_context, q: f.q }).then(
+      (models) => ({ models, failed: false }),
+      () => ({ models: [] as Model[], failed: true }),
+    ),
+    providersPromise,
   ])
-  const { data: models, total } = modelsResult.status === "fulfilled"
-    ? modelsResult.value
-    : { data: [], total: 0 }
-  const providers = providersResult.status === "fulfilled" ? providersResult.value : []
-  const apiUnavailable = modelsResult.status === "rejected"
+  const matching = modelsResult.models
+  const apiUnavailable = modelsResult.failed
 
+  const total = matching.length
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
-  // Clamp page to valid range
-  const page = Math.min(requestedPage, totalPages)
+  const page = Math.min(f.page, totalPages)
+  const { data: models } = paginate(matching, page, PER_PAGE)
   const rangeStart = (page - 1) * PER_PAGE + 1
   const rangeEnd = Math.min(page * PER_PAGE, total)
 
   // Preserve current filters in pagination links
   const paginationParams: Record<string, string> = {}
-  if (sp.provider) paginationParams.provider = sp.provider
-  if (sp.modality) paginationParams.modality = sp.modality
-  if (sp.min_context) paginationParams.min_context = sp.min_context
-  if (sp.q) paginationParams.q = sp.q
+  if (provider) paginationParams.provider = provider
+  if (f.modality) paginationParams.modality = f.modality
+  if (f.min_context) paginationParams.min_context = String(f.min_context)
+  if (f.q) paginationParams.q = f.q
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -130,7 +129,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           <input
             type="text"
             name="q"
-            defaultValue={sp.q ?? ""}
+            defaultValue={f.q ?? ""}
             placeholder="Search models..."
             className="font-outfit text-sm"
             style={{
@@ -146,7 +145,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           {/* Provider */}
           <select
             name="provider"
-            defaultValue={sp.provider ?? ""}
+            defaultValue={provider ?? ""}
             className="font-outfit text-sm"
             style={{
               padding: "6px 32px 6px 12px",
@@ -170,7 +169,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           {/* Modality */}
           <select
             name="modality"
-            defaultValue={sp.modality ?? ""}
+            defaultValue={f.modality ?? ""}
             className="font-outfit text-sm"
             style={{
               padding: "6px 32px 6px 12px",
@@ -194,7 +193,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
           {/* Min context */}
           <select
             name="min_context"
-            defaultValue={sp.min_context ?? ""}
+            defaultValue={f.min_context ? String(f.min_context) : ""}
             className="font-outfit text-sm"
             style={{
               padding: "6px 32px 6px 12px",
@@ -210,10 +209,9 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             }}
           >
             <option value="">Any context</option>
-            <option value="4096">4K+</option>
-            <option value="32768">32K+</option>
-            <option value="128000">128K+</option>
-            <option value="1000000">1M+</option>
+            {MIN_CONTEXT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
 
           <button
@@ -230,7 +228,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
             Filter
           </button>
 
-          {(sp.provider || sp.modality || sp.min_context || sp.q) && (
+          {(provider || f.modality || f.min_context || f.q) && (
             <a
               href="/models"
               className="font-outfit text-sm"

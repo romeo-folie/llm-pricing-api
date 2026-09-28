@@ -75,6 +75,8 @@ frontend/
 ├── lib/
 │   ├── analytics.ts            # GA4 pageview + typed custom event helpers
 │   ├── api.ts                  # Server-only typed API client (all REST endpoints)
+│   ├── cache-codec.ts          # gzip+base64 encode/decode for large data-cache entries
+│   ├── models-filter.ts        # /models search-param parsing, in-memory search, pagination
 │   └── utils.ts                # cn() class merging utility
 ├── public/                     # Static assets (SVGs, favicon)
 ├── .env.example                # Required environment variables
@@ -118,7 +120,19 @@ Server-only module (`import 'server-only'` guard prevents accidental client-side
 | `getCompare(models[])` | `GET /v1/compare` | Free |
 | `getChanges(filter?)` | `GET /v1/changes` | Free |
 
-All fetches use `next: { revalidate: 300 }` (5-minute ISR). History uses 60s revalidation.
+### Caching and Vercel ISR writes
+
+Vercel bills every Next.js data-cache write (`fetch` with `next.revalidate`, and `unstable_cache`) as an **ISR write**, even on `force-dynamic` pages. What counts toward the quota is the number of **distinct cache keys** times how often each is refreshed, so keep keys bounded:
+
+- Most fetches use `next: { revalidate: 300 }`. `getModelHistory` uses 900s; prices change only a few times a day.
+- `getModels(filter)` caches the **whole filtered catalog as one gzipped `unstable_cache` entry** (key: provider, modality, min_context; 300s). The inner page fetches are `no-store`. The walk always requests `sort=alpha` (provider, name, id). Unlike the default "recent" sort, confirming a price doesn't reorder it, so OFFSET paging stays stable during scrapes. The default most-recently-confirmed-first order is re-applied in memory, so `sort` isn't part of the cache key. Each pass de-duplicates by id. A pass at most 0.5% short of `X-Total-Count` is accepted with a warning. Backend pages are cached per URL and can be different snapshots, and one missing model for one window is no worse than normal staleness. A larger gap is retried once and then thrown, so a broken walk is never cached. Each process memoizes the decoded, sorted, frozen list per filter set and order until the cached string changes. Bump the `models:all:vN` key part whenever `toModel()` or `Model` changes. The catalog is about 4.3k models and about 1.9MB of JSON, which is at Next's 2MB per-entry limit (over it, production silently skips caching). Gzip brings it to about 250KB.
+- Free-text search (`q`) is **never sent upstream**. `getModels` applies it in memory (`filterModelsByQuery`: case-insensitive literal substring on name or slug), so search strings never become cache keys. `getModelsPaginated` has no `q` parameter for the same reason.
+- `/models` parses its search params with `parseModelsSearchParams`, which accepts only values the UI can produce: known modalities and the `min_context` dropdown values. It resolves the provider against `getProviders()` with `resolveProvider`, so unknown or wildcard values (`%`, `_`) can't create cache entries, then paginates in memory with `paginate`. `/providers/[slug]` resolves its slug the same way and returns 404 before touching the model cache.
+- `/api/model/[id]` ignores caller-supplied `from`/`to`, and returns a fixed error message while logging the upstream detail server-side.
+- `getModel(id)` rejects numeric aliases (`042`, `+42`) without fetching. The backend's `strconv.Atoi` would resolve each of them to the same model under a different cached URL.
+- Walking the pages relies on the backend's `ORDER BY` ending in the unique `m.id` (see `internal/api/handlers/README.md`). Without it, rows tied at page boundaries would make every pass come back incomplete.
+
+Don't pass user-controlled, high-cardinality values (search text, timestamps) into a cached fetch URL. Filter them after the cached call, or fetch them with `cache: "no-store"`.
 
 ## SEO
 
