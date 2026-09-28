@@ -304,6 +304,18 @@ func (f ListModelsFilter) page() (offset, limit int) {
 	return
 }
 
+// listModelsOrderBy returns the ORDER BY clause for ListModels. Default sort is
+// "recent": COALESCE(confirmed_at, created_at) DESC so the most recently
+// confirmed models appear first; "alpha" orders by provider then name. Both end
+// with the unique m.id, because OFFSET paging over tied sort keys can skip or
+// repeat rows at page boundaries.
+func listModelsOrderBy(sort string) string {
+	if sort == "alpha" {
+		return "m.provider, m.name, m.id"
+	}
+	return "COALESCE(p.confirmed_at, m.created_at) DESC, m.provider, m.name, m.id"
+}
+
 // ListModels returns paginated models with optional filters.
 func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]ModelRow, int, error) {
 	offset, limit := filter.page()
@@ -347,13 +359,7 @@ func (s *pgxStore) ListModels(ctx context.Context, filter ListModelsFilter) ([]M
 	}
 
 	// Main query: join with latest price and source name.
-	// Default sort is "recent": COALESCE(confirmed_at, created_at) DESC so the
-	// most recently confirmed (i.e. latest) models appear first. "alpha" falls
-	// back to the legacy provider + name ordering for callers that need it.
-	orderBy := "COALESCE(p.confirmed_at, m.created_at) DESC, m.provider, m.name"
-	if filter.Sort == "alpha" {
-		orderBy = "m.provider, m.name"
-	}
+	orderBy := listModelsOrderBy(filter.Sort)
 
 	args = append(args, limit, offset)
 	mainSQL := fmt.Sprintf(`

@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -24,6 +25,22 @@ var routeTTLs = []struct {
 	{"/v1/providers", 30 * time.Minute},
 	{"/v1/changes", 10 * time.Minute},
 	{"/v1/compare", 10 * time.Minute},
+}
+
+// replayedHeaders are the response headers stored with a cached body and
+// replayed on a hit. List endpoints report totals and cursors here; dropping
+// them on a hit breaks clients that page through results.
+var replayedHeaders = []string{"X-Total-Count", "X-Has-More", "X-Next-Cursor"}
+
+// cacheEntryVersion identifies the stored format. Entries without it (the
+// original raw-body format) are treated as misses and overwritten.
+const cacheEntryVersion = 2
+
+type cacheEntry struct {
+	V           int               `json:"v"`
+	ContentType string            `json:"ct"`
+	Headers     map[string]string `json:"h,omitempty"`
+	Body        []byte            `json:"b"`
 }
 
 // ttlForPath returns the cache TTL for the given request path, and whether the
@@ -91,9 +108,8 @@ func sortQueryString(raw string) string {
 // Cached responses include a Cache-Control: max-age=N, public header.
 // Uncached responses receive Cache-Control: no-store.
 //
-// The middleware stores the raw response body in Redis as a plain string.
-// The Content-Type of cached responses is always application/json; if a
-// route returns a different content type it should be excluded from caching.
+// The middleware stores a JSON envelope in Redis holding the response body, its
+// Content-Type and the replayedHeaders, and restores all three on a hit.
 func Cache(client *redis.Client) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Only cache GET requests.
@@ -114,11 +130,17 @@ func Cache(client *redis.Client) fiber.Handler {
 		// Attempt cache hit.
 		cached, err := client.Get(ctx, key).Bytes()
 		if err == nil {
-			// Cache hit: return cached body directly.
-			maxAge := int(ttl.Seconds())
-			c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
-			c.Set(fiber.HeaderCacheControl, fmt.Sprintf("max-age=%d, public", maxAge))
-			return c.Send(cached)
+			var entry cacheEntry
+			if json.Unmarshal(cached, &entry) == nil && entry.V == cacheEntryVersion {
+				for name, value := range entry.Headers {
+					c.Set(name, value)
+				}
+				maxAge := int(ttl.Seconds())
+				c.Set(fiber.HeaderContentType, entry.ContentType)
+				c.Set(fiber.HeaderCacheControl, fmt.Sprintf("max-age=%d, public", maxAge))
+				return c.Send(entry.Body)
+			}
+			// Legacy or unreadable entry: fall through and refresh it.
 		}
 		if err != redis.Nil {
 			// Redis error — log and fall through to origin (fail open).
@@ -136,9 +158,24 @@ func Cache(client *redis.Client) fiber.Handler {
 		if status >= 200 && status < 300 {
 			body := c.Response().Body()
 			if len(body) > 0 {
-				// Best-effort store; ignore Redis errors so that a cache write
-				// failure does not degrade the API response.
-				_ = client.Set(ctx, key, body, ttl).Err()
+				entry := cacheEntry{
+					V:           cacheEntryVersion,
+					ContentType: string(c.Response().Header.ContentType()),
+					Body:        body,
+				}
+				for _, name := range replayedHeaders {
+					if v := c.Response().Header.Peek(name); len(v) > 0 {
+						if entry.Headers == nil {
+							entry.Headers = make(map[string]string, len(replayedHeaders))
+						}
+						entry.Headers[name] = string(v)
+					}
+				}
+				// Best-effort store; ignore marshal and Redis errors so that a
+				// cache write failure does not degrade the API response.
+				if raw, err := json.Marshal(entry); err == nil {
+					_ = client.Set(ctx, key, string(raw), ttl).Err()
+				}
 			}
 		}
 

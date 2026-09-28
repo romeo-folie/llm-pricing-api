@@ -68,6 +68,10 @@ Every model response includes a `meta` field with `confirmed_at`, `last_verified
 
 List endpoints aggregate metadata by choosing the most recently confirmed model's meta as the envelope-level meta value.
 
+### Model list ordering
+
+`GET /v1/models` pages with `LIMIT`/`OFFSET`. `listModelsOrderBy` in `store.go` builds the `ORDER BY`: the default `sort=recent` is `COALESCE(confirmed_at, created_at) DESC, provider, name`, and `sort=alpha` is `provider, name`. Both end with the unique `m.id`. Without that tiebreaker, rows tied on every sort column come back in an arbitrary order on each query, so a client walking the pages (the frontend builds its full cached catalog this way) skips some models and sees others twice. `TestIntegrationPagination_TiedSortKeys_EveryModelExactlyOnce` checks this against a real Postgres.
+
 ### Discovery endpoints (`discovery.go`)
 
 `DiscoveryHandler` serves three public endpoints (no authentication required):
