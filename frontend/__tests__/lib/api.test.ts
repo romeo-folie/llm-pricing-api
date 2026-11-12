@@ -24,6 +24,8 @@ import {
   getProviders,
   getCompare,
   getChanges,
+  getChangesPage,
+  getChangesSummary,
 } from "@/lib/api"
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────────
@@ -201,21 +203,28 @@ describe("getModels", () => {
     expect(models[0].underlying_provider).toBe("together")
   })
 
-  it("applies query filters", async () => {
-    mockOk(envelope([]))
-    await getModels({ provider: "anthropic", modality: "text", min_context: 128000 })
-    const url = mockFetch.mock.calls[0][0] as string
-    expect(url).toContain("provider=anthropic")
-    expect(url).toContain("modality=text")
-    expect(url).toContain("min_context=128000")
+  it("filters one shared catalog locally across filter combinations", async () => {
+    mockFetch.mockResolvedValue(page([
+      rawModel({ id: 1, provider: "anthropic", context_window: 128000 }),
+      rawModel({ id: 2, provider: "anthropic", context_window: 4096 }),
+      rawModel({ id: 3, provider: "openai" }),
+      rawModel({ id: 4, provider: "anthropic", modality: "image" }),
+    ], 4))
+    const result = await getModels({ provider: " Anthropic ", modality: "text", min_context: 128000 })
+    expect(result.map((m) => m.id)).toEqual(["1"])
+    await getModels({ provider: "openai", modality: "image", min_context: 4096 })
+    for (const [url] of mockFetch.mock.calls) {
+      expect(url).not.toMatch(/[?&](provider|modality|min_context)=/)
+    }
+    expect(cachedFnCalls.map((c) => c.args)).toEqual([[], []])
   })
 
-  it("is wrapped in a single data-cache entry with a 300s window", () => {
+  it("shares a single catalog cache entry with a 900s window", () => {
     const call = unstableCacheMock.mock.calls.find(([, keyParts]) =>
       keyParts?.some((k) => k.startsWith("models:all")),
     )
     expect(call).toBeDefined()
-    expect(call![2]).toEqual({ revalidate: 300 })
+    expect(call![2]).toEqual({ revalidate: 900 })
   })
 
   it("fetches pages with no-store so pages do not become separate cache entries", async () => {
@@ -272,7 +281,7 @@ describe("getModels", () => {
         6,
       ),
     )
-    const models = await getModels({ modality: "image" })
+    const models = await getModels()
     expect(models.map((m) => m.id)).toEqual(["2", "3", "6", "4", "5", "1"])
   })
 
@@ -280,7 +289,7 @@ describe("getModels", () => {
     mockFetch.mockResolvedValue(
       page([rawModel({ id: 9, provider: "a" }), rawModel({ id: 3, provider: "b" })], 2),
     )
-    const models = await getModels({ modality: "multimodal", sort: "alpha" })
+    const models = await getModels({ sort: "alpha" })
     expect(models.map((m) => m.id)).toEqual(["9", "3"])
   })
 
@@ -339,7 +348,7 @@ describe("getModels", () => {
         4,
       ),
     )
-    const models = await getModels({ min_context: 1000000 })
+    const models = await getModels()
     expect(models.map((m) => m.id)).toEqual(["3", "2", "4", "1"])
   })
 
@@ -353,17 +362,17 @@ describe("getModels", () => {
 
   it("returns the same frozen array for an unchanged cache entry", async () => {
     mockFetch.mockResolvedValue(page([rawModel({ id: 77 })], 1))
-    const a = await getModels({ modality: "audio" })
-    const b = await getModels({ modality: "audio" })
+    const a = await getModels()
+    const b = await getModels()
     expect(a).toBe(b)
     expect(Object.isFrozen(a)).toBe(true)
   })
 
   it("decodes afresh when the cached entry changes", async () => {
     mockFetch.mockResolvedValue(page([rawModel({ id: 77 })], 1))
-    const a = await getModels({ modality: "embedding" })
+    const a = await getModels()
     mockFetch.mockResolvedValue(page([rawModel({ id: 78 })], 1))
-    const b = await getModels({ modality: "embedding" })
+    const b = await getModels()
     expect(b).not.toBe(a)
     expect(b.map((m) => m.id)).toEqual(["78"])
   })
@@ -631,5 +640,25 @@ describe("error handling", () => {
       json: () => Promise.reject(new Error("not json")),
     })
     await expect(getModel("999")).rejects.toThrow("API error 500")
+  })
+})
+
+
+describe("changes cache policy", () => {
+  it("does not persist rolling timestamps or cursors in Vercel", async () => {
+    mockOk(envelope([]))
+    await getChangesPage({ since: "2026-11-12T12:34:56Z", before: "cursor" })
+    expect(mockFetch.mock.calls[0][1].cache).toBe("no-store")
+    expect(mockFetch.mock.calls[0][1].next).toBeUndefined()
+  })
+
+  it("bypasses persistent caching for custom changes and summary filters", async () => {
+    mockOk(envelope([]))
+    await getChanges({ since: "2026-11-12T12:34:56Z" })
+    expect(mockFetch.mock.calls[0][1].cache).toBe("no-store")
+    expect(mockFetch.mock.calls[0][1].next).toBeUndefined()
+    mockOk(envelope({ heatmap: [], top_movers: [], total_changes: 0, window: "7d" }))
+    await getChangesSummary({ provider: "arbitrary-provider" })
+    expect(mockFetch.mock.calls.at(-1)![1].cache).toBe("no-store")
   })
 })
