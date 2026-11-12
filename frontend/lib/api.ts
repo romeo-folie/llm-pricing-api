@@ -208,7 +208,7 @@ function buildHeaders(extra?: HeadersInit): Record<string, string> {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    next: { revalidate: 300 },
+    ...(init?.cache ? {} : { next: { revalidate: 300 } }),
     ...init,
     // Merge caller headers on top of auth headers so Authorization is never dropped
     headers: buildHeaders(init?.headers as HeadersInit | undefined),
@@ -262,42 +262,35 @@ export interface ModelsFilter {
   sort?: "recent" | "alpha"
 }
 
-// The whole catalog (~4.3k models, ~1.9MB of JSON) is cached as one gzipped
-// entry per filter set. Caching each upstream page separately would cost a
-// data-cache write per page, and Vercel bills those as ISR writes. `q` is
-// deliberately not a parameter: free-text search is filtered in memory so
-// search strings never become cache keys.
+// One catalog entry is shared by every filter combination. Filtering is local,
+// so browsing providers or changing context limits cannot multiply cache writes.
 const getAllModelsEncoded = unstable_cache(
-  async (provider: string, modality: string, minContext: number): Promise<string> =>
-    encodeCachePayload(await fetchAllModels({ provider, modality, minContext })),
-  // Bump the version whenever toModel(), Model or the cached order changes:
-  // cached entries survive deploys and would otherwise be served stale-shaped.
-  ["models:all:v1"],
-  { revalidate: 300 },
+  async (): Promise<string> => encodeCachePayload(await fetchAllModels()),
+  ["models:all:v2"],
+  { revalidate: 900 },
 )
 
-// Decoding the full catalog (~1.9MB of JSON) costs tens of ms, so each filter
-// set and order keeps its last decoded list until the cached string changes.
-// The list is shared across requests, hence frozen.
+// Keep just the two decoded orders; user input never grows this map.
 const decodedModels = new Map<string, { encoded: string; models: Model[] }>()
 
 export async function getModels(filter?: ModelsFilter): Promise<Model[]> {
-  const args = [
-    filter?.provider?.trim().toLowerCase() ?? "",
-    filter?.modality ?? "",
-    filter?.min_context ?? 0,
-  ] as const
   const sort = filter?.sort === "alpha" ? "alpha" : "recent"
-  const encoded = await getAllModelsEncoded(...args)
-  const key = JSON.stringify([...args, sort])
-  let entry = decodedModels.get(key)
+  const encoded = await getAllModelsEncoded()
+  let entry = decodedModels.get(sort)
   if (entry?.encoded !== encoded) {
     const models = decodeCachePayload<Model[]>(encoded)
     if (sort === "recent") models.sort(byMostRecentlyConfirmed)
     entry = { encoded, models: Object.freeze(models) as Model[] }
-    decodedModels.set(key, entry)
+    decodedModels.set(sort, entry)
   }
-  return filterModelsByQuery(entry.models, filter?.q)
+  const provider = filter?.provider?.trim().toLowerCase()
+  const models = provider || filter?.modality || filter?.min_context
+    ? entry.models.filter((m) =>
+        (!provider || m.provider.toLowerCase() === provider) &&
+        (!filter?.modality || m.modality === filter.modality) &&
+        (!filter?.min_context || m.context_window >= filter.min_context))
+    : entry.models
+  return filterModelsByQuery(models, filter?.q)
 }
 
 // Mirrors the backend's default "recent" order: confirmed time descending,
@@ -316,12 +309,6 @@ function byMostRecentlyConfirmed(a: Model, b: Model): number {
   return Number(a.id) - Number(b.id)
 }
 
-interface BulkModelsFilter {
-  provider: string
-  modality: string
-  minContext: number
-}
-
 class IncompleteCatalogError extends Error {}
 
 // The walk uses sort=alpha (provider, name, id), which confirming a price does
@@ -333,23 +320,20 @@ class IncompleteCatalogError extends Error {}
 // is no worse than the staleness the cache already has. A larger gap is retried
 // once and then thrown: unstable_cache never stores a thrown result, and on a
 // background refresh it keeps serving the previous entry.
-async function fetchAllModels(filter: BulkModelsFilter): Promise<Model[]> {
+async function fetchAllModels(): Promise<Model[]> {
   try {
-    return await fetchAllModelsOnce(filter)
+    return await fetchAllModelsOnce()
   } catch (e) {
     if (!(e instanceof IncompleteCatalogError)) throw e
-    return fetchAllModelsOnce(filter)
+    return fetchAllModelsOnce()
   }
 }
 
 const MAX_PAGES = 100
 const SHORTFALL_TOLERANCE = 0.005
 
-async function fetchAllModelsOnce(filter: BulkModelsFilter): Promise<Model[]> {
+async function fetchAllModelsOnce(): Promise<Model[]> {
   const params = new URLSearchParams()
-  if (filter.provider) params.set("provider", filter.provider)
-  if (filter.modality) params.set("modality", filter.modality)
-  if (filter.minContext) params.set("min_context", String(filter.minContext))
   params.set("sort", "alpha")
   params.set("per_page", "200")
 
@@ -485,7 +469,10 @@ export async function getChanges(
   }
   if (filter?.provider) params.set("provider", filter.provider)
   const qs = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch<RawEnvelope<RawChange[]>>(`/v1/changes${qs}`)
+  const res = await apiFetch<RawEnvelope<RawChange[]>>(
+    `/v1/changes${qs}`,
+    filter?.since || filter?.provider ? { cache: "no-store" } : undefined,
+  )
   return res.data.map(toChange)
 }
 
@@ -522,6 +509,9 @@ export async function getChangesPage(
   const qs = params.toString() ? `?${params.toString()}` : ""
   const { body, headers } = await apiFetchWithHeaders<RawEnvelope<RawChange[]>>(
     `/v1/changes${qs}`,
+    // Cursors and rolling timestamps create effectively unique URLs. The API
+    // has its own Redis cache; do not persist these again in Vercel.
+    { cache: "no-store" },
   )
   const total = parseInt(headers.get("X-Total-Count") ?? "0", 10)
   const hasMore = headers.get("X-Has-More") === "true"
@@ -648,6 +638,7 @@ export async function getChangesSummary(
   const qs = params.toString() ? `?${params.toString()}` : ""
   const res = await apiFetch<RawEnvelope<RawChangesSummary>>(
     `/v1/changes/summary${qs}`,
+    filter?.since || filter?.provider ? { cache: "no-store" } : undefined,
   )
   return toSummary(res.data)
 }
